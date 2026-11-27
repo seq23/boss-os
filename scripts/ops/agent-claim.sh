@@ -3,15 +3,22 @@
 # five-minute poll can never run two copies at once.
 #
 #   agent-claim.sh         claim now (the fixed-time job: six slots a day, any hour; its own chain has already refreshed the data)
-#   agent-claim.sh --poll  the five-minute poll: only 06:00-22:00 local; peek first; refresh the briefing's data only if work is
-#                          waiting; then claim
+#   agent-claim.sh --poll  the five-minute poll: peek first; refresh the briefing's data only if work is waiting; then claim
 #
 # ─── Why this exists (1 Oct 2026) ───────────────────────────────────────────
 #
 # "why is there a 18:35 check? if i press the button to run on demand?" The Run-now button queues a task in the
 # cloud; the cloud cannot push work to this Mac, so the Mac has to ask. It asked six times a day, so a run queued
-# at 14:00 waited until 18:35. The poll asks every five minutes in the waking day, which is what makes the button
-# mean "now".
+# at 14:00 waited until 18:35. The poll asks every five minutes, which is what makes the button mean "now".
+#
+# ─── WHEN it asks is not decided here (27 Nov 2026) ─────────────────────────
+#
+# The hours belong to her Mac's day, written once in src/shared/boss/schedule/clock.mjs and enforced by seq-bin's
+# `mac-window run <class>` in front of this script on the poll's plist (plist-central.mjs puts it there, from the poll's
+# Schedule row: ANY, every hour but 07:00-10:00). This file used to carry its own copy, "only 06:00-22:00", beside a
+# Schedule class that said 10:00-21:59; neither covered 04:00, when the briefing comes due, so the safety net under its
+# three morning slots never ran and the report missed the 07:45 morning email. One gate, so they cannot disagree again
+# (validate:agent-poll fails a second hour rule here).
 #
 # ─── Why it is not the 96-a-day runaway the installer's comment warns about ──
 #
@@ -42,8 +49,6 @@
 # "two claims ran at the same moment", green on a rerun). Every earlier patch here (the gate, the holder stamp, the
 # reused-PID guard) sat on that one assumption. #506 moved this file to flock(2) on its own fd 9; that lock now lives
 # in the shared library, so there is one lock and one set of tests for it (tests/opsFlock.test.ts).
-#
-# BOSS_OS_CLAIM_HOUR overrides the clock for the hour guard, so the guard is testable on any machine at any time.
 set -u
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -52,14 +57,6 @@ FRESH_MINUTES=10
 
 mode="fixed"
 [ "${1:-}" = "--poll" ] && mode="poll"
-
-if [ "$mode" = "poll" ]; then
-  hour="${BOSS_OS_CLAIM_HOUR:-$(date +%H)}"
-  hour=$((10#$hour))
-  if [ "$hour" -lt 6 ] || [ "$hour" -ge 22 ]; then
-    exit 0
-  fi
-fi
 
 LOCK_FILE="${BOSS_OS_HOME:-$HOME/.boss-os}/agent-claim.flock"
 # shellcheck source=lib/flock.sh

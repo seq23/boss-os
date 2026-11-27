@@ -13,7 +13,7 @@
  * Every alarm belongs to Kendra (emp_continuity, Systems). It reaches her Today screen only when
  * she alone can fix it (`hers`), e.g. a credential only she holds.
  */
-import { CENTRAL, dayOf, wallClock } from "../schedule/clock.mjs";
+import { CENTRAL, dayOf, wallClock, macLooksAt, MAC_POLL_CLASS } from "../schedule/clock.mjs";
 
 export const KENDRA = "emp_continuity";
 export const DEFAULT_OUTPUT_RUNS = 2;
@@ -136,18 +136,20 @@ export function usualDuration(durations) {
 }
 
 /**
- * HER MAC POLLS 06:00–22:00 CENTRAL (scripts/ops/agent-claim.sh --poll, every five minutes). Work
- * parked on a seat can only be claimed inside that window, so a wait is measured in its hours.
+ * WORK PARKED ON A SEAT IS CLAIMED ONLY WHEN HER MAC LOOKS (scripts/ops/agent-claim.sh --poll, every five
+ * minutes, behind mac-window at the poll's class), so a wait is measured in those hours. The hours are
+ * the one definition in schedule/clock.mjs (27 Nov 2026): this file held its own copy, 06:00-22:00, so
+ * a run parked at 04:00 accrued nothing until 06:00 and the alarm could not speak before 10:00.
  */
-export const POLL_WINDOW = Object.freeze([6, 22]);
 /** A run parked on a seat and claimed by no machine through this many polling hours is said. */
 export const NEVER_CLAIMED_POLLING_MS = 4 * 3_600_000;
 
 const chicagoHour = (ms) => wallClock(ms).h;
 
 /**
- * The milliseconds between `from` and `to` that fall inside POLL_WINDOW in Central. Central's offset
- * is whole hours, so each UTC hour lies wholly inside or outside the window. Pure.
+ * The milliseconds between `from` and `to` that fall inside the hours the poll runs (MAC_POLL_CLASS) in
+ * Central. Central's offset is whole hours and the Mac's day turns on the hour, so each UTC hour lies
+ * wholly inside or outside it. Pure.
  */
 export function pollingHoursMs(from, to) {
   let a = Number(from);
@@ -158,7 +160,7 @@ export function pollingHoursMs(from, to) {
   for (let i = 0; a < b && i < 24 * 60; i += 1) {
     const next = Math.min(b, (Math.floor(a / 3_600_000) + 1) * 3_600_000);
     const h = chicagoHour(a);
-    if (h >= POLL_WINDOW[0] && h < POLL_WINDOW[1]) total += next - a;
+    if (macLooksAt(MAC_POLL_CLASS, h * 60)) total += next - a;
     a = next;
   }
   return total;

@@ -140,5 +140,18 @@
       "mcp__plugin_openseo_openseo__update_ai_research_keywords",
       "mcp__plugin_openseo_openseo__update_project_context"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__plugin_openseo_openseo__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$AI_VISIBILITY_HOOK\""
+          }
+        ]
+      }
+    ]
   }
 }

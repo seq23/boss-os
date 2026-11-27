@@ -136,19 +136,32 @@ describe("a task that sits running (G2)", () => {
     expect(staleTaskVerdict({ ...eir, claimed_at: Date.parse("2026-11-09T12:50:00Z"), parked: false }, nineMin, Date.parse("2026-11-09T13:01:00Z")).stale).toBe(false);
   });
   it("says a run nobody claims through four polling hours, in the words of waiting", () => {
-    const later = eir.parked_at + 4 * 3_600_000 + 60_000; // 16:08Z = 10:08 Central, all inside the window
-    const v = staleTaskVerdict({ ...eir, claimed_at: null, parked: true }, nineMin, later);
+    // Parked 10:07 Central (16:07Z) and still waiting at 14:08: four looking hours and a minute. (The 06:07 park of
+    // 9 Nov crosses her Mac's rest, 07:00-10:00, which is not a wait the poll could have ended.)
+    const H4 = 4 * 3_600_000;
+    const afterRest = { ...eir, started_at: eir.started_at + H4, parked_at: eir.parked_at + H4, last_progress_at: eir.last_progress_at + H4 };
+    const later = afterRest.parked_at + H4 + 60_000; // 20:08Z = 14:08 Central, all inside the hours the poll looks
+    const v = staleTaskVerdict({ ...afterRest, claimed_at: null, parked: true }, nineMin, later);
     expect(v).toMatchObject({ stale: true, why: "never_claimed" });
     const text = staleTaskText({ title: "Executive Intelligence Report", seat: null, parked_on: "bk_claude_code" }, v);
     expect(text).toBe('"Executive Intelligence Report" has been waiting 4 h 01 min for bk_claude_code to pick it up; no machine ever claimed it.');
     expect(text).not.toMatch(/running/);
   });
-  it("counts only the hours her Mac polls (06:00-22:00 Central)", () => {
-    // 21:00 CST (03:00Z) to 06:05 CST next day (12:05Z): one hour before 22:00, five minutes after 06:00.
-    expect(pollingHoursMs(Date.parse("2026-11-10T03:00:00Z"), Date.parse("2026-11-10T12:05:00Z"))).toBe(65 * 60_000);
-    // A Mac off from 22:00 to 06:00 never makes a parked run stale.
-    const night = { started_at: Date.parse("2026-11-10T04:00:00Z"), parked: true, claimed_at: null };
-    expect(staleTaskVerdict(night, nineMin, Date.parse("2026-11-10T12:00:00Z")).stale).toBe(false);
+  it("counts only the hours her Mac polls: any hour but 07:00-10:00 Central (the one definition, schedule/clock.mjs)", () => {
+    // 27 Nov 2026: this counted 06:00-22:00, a copy of a guard the poll no longer has, so a run parked at 04:00
+    // (the briefing's hour) accrued nothing until 06:00 and the alarm could not speak before 10:00.
+    // 21:00 CST (03:00Z) to 06:05 CST (12:05Z): the poll looks all of it — nine hours and five minutes.
+    expect(pollingHoursMs(Date.parse("2026-11-10T03:00:00Z"), Date.parse("2026-11-10T12:05:00Z"))).toBe((9 * 60 + 5) * 60_000);
+    // 06:30 CST (12:30Z) to 10:30 CST (16:30Z): only 06:30-07:00 and 10:00-10:30 count; the Mac is off 07:00-10:00.
+    expect(pollingHoursMs(Date.parse("2026-11-10T12:30:00Z"), Date.parse("2026-11-10T16:30:00Z"))).toBe(60 * 60_000);
+    // A run parked at 04:00 Central (10:00Z) is said once it has waited four LOOKING hours: 04:00-07:00 is three,
+    // 10:00-11:00 the fourth, so at 11:01 Central (17:01Z), not at 14:00 as the old 06:00-22:00 copy made it.
+    const briefing = { started_at: Date.parse("2026-11-10T10:00:00Z"), parked: true, claimed_at: null };
+    expect(staleTaskVerdict(briefing, nineMin, Date.parse("2026-11-10T16:59:00Z")).stale).toBe(false);
+    expect(staleTaskVerdict(briefing, nineMin, Date.parse("2026-11-10T17:01:00Z"))).toMatchObject({ stale: true, why: "never_claimed" });
+    // Her Mac's rest (07:00-10:00) never makes a parked run stale on its own.
+    const rest = { started_at: Date.parse("2026-11-10T13:00:00Z"), parked: true, claimed_at: null };
+    expect(staleTaskVerdict(rest, nineMin, Date.parse("2026-11-10T16:00:00Z")).stale).toBe(false);
     expect(NEVER_CLAIMED_POLLING_MS).toBe(4 * 3_600_000);
   });
 });

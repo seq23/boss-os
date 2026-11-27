@@ -13,7 +13,7 @@
  * while the two are being reconciled, and every Boss route keeps the path its own tests use.
  */
 import type { Env } from "./env";
-import bossApp, { runScheduled as runBossNightly, runDuties as runBossDuties, runReaper as runBossReaper, runOutreach as runBossOutreach, runOpenLoops as runBossOpenLoops, runEightraise as runBossEightraise, runKendra as runBossKendra } from "./boss/index";
+import bossApp, { runScheduled as runBossNightly, runDuties as runBossDuties, runDutyClock as runBossDutyClock, runReaper as runBossReaper, runOutreach as runBossOutreach, runOpenLoops as runBossOpenLoops, runEightraise as runBossEightraise, runKendra as runBossKendra } from "./boss/index";
 import { OPERATIONS_ENABLED, operatingStopped } from "./boss/lib/operatingStop";
 import type { Env as BossEnv, TaskMessage } from "./boss/env";
 import { handleTask, handleDeadLetter } from "./boss/queue/consumer";
@@ -328,4 +328,4 @@ export async function drainBossTasks(
   return { ran, failed, dead, ...(reaped ? { reaped } : {}) };
 }
 
-export { runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra };
+export { runBossNightly, runBossDuties, runBossDutyClock, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra };

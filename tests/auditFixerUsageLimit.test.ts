@@ -26,6 +26,12 @@ const TEMPLATE_SENTINEL =
 const USAGE_LIMIT_LINE =
   "ERROR: You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 12:04 PM.";
 
+/** A scoped pass reads its briefs from the queue before the worker starts (the pass packet): one brief for test-repo. */
+function writeQueue(home: string) {
+  mkdirSync(join(home, ".boss-os/search-readiness"), { recursive: true });
+  writeFileSync(join(home, ".boss-os/search-readiness/fix-queue.json"), JSON.stringify({ written_at: "2026-11-27T00:00:00Z", briefs: [{ id: "sr-test.example-b1", repo: "test-repo", domain: "test.example", item_id: "b1", failure: "a title is 81 chars" }] }));
+}
+
 function fakeAhrefsBin(home: string) {
   const bin = join(home, "bin");
   mkdirSync(bin, { recursive: true });
@@ -70,6 +76,7 @@ function runFixer(opts: { claudeSignedIn: boolean; mode: "usage_limit" | "comple
   writeFileSync(join(bin, "security"), `#!/bin/bash\nexit ${opts.claudeSignedIn ? 0 : 1}\n`);
   chmodSync(join(bin, "security"), 0o755);
   writeFileSync(join(home, "prompt.md"), `Do the thing.\n\nEnd with: ${TEMPLATE_SENTINEL}\n`);
+  writeQueue(home);
   const claudeRanLog = join(home, "claude-ran");
   const repoRoot = process.cwd();
   const r = spawnSync("/bin/bash", [join(repoRoot, "scripts/ops/ahrefs-audit-fix.sh")], {

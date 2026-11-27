@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { Loading } from "../components/Shell";
 import { BRAINS } from "@shared/boss/brains/brain.mjs";
-import { dayWords, groupLoops, isOverdue, ownerWords, visibleLoops, type Loop } from "@shared/boss/openLoops/openLoops.mjs";
+import { PROVING_LABEL, dayWords, groupLoops, isOverdue, ownerWords, visibleLoops, type Loop } from "@shared/boss/openLoops/openLoops.mjs";
 
 /**
  * OPEN LOOPS (owner ruling, 1 Nov 2026: "Open Loops is the one list of everything approved but not
@@ -12,7 +12,9 @@ import { dayWords, groupLoops, isOverdue, ownerWords, visibleLoops, type Loop } 
  * grouped by business, late rows first with a gold "Did this happen?" (a nudge, never red); each row
  * says its finish line, next step, owner and date, with Edit ✎ / ✓ Done / Move to parked. Done asks
  * "What's the real outcome?" first. Her rows waiting on an earlier step are not drawn, only counted.
- * "Parked ideas" sit at the bottom: no dates, no chasing, "Bring back". Rules: openLoops.mjs.
+ * "Landed, waiting on proof" (27 Nov 2026) is a folded section under the main list: rows whose fix landed
+ * and wait only on their PR's next-day live check; never counted as open or late, "Bring back" moves one
+ * back. "Parked ideas" sit at the bottom: no dates, no chasing, "Bring back". Rules: openLoops.mjs.
  */
 const LABEL: Record<string, string> = Object.fromEntries(BRAINS.map((b) => [b.slug, b.title.split(" — ")[0]!]));
 const ORDER = BRAINS.map((b) => b.slug);
@@ -30,12 +32,13 @@ export function OpenLoops() {
   const { shown, waiting } = visibleLoops(data.loops);
   const late = shown.filter((l) => isOverdue(l, data.today)).length;
   const parked = data.loops.filter((l) => l.status === "open" && l.section === "parked");
+  const proving = data.loops.filter((l) => l.status === "open" && l.section === "proving");
   const closed = data.loops.filter((l) => l.status === "closed").sort((a, b) => (b.closed_at ?? 0) - (a.closed_at ?? 0));
   return (
     <div className="brains" data-testid="open-loops">
       <p className="brain-summary" data-testid="open-loops-summary">
         {failed ? "Open loops did not load. Try again in a minute."
-          : `${plural(shown.length, "loop")} not finished · ${late ? `${late} late` : "none late"}`}
+          : `${plural(shown.length, "loop")} not finished · ${late ? `${late} late` : "none late"}${proving.length ? ` · ${proving.length} waiting on proof` : ""}`}
       </p>
       <p className="brain-hint">Everything approved but not finished. A loop closes on the real outcome (live, selling, in store), then it moves to the Scorecard.</p>
 
@@ -51,6 +54,14 @@ export function OpenLoops() {
       {adding
         ? <Editor data={data} onDone={() => { setAdding(false); void load(); }} />
         : <button className="done-btn loops-add" onClick={() => setAdding(true)} data-testid="open-loops-add">+ Add a loop</button>}
+
+      {proving.length > 0 && (
+        <details className="brain-expander loops-proving" data-testid="open-loops-proving">
+          <summary>{PROVING_LABEL} ({proving.length}) · Show ▾</summary>
+          <p className="brain-hint">The fix landed; the next-day live check decides. A pass closes the row, a fail brings it back to the list marked NOT WORKING.</p>
+          <div className="brain-cards">{proving.map((l) => <Proving key={l.id} loop={l} onChanged={load} />)}</div>
+        </details>
+      )}
 
       <h2 className="email-map-business-name loops-parked-h">Parked ideas</h2>
       <p className="brain-hint">No dates and no chasing. Bring one back when you want it.</p>
@@ -113,6 +124,22 @@ function Parked({ loop, onChanged }: { loop: Loop; onChanged: () => void }) {
       <span className="email-map-what">{loop.title}</span>
       <span className="brain-card-line">{loop.finish_line}</span>
       {loop.next_step && <span className="brain-card-line">When it comes back: {loop.next_step}</span>}
+      <div className="t-actions">
+        <button className="done-btn" onClick={() => api.updateOpenLoop(loop.id, { section: "not_finished" }).then(onChanged).catch((e) => setErr(e?.message ?? "That did not save."))}>↑ Bring back</button>
+      </div>
+      {err && <span className="brain-card-line">{err}</span>}
+    </div>
+  );
+}
+
+function Proving({ loop, onChanged }: { loop: Loop; onChanged: () => void }) {
+  const [err, setErr] = useState<string | null>(null);
+  const m = /^([^/]+\/[^#]+)#(\d+)$/.exec(loop.proof_pr ?? "");
+  return (
+    <div className="brain-card email-map-card" data-testid={`proving-loop-${loop.id}`}>
+      <span className="email-map-what">{loop.title}</span>
+      <span className="brain-card-line">Finish line: {loop.finish_line}</span>
+      <span className="email-map-runs">Waiting on {m ? <a className="t-link" href={`https://github.com/${m[1]}/pull/${m[2]}`} target="_blank" rel="noreferrer">{loop.proof_pr}</a> : loop.proof_pr}</span>
       <div className="t-actions">
         <button className="done-btn" onClick={() => api.updateOpenLoop(loop.id, { section: "not_finished" }).then(onChanged).catch((e) => setErr(e?.message ?? "That did not save."))}>↑ Bring back</button>
       </div>
