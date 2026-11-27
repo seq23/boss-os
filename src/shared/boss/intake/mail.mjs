@@ -267,10 +267,10 @@ export function replyBody(route, roster, subject) {
 /** The bare address out of a `From:` header, which may be `Name <a@b.c>` or just `a@b.c`. */
 export function extractAddress(header) {
   if (!header) return null;
-  // Any second address ANYWHERE in the line (in a name, a comment, a quote) means it cannot be read as
-  // one sender, so it is refused before any parsing: `(") <attacker@x> (") <her@y>` (27 Nov recheck).
-  const everyAddress = new Set((String(header).match(/[^\s"'()<>,;:@]+@[^\s"'()<>,;:@]+\.[^\s"'()<>,;:@]+/g) ?? []).map((a) => a.toLowerCase()));
-  if (everyAddress.size > 1) return null;
+  // A real From line names one sender, so it holds exactly one "@". Any second "@" ANYWHERE (in a name,
+  // a comment, a quote, `"x"@d`, `x @ d`, `x(c)@d`) means it cannot be read as one sender: refused before
+  // any parsing (27 Nov 2026 rechecks: `(") <attacker@gmail.com> (") <her@gmail.com>` and its variants).
+  if ((String(header).match(/@/g) ?? []).length > 1) return null;
   // The display name and comments are free text the sender types: `"<seq.taylor@gmail.com>" <x@gmail.com>`
   // must read as x@gmail.com, never as her (27 Nov 2026 review). Drop quoted strings and comments first.
   let plain = String(header).replace(/"(?:[^"\\]|\\.)*"/g, " ");

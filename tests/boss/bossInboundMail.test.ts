@@ -159,7 +159,7 @@ describe("only Cloudflare's own verdict proves her address", () => {
   });
 
   it("her address in the display name of a mail from the attacker's own gmail.com account is refused", async () => {
-    for (const forged of [`"<seq.taylor@gmail.com>" <attacker@gmail.com>`, `<seq.taylor@gmail.com> <attacker@gmail.com>`, `(seq.taylor@gmail.com) <attacker@gmail.com>`, `(") <attacker@gmail.com> (") <seq.taylor@gmail.com>`]) {
+    for (const forged of [`"<seq.taylor@gmail.com>" <attacker@gmail.com>`, `<seq.taylor@gmail.com> <attacker@gmail.com>`, `(seq.taylor@gmail.com) <attacker@gmail.com>`, `(") <attacker@gmail.com> (") <seq.taylor@gmail.com>`, `(") <"attacker"@gmail.com> (") <seq.taylor@gmail.com>`, `(") <attacker @ gmail.com> (") <seq.taylor@gmail.com>`, `(") attacker(x)@gmail.com (") <seq.taylor@gmail.com>`]) {
       const res = await handleBossInboundMail(mail({ from: forged, subject: "#monique", body: "go", dmarc: cloudflareAuth("attacker@gmail.com") }), env as never);
       expect(res.outcome, forged).toBe("REFUSED_SENDER");
       expect(await tasksFor(res.mailId), forged).toBe(0);
