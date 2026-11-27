@@ -51,16 +51,21 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
 - **Worker reading** uses `readWorkerSource` in `src/worker/boss/router/freeModel.ts` from Node or the Worker.
   Monique starts with Gemini and the other workers start with Workers AI. A provider error or a spent
   day on one lane moves the read to the other lane; a per-minute limit is waited out once (at most 60 s).
-  When no lane answers, a spent day returns `allowance-exhausted` and anything else `unavailable`, and the
-  job keeps that item unread. Jobs pass their instructions and the complete source in distinct roles.
+  Without a usable answer, a spent day returns `allowance-exhausted`, rejected answers return `uncertain`,
+  and an unavailable provider returns `unavailable`. The item stays unread. Jobs pass their instructions and the complete source in distinct roles.
   Credentials (ruling of 27 Nov 2026, existing vault names only): Gemini reads `GEMINI_API_KEY` (Google
   answers it with FreeTier quota ids, so it cannot bill); Workers AI reads `CF2_ACCOUNT_ID` plus
   `CF2_WORKERS_AI_TOKEN`, the second Cloudflare account, which has no Workers Paid plan and stops itself
   at 10,000 neurons a day. Never the main account: the Worker's `AI` binding is not read, and a CF2 id
   matching the main account ID turns the Workers AI lane off. A lane with missing credentials is skipped.
-  The client calls a supplied `recordRead` only after a usable answer. Toni's billing reader supplies
-  the business-mail headers it retrieved. The CI model boundary checks imports and calls in the worker-job
-  directories and reads the named exceptions from `scripts/validate/worker-model-exceptions.json`.
+  The client calls a supplied `recordRead` only after a usable answer. Toni's billing and lock jobs
+  list mail by date and read full threads. Each job holds its window on failure and reuses successful
+  verdicts in its existing duty state. Personal mail requires a direct Gmail read-only OAuth grant
+  (`TONI_GMAIL_CLIENT_ID`, `TONI_GMAIL_CLIENT_SECRET`, `TONI_GMAIL_REFRESH_TOKEN` in the Mac vault).
+  Danielle's page-quality review reads complete sampled pages and carries unread URLs into the next audit.
+  Zora's comparison reads complete skills and house rules, with unavailable or confidential files marked unchecked.
+  The CI model boundary checks imports and calls in the worker-job directories and reads the named
+  exceptions from `scripts/validate/worker-model-exceptions.json`.
 - **Boss OS model access** (owner, 24–26 Nov 2026): ordinary deal and LP wording travels intact to
   eligible models. The router and the intake ladder cut sections marked confidential in brain text.
   The recipient still determines outward approval. The router still applies capability, an explicit
@@ -88,7 +93,7 @@ never marked done, named with its Gmail link in the morning email's notices
 and keeps its requested date; only a permanent request or a complaint becomes a permanent opt-out.
 The scheduled Deals grid run re-reads the brokerage source from the previous Central day and checks
 its interests against the stored grid. The Scorecard uses that duty's existing run row. The October
-re-read uses the extraction checkpoint to resume and appends interests without changing earlier rows.
+re-read implementation uses the extraction checkpoint and appends interests. The owner canceled the live run.
 
 ## Inherited West Peek chassis code
 - **Retired 22 Nov 2026** (her yes, personal brain): the copied fund sign-in, fund screens, fund

@@ -20,8 +20,8 @@
  *                  GitHub's "payment failed, attempt 3 of 3" sat unseen while its metered use was covered)
  *   supabase       organisation plans (needs SUPABASE_ACCESS_TOKEN)
  *   renewals       every grid and sender domain's expiry over public RDAP; inside 30 days is named
- *   charges        receipt / invoice notices in the spry.vc mailbox (service account, metadata only)
- *                  and in her personal Gmail (her Claude session's connector)
+ *   charges        receipt and invoice notices in both mailboxes, read as full Gmail threads through the
+ *                  shared free reader (service account and direct read-only OAuth respectively)
  *   senders        per outreach sender: complaints, bounces, unsubscribes over 14 days; one over
  *                  threshold is PAUSED (PUT /outreach/business/:key) and named
  *   dkim           google._domainkey for every sender domain (theindustryguides.com stuck since 13 Oct)
@@ -40,18 +40,14 @@
 import { execFileSync } from "node:child_process";
 import { GRID } from "../../src/shared/boss/grid.mjs";
 import {
-  PERSONAL_GMAIL, askClaudeJson, bossApi, fromDomain, gmailHeaders, googleToken, loadState, movedReadings,
-  readNothingStop, saveState, sendAs, stateMap, toMorning, fixJob,
+  bossApi, loadState, readNothingStop, saveState, sendAs, toMorning, fixJob,
 } from "./lib/duty-kit.mjs";
 import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
-import { readWorkerSource } from "../../src/worker/boss/router/freeModel.ts";
-import { readJsonObject } from "../../src/worker/boss/router/types.ts";
+import { readToniMail, reconcileToniReadings } from "./lib/toni-mail.mjs";
 
 const DRY = process.argv.includes("--dry");
-/** Retained for the personal Gmail connector until its source can be read directly. */
-export const MODEL = "claude-haiku-4-5-20251001";
 const DAY = 86_400_000;
 
 export const THRESHOLDS = Object.freeze({
@@ -399,48 +395,11 @@ async function readRenewals(domains, now) {
   return out;
 }
 
-/**
- * The mail search behind both charge readers: receipts from the last 2 days, and anything that may be a
- * billing problem from the last 14 (a failed card keeps being retried for days). The search only gathers
- * candidates; what each message IS (receipt, failed payment, renewal, other) is read by the model.
- */
-// GitHub's CI mail ("Run failed", 200 a fortnight) buried GitHub's own billing mail (CONFIRMED 20 Nov 2026),
-// so notifications@github.com is left out of the 14-day search; billing mail comes from noreply@github.com.
-export const CHARGE_QUERY = '(newer_than:2d subject:(receipt OR invoice OR "payment received" OR "your order" OR "you were charged" OR "payment confirmation" OR renewal)) OR (newer_than:14d -from:notifications@github.com subject:(payment OR billing OR declined OR "past due" OR overdue OR "payment failed" OR "unable to charge" OR suspended))';
-
-// Her household bills are never reported (her ruling: no personal bills in reports), so the model files
-// them as "personal" and nothing reads that kind.
-const KIND_RULE = 'kind is one of "receipt" (a business service took money or issued an invoice), "payment_failed" (a business service could not charge a card or payment, or an account is past due or suspended for non-payment), "renewal" (a business service will charge soon), "personal" (a household or personal bill or card: phone or internet carrier, utilities, personal credit cards, bank, rent, insurance, personal shopping), "other" (none of these, e.g. a job listing). Business services are the software, hosting, domains, AI, payment and marketing tools her companies use';
-
-export async function readChargeKinds(hits, read = readWorkerSource) {
-  const source = hits.map((m) => ({ id: m.id, from_domain: fromDomain(m.from), date: m.date, subject: m.subject }));
-  const kinds = ["receipt", "payment_failed", "renewal", "personal", "other"];
-  const expected = new Set(source.map((m) => m.id));
-  const readAll = (text) => {
-    const notices = readJsonObject(text)?.notices;
-    if (!Array.isArray(notices) || notices.length !== expected.size
-      || new Set(notices.map((m) => m?.id)).size !== expected.size
-      || notices.some((m) => !expected.has(m?.id) || !kinds.includes(m?.kind))) return null;
-    return new Map(notices.map((m) => [m.id, m.kind]));
-  };
-  const result = await read({
-    worker: "toni",
-    instruction: `Read the sender domain, date and subject for each email. ${KIND_RULE}. Return every input ID exactly once in notices.`,
-    source: JSON.stringify(source),
-    maxOutputTokens: 2048,
-    json: { name: "charge_notices", schema: { type: "object", required: ["notices"], properties: {
-      notices: { type: "array", items: { type: "object", required: ["id", "kind"], properties: {
-        id: { type: "string" }, kind: { type: "string", enum: kinds },
-      } } },
-    } } },
-    accept: (text) => readAll(text) !== null,
-  }, process.env);
-  const classified = result.status === "ok" ? readAll(result.text) : null;
-  if (!classified) throw new Error(result.status === "allowance-exhausted"
-    ? "NAMED STOP [FREE_ALLOWANCE_EXHAUSTED] Billing mail will be read again next run"
-    : "The free reader did not classify every billing notice");
-  return source.map((m) => ({ ...m, kind: classified.get(m.id) }));
-}
+export const BILLING_MAIL = {
+  days: 14,
+  kinds: ["receipt", "payment_failed", "renewal", "personal", "other"],
+  instruction: "Distinguish business receipts or invoices, failed or overdue business payments, upcoming business renewals, household/personal bills, and other mail. For a failed payment name the business that could not take payment (a processor may be sending for it), and quote the payment detail and retry attempt if stated. A security restriction or a CI failure is not a payment failure.",
+};
 
 /** A charge notice's reading: failed payments are gathered by vendor later; the rest are notices. Pure. */
 export function chargeReading(m, where) {
@@ -448,37 +407,14 @@ export function chargeReading(m, where) {
 }
 
 /** Readings from model-read notices of one mailbox. Pure. */
-export function noticeReadings(notices, where, sourceKey, now = Date.now()) {
-  const list = (notices ?? []).slice(0, 25);
+export function noticeReadings(notices, where, sourceKey, now = Date.now(), lastCompleteAt = now) {
+  const list = notices ?? [];
   // Receipts and renewals are news for 2 days; only a billing problem is looked for 14 days back.
-  const recent = (m) => !Number.isFinite(Date.parse(m?.date)) || now - Date.parse(m.date) <= 2 * DAY + DAY / 2;
+  const since = Math.min(now - 2.5 * DAY, lastCompleteAt);
+  const recent = (m) => { const at = m?.at ?? Date.parse(m?.date); return !Number.isFinite(at) || at >= since; };
   return list.filter((m) => (m?.kind === "receipt" || m?.kind === "renewal") && recent(m)).map((m) => chargeReading(m, where))
     .concat(billingProblemReadings(list))
     .concat([{ key: sourceKey, state: "ok", line: `${where.charAt(0).toUpperCase()}${where.slice(1)} read: ${list.filter((m) => ["receipt", "payment_failed", "renewal"].includes(m?.kind)).length} business charge or billing notice(s).` }]);
-}
-
-async function readChargesSpry() {
-  try {
-    const token = await googleToken("https://www.googleapis.com/auth/gmail.readonly", "staylor@spry.vc");
-    const hits = await gmailHeaders(token, CHARGE_QUERY, 25);
-    if (!hits.length) return noticeReadings([], "spry.vc mailbox", "charges:spry");
-    return noticeReadings(await readChargeKinds(hits), "spry.vc mailbox", "charges:spry");
-  } catch (e) {
-    return [{ key: "charges:spry", state: "stop", line: `The spry.vc mailbox could not be read for charge notices (${String(e?.message ?? e).slice(0, 120)}).` }];
-  }
-}
-
-function readChargesPersonal() {
-  if (process.env.RISK_WATCH_CONNECTOR === "0") return [{ key: "charges:personal", state: "stop", line: "Personal Gmail charge check switched off (RISK_WATCH_CONNECTOR=0)." }];
-  const a = askClaudeJson(
-    `Use the Gmail tool on my mailbox. Search: ${CHARGE_QUERY}. ` +
-    `For each message decide its kind from the sender, subject and snippet: ${KIND_RULE}. ` +
-    "Open a message's body only when its kind is payment_failed, to read what was not paid. " +
-    "Reply with ONLY a JSON array, one object per message: {\"id\":\"<message id>\",\"from_domain\":\"<sender domain>\",\"subject\":\"<subject, max 120 chars>\",\"date\":\"YYYY-MM-DD\",\"kind\":\"<kind>\",\"vendor\":\"<the company asking to be paid, e.g. from the sender name; for a payment page like Stripe, the business behind it>\",\"detail\":\"<payment_failed only: one plain sentence from the email: what was not paid, the amount if stated, and the attempt (e.g. attempt 3 of 3) if stated; else empty>\"}. An empty mailbox result is [].",
-    { model: MODEL, ...PERSONAL_GMAIL, evidence: "risk-watch-charges-personal" },
-  );
-  if (!a.ok || !Array.isArray(a.json)) return [{ key: "charges:personal", state: "stop", line: `Her personal Gmail could not be read for charge notices: ${a.ok ? "the answer was not a list" : a.why}.` }];
-  return noticeReadings(a.json, "personal Gmail", "charges:personal");
 }
 
 async function readSenders(api) {
@@ -647,14 +583,21 @@ async function main() {
 
   const domains = [...new Set([...GRID.flatMap((p) => p.domains ?? []), ...senderDomains])].sort();
   readings.push(...(await readRenewals(domains, now)));
-  readings.push(...(await readChargesSpry()));
-  readings.push(...readChargesPersonal());
+  const mail = await readToniMail(BILLING_MAIL, prev.mail, now);
+  for (const box of mail) {
+    const key = `charges:${box.id}`;
+    const rows = noticeReadings(box.notices, box.label, key, now, prev.mail?.[box.id]?.through);
+    const status = `${box.label}: checked ${box.handled} of ${box.count} listed messages`;
+    rows[rows.length - 1] = { key, state: box.why ? "stop" : "ok", line: box.why ? `${status}. ${box.why}.` : `${status} through the full-thread reader.` };
+    readings.push(...rows);
+  }
 
   for (const r of readings) console.log(`  [${r.state}] ${r.line}`);
   const stop = readNothingStop(readings, "RISK_WATCH_READ_NOTHING");
   if (stop) { console.error(stop); process.exit(3); }
 
-  const moved = movedReadings(readings, prev.states ?? {});
+  const unread = mail.some((box) => box.why) ? ["billing-problem:", "charge:"] : [];
+  const { moved, states } = reconcileToniReadings(readings, prev.states, unread);
   console.log(`OUTPUT ${readings.filter((r) => r.state !== "stop").length} readings`);
   console.log(`risk watch: ${readings.length} readings, ${readings.filter((r) => r.state === "alert").length} alerting, ${readings.filter((r) => r.state === "stop").length} unreadable, ${moved.length} moved since the last run.`);
   if (DRY) { console.log("RISK-WATCH-COMPLETE: dry"); return; }
@@ -673,8 +616,13 @@ async function main() {
     }
   }
   // Nothing moved: an empty "all clear", so the morning email can tell a quiet day from a run that never reported in.
-  if (!reported && !toMorning("risk", {})) { console.error("state not saved."); process.exit(8); }
-  saveState("risk-watch", { at: new Date(now).toISOString(), states: stateMap(readings), openrouter_usage: or.usage ?? prev.openrouter_usage ?? null });
+  if (!reported && !unread.length && !toMorning("risk", {})) { console.error("state not saved."); process.exit(8); }
+  saveState("risk-watch", { at: new Date(now).toISOString(), states, mail: Object.fromEntries(mail.map((box) => [box.id, box.checkpoint])), openrouter_usage: or.usage ?? prev.openrouter_usage ?? null });
+  if (mail.some((box) => box.why)) {
+    console.error("NAMED STOP [BILLING_MAIL_UNREAD] At least one source will be retried");
+    process.exitCode = 3;
+    return;
+  }
   console.log(`RISK-WATCH-COMPLETE: ${moved.length} moved`);
 }
 

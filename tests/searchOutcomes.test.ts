@@ -12,7 +12,7 @@ import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pick
 import { diagnoseDrop } from "../src/shared/boss/searchReadiness/drop-diagnosis.mjs";
 import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { renderStandings } from "../src/shared/boss/searchReadiness/page.mjs";
-import { qualitySample, pickSample, repeatedSlots, similarity, scorePage } from "../src/shared/boss/searchReadiness/page-quality-sample.mjs";
+import { qualitySample, pickSample, similarity } from "../src/shared/boss/searchReadiness/page-quality-sample.mjs";
 import { consolidationQueue, nextFirstSeen } from "../src/shared/boss/searchReadiness/consolidation-queue.mjs";
 import { loadChecklist, loadSites, morningLines, workQueue, fixBriefs } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
@@ -96,65 +96,37 @@ describe("the outcome alarm", () => {
 const page = (url: string, body: string, title = "What is a seller's permit and who needs one?") =>
   ({ url, status: 200, html: `<html><head><title>${title}</title><script type="application/ld+json">${JSON.stringify({ "@type": "Article", author: { name: "Dana Reyes" }, datePublished: "2026-09-01" })}</script></head><body><main><h1>${title}</h1>${body}</main></body></html>` });
 /** Five genuinely different pages: a definition, a byline and date, question headings, a sourced figure. */
-const TOPICS = [
-  ["seller's permit", "state registration that lets a shop collect sales tax on taxable goods; most states issue it free through the revenue department before the first sale", "cdtfa.ca.gov"],
-  ["notary bond", "surety bond a commissioned notary buys so that a member of the public harmed by a careless notarization can recover money from the insurer", "sos.ca.gov"],
-  ["food handler card", "short certificate showing a restaurant worker passed an approved course on safe temperatures, cross contamination and personal hygiene", "fda.gov"],
-  ["resale certificate", "signed form a wholesale buyer hands a supplier so the supplier skips sales tax on inventory bought only to sell again later", "streamlinedsalestax.org"],
-  ["home occupation license", "city permission to run a quiet business from a residence, with limits on signs, customer parking, deliveries and employees", "nlc.org"],
-];
-const GOOD = (n: number) => { const [name, def, src] = TOPICS[n - 1]!; return `<p>A ${name} is a ${def}. Rules differ by state, so check before you apply.</p>
-<p>By Dana Reyes. Updated September 1, 2026.</p><h2>Who needs a ${name}?</h2><p>Anyone whose work matches the ${name} rules where they operate.</p>
-<h2>What does a ${name} cost?</h2><ul><li>${n * 10} dollars in some places</li><li>Free in others</li></ul><p>The <a href="https://${src}/">official source</a> lists $${n * 25} fees, ${n + 2}% surcharges and ${n * 3} day waits.</p>`; };
-const FILLER = (city: string) => `<p>Welcome to our page about ${city}.</p>` +
-  Array.from({ length: 6 }, () => `<p>We are the best choice for your needs in the area and we serve every customer with care in ${city}.</p>`).join("");
-
 describe("quality sampling", () => {
   const site = siteOf("theaccidentguides.com");
-  it("good pages are noted, not red", () => {
-    const q = qualitySample({ site, host: "theaccidentguides.com", checklist, pages: [1, 2, 3, 4, 5].map((n) => page(`https://theaccidentguides.com/guides/p${n}`, GOOD(n), `What is a ${TOPICS[n - 1]![0]} and who needs one?`)) });
-    expect(q.sampled).toBe(5);
-    expect(q.red).toBe(false);
-  });
-  it("a templated sample mostly fails and is ONE red line, with its filler named", () => {
-    const pages = ["Memphis", "Nashville", "Austin", "Denver", "Tulsa"].map((c) => page(`https://theaccidentguides.com/${c.toLowerCase()}`, FILLER(c), `Accident lawyers in ${c}`));
-    const q = qualitySample({ site, host: "theaccidentguides.com", checklist, pages });
-    expect(q.red).toBe(true);
-    expect(q.pages.every((p: any) => p.failing.includes("filler"))).toBe(true);
+  it("sends the full page for judgment and carries editorial weakness into Danielle's brief", async () => {
+    const weak = page("https://theaccidentguides.com/a", "<p>Prepared solutions for the things you need.</p>", "Guide to checking a source");
+    const q = await qualitySample({ site, checklist, pages: [weak], read: async (request) => {
+      expect(request.worker).toBe("danielle");
+      const source = JSON.parse(request.source);
+      expect(source.html).toBe(weak.html);
+      const text = JSON.stringify({ checks: [...source.rules.map(({ id }: { id: string }) => ({ id, status: "pass" })),
+        { id: "editorial", status: "fail" }, { id: "filler", status: "pass" }] });
+      expect(request.accept?.(text)).toBe(true);
+      return { status: "ok", provider: "workers-ai", text, inTokens: 1, outTokens: 1 };
+    } });
+    expect(q).toMatchObject({ sampled: 1, red: true, pages: [{ failing: ["editorial"] }], pending: [] });
     const red = redLines([{ site, outcome: { status: "green" }, quality: q }]);
-    expect(red).toHaveLength(1);
-    expect(red[0]!.kind).toBe("quality");
+    expect(red[0]).toMatchObject({ kind: "quality" });
     for (const l of morningLines(checklist, [{ site, results: [], quality: q }], { redLines: red })) expect(lineProblems(l), l).toEqual([]);
     expect(weeklyBriefs([{ site, host: "theaccidentguides.com", quality: q }])[0]).toMatchObject({ kind: "quality", disposition: "weekly" });
   });
-  it("the filler tests catch repetition and near-duplicates, not ordinary prose", () => {
-    expect(repeatedSlots(FILLER("Memphis").replace(/<[^>]+>/g, " ")).length).toBeGreaterThan(0);
-    expect(repeatedSlots(GOOD(3).replace(/<[^>]+>/g, " "))).toEqual([]);
-    expect(similarity(FILLER("Memphis"), FILLER("Austin"))).toBeGreaterThan(0.5);
-    expect(similarity(GOOD(1), FILLER("Austin"))).toBeLessThan(0.1);
+  it("leaves an unanswered page pending and shows the unread result", async () => {
+    const weak = page("https://theaccidentguides.com/a", "<p>Read the evidence.</p>", "A guide");
+    const q = await qualitySample({ site, checklist, pages: [weak, { url: "https://theaccidentguides.com/b", status: 503 }],
+      read: async (request) => {
+        expect(request.accept?.('{"checks":[]}')).toBe(false);
+        return { status: "allowance-exhausted", provider: "workers-ai" };
+      } });
+    expect(q).toMatchObject({ status: "not_read", sampled: 0, pending: [weak.url, "https://theaccidentguides.com/b"], why: "free allowance exhausted" });
+    expect(redLines([{ site, quality: q }])[0]?.line).toContain("couldn't be checked");
   });
-  it("a byline keyword counts in any case, but only when a capitalised name follows", () => {
-    const c6 = (byline: string) => scorePage({ url: "https://hicksconsulting.org/atlas/x", html: `<main><h1>Atlas</h1><p>${byline}</p></main>` }).c6;
-    expect(c6("Author: Monika Hicks, LCSW")).toEqual({ ok: true });
-    expect(c6("BY José Núñez")).toEqual({ ok: true });
-    expect(c6("Author: the editorial team")!.ok).toBe(false);
-    expect(c6("by our staff")!.ok).toBe(false);
-  });
-  it("a heading that ends in the full-width question mark is a question; a statement still is not", () => {
-    const b3 = (h2s: string[]) => scorePage({ url: "https://keepmyproof.com/zh/x", html: `<main><h1>清单</h1>${h2s.map((h) => `<h2>${h}</h2>`).join("")}</main>` }).b3;
-    expect(b3(["美国各州的离婚规定", "如何保存这些文件？", "常见问题"])).toEqual({ ok: true });
-    expect(b3(["美国各州的离婚规定", "常见问题"])!.ok).toBe(false);
-  });
-  it("accented words stay whole: distinct Spanish sentences are not a repeat, a real one is named intact", () => {
-    const distinct = ["está", "esté"].flatMap((a) => ["será", "seré"].map((b) => `La capacitación ${a} lista y la licencia ${b} válida en Texas.`)).join(" ");
-    expect(repeatedSlots(distinct)).toEqual([]);
-    const real = Array.from({ length: 4 }, (_, i) => `Paso ${i + 1}. La capacitación anual del personal se registra ante el Departamento estatal.`).join(" ");
-    expect(repeatedSlots(real)[0]!.phrase).toContain("capacitación anual");
-  });
-  it("no readable page is not read, never a pass; the sample skips the home and utility pages and rotates by week", () => {
-    const q = qualitySample({ site, host: "x", checklist, pages: [{ url: "https://x/a", status: 503 }] });
-    expect(q.status).toBe("not_read");
-    expect(q.line).toMatch(/not read/);
+  it("compares copied text and rotates the sample without including utility pages", () => {
+    expect(similarity("A careful guide explains the rules in plain words.", "A careful guide explains the rules in plain words.")).toBe(1);
     const urls = ["https://x.com/", "https://x.com/privacy", "https://x.com/sitemap.xml", ...Array.from({ length: 40 }, (_, i) => `https://x.com/g/${i}`)];
     const a = pickSample(urls, { week: "2026-W45" });
     expect(a).toHaveLength(5);

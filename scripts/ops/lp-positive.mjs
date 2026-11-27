@@ -313,15 +313,15 @@ export async function messageWords(id, { quoted = false, token = null } = {}) {
   return { text: words.slice(0, 6000) || null, at: Number(msg.internalDate ?? 0) || null, thread: msg.threadId ?? null, subject: head.subject ?? "", from };
 }
 /** Complete decoded messages from the same read-only mailbox used by the LP reader. */
-export async function lpReplyThread(id, tok) {
+export async function lpReplyThread(id, tok, get = api) {
   const base = "https://gmail.googleapis.com/gmail/v1/users/me";
-  const thread = await api(`${base}/threads/${encodeURIComponent(id)}?format=full`, tok);
+  const thread = await get(`${base}/threads/${encodeURIComponent(id)}?format=full`, tok);
   if (!Array.isArray(thread?.messages)) throw new Error("Gmail did not return the LP thread");
   return Promise.all(thread.messages.map(async (message) => {
     if (!message.id || !message.payload) throw new Error("Gmail omitted a message or its payload");
     const headers = Object.fromEntries((message.payload.headers ?? []).map(({ name, value }) => [name.toLowerCase(), value ?? ""]));
     const body = await gmailPayloadText(message.payload, async (attachmentId) => {
-      const attachment = await api(`${base}/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachmentId)}`, tok);
+      const attachment = await get(`${base}/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachmentId)}`, tok);
       if (!attachment?.data) throw new Error("Gmail omitted a readable MIME part");
       return attachment.data;
     });
@@ -353,13 +353,13 @@ const bucketOf = (kind) => ["declined", "later", "opt_out", "complaint"].include
 export const lpReceipts = () => savedList().receipts ?? {};
 const savedList = () => fs.existsSync(LIST) ? JSON.parse(fs.readFileSync(LIST, "utf8")) : { people: [] };
 
-export async function listLpTargets(token, query) {
+export async function listLpTargets(token, query, get = api) {
   const threads = new Map();
   let page;
   do {
     const params = new URLSearchParams({ q: query, maxResults: "500" });
     if (page) params.set("pageToken", page);
-    const result = await api(`${GMAIL_BASE}/messages?${params}`, token);
+    const result = await get(`${GMAIL_BASE}/messages?${params}`, token);
     for (const { id, threadId } of result.messages ?? []) {
       if (!id || !threadId) throw new Error("Gmail omitted an LP message or thread identifier");
       if (!threads.has(threadId)) threads.set(threadId, new Set());

@@ -7,12 +7,12 @@
  * restriction, a KDP title review, a suspension at Google, YouTube, Pinterest, Etsy or Meta — arrives
  * as an email and sits there. This reads for those notices in the last 8 days:
  *
- *   spry.vc mailbox    the service account (gmail.readonly), headers only, never a body
- *   personal Gmail     her Claude session's Gmail connector (one short Haiku run), headers only
+ *   spry.vc mailbox    the service account (gmail.readonly), full threads
+ *   personal Gmail     direct read-only Gmail OAuth, full threads
  *
  * WHAT SHE SEES (owner, 23 Oct 2026, rule 1): no Toni email. A new lock is a Decide item in Simone's
- * morning email (only she can answer for her own account) with the notice one tap away; a lock that is
- * gone is a "Done for you" line; a mailbox it cannot read is a fix job for the team (`planLocks`).
+ * morning email (only she can answer for her own account) with the notice one tap away; an older notice
+ * leaving the check window is reported as such; a mailbox it cannot read is a fix job for the team (`planLocks`).
  * Rule 0: both mailboxes unreadable → exit 3.
  *
  * GITHUB'S OWN NOTIFICATION MAIL IS NEVER A LOCK AND NEVER HERS TO DECIDE (owner, 27 Oct 2026).
@@ -28,26 +28,22 @@
  *   npm run risk:locks -- --dry    # read and print only
  */
 import {
-  PERSONAL_GMAIL, askClaudeJson, fromDomain, gmailHeaders, googleToken, loadState, movedReadings, readNothingStop,
-  saveState, stateMap, toMorning, fixJob, bossApi,
+  fromDomain, loadState, readNothingStop, saveState, toMorning, fixJob, bossApi,
 } from "./lib/duty-kit.mjs";
 import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
 import { repairReport } from "../../src/shared/boss/repoChange/repairReport.mjs";
 import { execFileSync } from "node:child_process";
+import { readToniMail, reconcileToniReadings } from "./lib/toni-mail.mjs";
 
 /** Moved lock readings → `{ decide, lines, fixes }`. Pure; tested. */
 export function planLocks(moved) {
   const out = { decide: [], lines: [], fixes: [] };
   for (const m of moved) {
-    // A GitHub CI/PR notice never reaches her from here, alerting or cleared (planCiNotices owns it).
-    if (m.key.startsWith("lock:github.com:") && GITHUB_NOTICE_SLUG_RE.test(m.key.slice("lock:github.com:".length))) continue;
-    if (m.state === "alert" && /\sgithub\.com: "/.test(` ${m.line}`) && githubNotice({ from_domain: "github.com", subject: /"([^"]+)"/.exec(m.line)?.[1] ?? "" })) continue;
     if (m.state === "alert") {
-      const subj = /"([^"]+)"/.exec(m.line)?.[1] ?? "";
-      const domain = /\s([a-z0-9.-]+\.[a-z]{2,}):/i.exec(` ${m.line}`)?.[1] ?? "an account";
+      const { subject: subj = "", domain = "this platform" } = m;
       out.decide.push({ title: `Answer the ${domain} notice on your account?`, body: subj ? `"${subj}"` : "", buttons: [{ label: "Open the email", url: gmailSearchLink(subj) }], priority: 2 });
     } else if (m.state === "cleared" || m.state === "ok") {
-      if (m.key.startsWith("lock:")) out.lines.push(`An account notice from ${m.key.split(":")[1]} is no longer showing (resolved or older than 8 days).`);
+      if (m.key.startsWith("lock:")) out.lines.push(`An account notice from ${m.key.split(":")[2]} is outside the latest check window.`);
     } else if (m.state === "stop") {
       out.fixes.push({ title: `Toni cannot check ${m.key.replace("mailbox:", "")} mail for account locks`, prompt: `Toni's weekly outside-locks check (scripts/ops/outside-locks.mjs) could not read ${m.key}: ${m.line} Fix the read. A team chore, never her email.` });
     }
@@ -56,36 +52,20 @@ export function planLocks(moved) {
 }
 
 const DRY = process.argv.includes("--dry");
-/** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */
-export const MODEL = "claude-haiku-4-5-20251001";
+export const LOCK_MAIL = {
+  days: 8,
+  kinds: ["lock", "github_ci", "other"],
+  instruction: "Identify actual restrictions, suspensions, appeals or platform policy reviews affecting the recipient’s accounts or listings. Routine login alerts, generic marketing policy updates and billing reminders are other. GitHub repository, issue, PR, dependency or build notices are github_ci; a real GitHub account suspension is lock.",
+};
 
-/** The senders whose notices are locks, and the words that make one a lock. */
-export const LOCK_SENDERS = Object.freeze([
-  "linkedin.com", "amazon.com", "kdp.amazon.com", "google.com", "youtube.com", "pinterest.com", "etsy.com",
-  "facebookmail.com", "meta.com", "stripe.com", "cloudflare.com", "github.com",
-]);
-export const LOCK_RE = /\b(restrict(?:ed|ion)|suspend(?:ed|ion)|locked|disabled|under review|in review|policy violation|violat(?:es|ion)|blocked|terminated|limited|action required|appeal)\b/i;
-
-export const LOCK_QUERY =
-  `newer_than:8d (from:(${LOCK_SENDERS.join(" OR ")})) (subject:(restricted OR restriction OR suspended OR suspension OR locked OR disabled OR "under review" OR "policy" OR violation OR blocked OR terminated OR limited OR "action required" OR appeal))`;
-
-/**
- * GitHub's own notification mail: a "[owner/repo] …" subject (every CI, PR, issue and review mail
- * GitHub sends carries one), mail from notifications@github.com, or a run/workflow/pull-request
- * notice. `{ repo, subject }` (repo null when the subject names none), or null for anything else —
- * a real account notice from GitHub ("Your account has been suspended") stays a lock.
- */
-export const GITHUB_REPO_SUBJECT_RE = /^\s*(?:re:\s*)?\[([\w.-]+\/[\w.-]+)\]/i;
-export const GITHUB_NOTICE_RE = /\b(?:run (?:failed|cancelled|canceled|succeeded)|workflow|pull request|PR run|checks? (?:failed|passed)|dependabot|deployment (?:failed|review))\b/i;
-/** The same test on a lock key's slug (lowercased, punctuation gone): old state never resurfaces. */
-export const GITHUB_NOTICE_SLUG_RE = /^re\b|\b(?:pr run|run failed|run cancelled|run canceled|run succeeded|workflow|pull request|checks? failed|dependabot)\b/;
+/** GitHub's repository-notification envelope. Also recognizes the model's CI verdict on GitHub mail. */
 export function githubNotice(m) {
   const domain = m.from_domain ?? fromDomain(m.from);
-  if (!(domain === "github.com" || domain.endsWith(".github.com"))) return null;
+  if (domain !== "github.com" && !domain.endsWith(".github.com")) return null;
   const subject = String(m.subject ?? "");
-  const repo = GITHUB_REPO_SUBJECT_RE.exec(subject)?.[1] ?? null;
-  const fromNotifications = /notifications@github\.com/i.test(String(m.from ?? ""));
-  return repo || fromNotifications || GITHUB_NOTICE_RE.test(subject) ? { repo, subject: subject.slice(0, 140) } : null;
+  const repo = /^\s*(?:re:\s*)?\[([\w.-]+\/[\w.-]+)\]/i.exec(subject)?.[1] ?? null;
+  const fromNotifications = /(?:^|[ <])notifications@github\.com(?:>|$)/i.test(String(m.from ?? ""));
+  return repo || fromNotifications || m.kind === "github_ci" ? { repo, subject } : null;
 }
 
 /**
@@ -126,18 +106,13 @@ export function ciStateOf(repo, run = (args) => execFileSync("gh", args, { encod
   } catch { return "unknown"; }
 }
 
-/** One header row → a lock reading, or null when the subject is not a lock. Pure. */
-export function lockReading(m, mailbox) {
+/** A model-read account lock becomes the existing Decide reading. */
+export function lockReading(m, mailbox, mailboxId) {
+  if (m.kind !== "lock" || githubNotice(m)) return null;
   const domain = m.from_domain ?? fromDomain(m.from);
-  const subject = String(m.subject ?? "").slice(0, 140);
-  if (githubNotice(m)) return null;
-  if (!LOCK_RE.test(subject)) return null;
-  if (!LOCK_SENDERS.some((d) => domain === d || domain.endsWith(`.${d}`))) return null;
-  return { key: `lock:${domain}:${subject.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 60)}`, state: "alert", line: `${m.date ?? ""} ${domain}: "${subject}" (${mailbox}).`.trim() };
+  const subject = m.subject ?? "";
+  return { key: `lock:${mailboxId}:${domain}:${m.id}`, state: "alert", domain, subject, line: `${m.date ?? ""} ${domain}: "${subject}" (${mailbox}).`.trim() };
 }
-
-/** GitHub CI/PR notices seen this run (never locks); routed by planCiNotices in main. */
-const CI_NOTICES = [];
 
 /** A red_check repair on Danielle's desk for another repo. Returns why it was not opened, or null. */
 async function ciRepairJob(api, { title, prompt }) {
@@ -145,39 +120,30 @@ async function ciRepairJob(api, { title, prompt }) {
   catch (e) { return String(e?.message ?? e); }
 }
 
-async function readSpry() {
-  try {
-    const token = await googleToken("https://www.googleapis.com/auth/gmail.readonly", "staylor@spry.vc");
-    const hits = await gmailHeaders(token, LOCK_QUERY, 30);
-    CI_NOTICES.push(...hits.map(githubNotice).filter(Boolean));
-    return [{ key: "mailbox:spry", state: "ok", line: `spry.vc read: ${hits.length} candidate notice(s).` }, ...hits.map((m) => lockReading(m, "spry.vc")).filter(Boolean)];
-  } catch (e) {
-    return [{ key: "mailbox:spry", state: "stop", line: `The spry.vc mailbox could not be read (${String(e?.message ?? e).slice(0, 120)}).` }];
-  }
-}
-
-function readPersonal() {
-  const a = askClaudeJson(
-    `Use the Gmail tool on my mailbox. Search exactly: ${LOCK_QUERY}. Do not open bodies. ` +
-    "Reply with ONLY a JSON array, one object per message: {\"from_domain\":\"<sender domain>\",\"subject\":\"<subject, max 140 chars>\",\"date\":\"YYYY-MM-DD\"}. No results is [].",
-    { model: MODEL, ...PERSONAL_GMAIL, evidence: "outside-locks-personal" },
-  );
-  if (!a.ok || !Array.isArray(a.json)) return [{ key: "mailbox:personal", state: "stop", line: `Her personal Gmail could not be read: ${a.ok ? "the answer was not a list" : a.why}.` }];
-  CI_NOTICES.push(...a.json.map(githubNotice).filter(Boolean));
-  return [{ key: "mailbox:personal", state: "ok", line: `Personal Gmail read: ${a.json.length} candidate notice(s).` }, ...a.json.map((m) => lockReading(m, "personal Gmail")).filter(Boolean)];
-}
-
 async function main() {
   const prev = loadState("outside-locks");
-  const readings = [...(await readSpry()), ...readPersonal()];
+  const mail = await readToniMail(LOCK_MAIL, prev.mail, Date.now());
+  const readings = mail.flatMap((box) => [
+    { key: `mailbox:${box.id}`, state: box.why ? "stop" : "ok",
+      line: `${box.label}: checked ${box.handled} of ${box.count} listed messages${box.why ? `. ${box.why}` : ""}.` },
+    ...box.notices.map((notice) => lockReading(notice, box.label, box.id)).filter(Boolean),
+  ]);
+  const ciNotices = mail.flatMap((box) => box.notices.map(githubNotice).filter(Boolean));
   for (const r of readings) console.log(`  [${r.state}] ${r.line}`);
+  const checkpoints = Object.fromEntries(mail.map((box) => [box.id, box.checkpoint]));
   const stop = readNothingStop(readings, "LOCKS_READ_NOTHING");
-  if (stop) { console.error(stop); process.exit(3); }
-  const moved = movedReadings(readings, prev.states ?? {});
+  if (stop) {
+    if (!DRY) saveState("outside-locks", { ...prev, mail: checkpoints });
+    console.error(stop);
+    process.exitCode = 3;
+    return;
+  }
+  const previous = Object.fromEntries(Object.entries(prev.states ?? {}).filter(([key]) => !key.startsWith("lock:") || key.startsWith("lock:spry:") || key.startsWith("lock:personal:")));
+  const { moved, states } = reconcileToniReadings(readings, previous, mail.filter((box) => box.why).map((box) => `lock:${box.id}:`));
   console.log(`outside locks: ${readings.filter((r) => r.key.startsWith("lock:")).length} lock notice(s), ${moved.length} moved.`);
-  const live = Object.fromEntries([...new Set(CI_NOTICES.map((n) => n.repo).filter(Boolean))].map((r) => [r, ciStateOf(r)]));
-  const ci = planCiNotices(CI_NOTICES, live, { handed: prev.ci_handed ?? {} });
-  console.log(`github notices: ${CI_NOTICES.length} (${Object.entries(live).map(([r, s]) => `${r} ${s}`).join(", ") || "none"}), ${ci.fixes.length} repair(s).`);
+  const live = Object.fromEntries([...new Set(ciNotices.map((n) => n.repo).filter(Boolean))].map((r) => [r, ciStateOf(r)]));
+  const ci = planCiNotices(ciNotices, live, { handed: prev.ci_handed ?? {} });
+  console.log(`github notices: ${ciNotices.length} (${Object.entries(live).map(([r, s]) => `${r} ${s}`).join(", ") || "none"}), ${ci.fixes.length} repair(s).`);
   if (DRY) { console.log("OUTSIDE-LOCKS-COMPLETE: dry"); return; }
   const ciHanded = { ...(prev.ci_handed ?? {}) };
   if (ci.fixes.length) {
@@ -202,7 +168,12 @@ async function main() {
       console.error("state not saved."); process.exit(8);
     }
   }
-  saveState("outside-locks", { at: new Date().toISOString(), states: stateMap(readings), ci_handed: ciHanded });
+  saveState("outside-locks", { at: new Date().toISOString(), states, mail: checkpoints, ci_handed: ciHanded });
+  if (mail.some((box) => box.why)) {
+    console.error("NAMED STOP [LOCKS_MAIL_UNREAD] At least one source will be retried");
+    process.exitCode = 3;
+    return;
+  }
   console.log(`OUTSIDE-LOCKS-COMPLETE: ${moved.length} moved`);
 }
 

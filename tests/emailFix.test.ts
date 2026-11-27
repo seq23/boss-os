@@ -69,12 +69,12 @@ describe("Toni's routine risk folds into the morning email; only money at risk i
   });
   it("account locks are hers to answer (Decide, one tap to the notice); a gone lock is a line; an unreadable mailbox is a fix job", () => {
     const l = planLocks([
-      { key: "lock:linkedin.com:x", state: "alert", line: 'October 21 linkedin.com: "Your account is restricted" (personal Gmail).' },
-      { key: "lock:etsy.com:y", state: "cleared", was: "alert", line: "gone" },
+      { key: "lock:spry:linkedin.com:x", state: "alert", domain: "linkedin.com", subject: "Your account is restricted", line: 'October 21 linkedin.com: "Your account is restricted" (personal Gmail).' },
+      { key: "lock:spry:etsy.com:y", state: "cleared", was: "alert", line: "gone" },
       { key: "mailbox:spry", state: "stop", line: "The spry.vc mailbox could not be read (403)." },
     ]);
     expect(l.decide.map((d) => d.title)).toEqual(["Answer the linkedin.com notice on your account?"]);
-    expect(l.lines).toEqual(["An account notice from etsy.com is no longer showing (resolved or older than 8 days)."]);
+    expect(l.lines).toEqual(["An account notice from etsy.com is outside the latest check window."]);
     expect(l.fixes.length).toBe(1);
   });
 });

@@ -60,8 +60,10 @@ route), `dispatchRunForTask` (any other seat's run row) and `/backends/claim` (a
   (`brains_cohesion`, `brains_line`: "Brains: all fresh" or what is stale and how many gaps).
 - The Mac's weekly cohesion check (`npm run brains:cohesion`, launchd `com.seq.boss-cohesion`, Sunday
   18:45 Central, counted for the week that starts next morning) checks memory strays (moved to `~/.claude/memory-archive/<date>/`), the memory index,
-  repo brain pointers, skills against `~/.claude/CLAUDE.md`, and the local copy's age (restarting
-  `com.seq.boss-brains-pull`), then posts to `POST /api/boss/brains/cohesion/mac` (`brains_cohesion_mac`,
+  repo brain pointers, and the local copy's age. Zora's free reader compares each full skill with
+  `~/.claude/CLAUDE.md` and reports unread skills as unchecked. It excludes explicitly confidential
+  files from inference. The age check restarts
+  `com.seq.boss-brains-pull` when stale. The job posts to `POST /api/boss/brains/cohesion/mac` (`brains_cohesion_mac`,
   week stamped on arrival). `GET /cohesion` returns ONE `line` for the Monday email ("Cohesion: all
   clear", or what was fixed and what was not); with no Mac record this week it says the check did not
   run, never "all clear". Never red.

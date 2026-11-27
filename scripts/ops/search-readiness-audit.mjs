@@ -20,7 +20,7 @@
  *
  * WHAT IT SPENDS: nothing. Plain GETs to her own public sites, Search Console's free API as the
  * gsc-bot service account (read-only scope), PageSpeed Insights' free keyless endpoint, `gh` reads
- * (GET only) and public `git` clones into its own cache. No paid API, no OpenSEO, no model call.
+ * (GET only), public `git` clones and the shared free reader for page quality.
  *
  * WHAT IT WRITES (all under ~/.boss-os/search-readiness/):
  *   results-<day>.json, latest.json   per site: every item's status, the failing ids, missing URLs
@@ -46,12 +46,13 @@ import { passingItems, auditHost, socialCardPage, currentBriefs, failureSplit, s
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
 import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pickLastWeekDay, approvalCard } from "../../src/shared/boss/searchReadiness/search-outcomes.mjs";
 import { diagnoseDrop, windowLosses, DIAG } from "../../src/shared/boss/searchReadiness/drop-diagnosis.mjs";
-import { pickSample, qualitySample } from "../../src/shared/boss/searchReadiness/page-quality-sample.mjs";
+import { pickSample, qualitySample, QUALITY } from "../../src/shared/boss/searchReadiness/page-quality-sample.mjs";
 import { consolidationQueue, nextFirstSeen, CONSOLIDATION } from "../../src/shared/boss/searchReadiness/consolidation-queue.mjs";
 import { readRepoCategories } from "./lib/repo-categories.mjs";
 import { isOwnSite, leadVerdict } from "../../src/shared/boss/searchReadiness/site-leads.mjs";
 import { readLeads } from "./lib/site-leads-read.mjs";
 import { macContext } from "./lib/scorecard-readers.mjs";
+import { readWorkerSource } from "../../src/worker/boss/router/freeModel.ts";
 
 const OUT = process.env.SEARCH_READINESS_DIR ?? join(homedir(), ".boss-os", "search-readiness");
 const REPOS = join(OUT, "repos");
@@ -398,7 +399,7 @@ async function readRepo(name) {
 
 // ─── one site ─────────────────────────────────────────────────────────────────
 
-async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}, lastWeekSite = null) {
+async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}, lastWeekSite = null, previousQuality = null) {
   const t0 = Date.now();
   const start = await get(`https://${site.domain}/`);
   // The same site only (www ↔ apex): a home page that redirects to ANOTHER site keeps this site's own
@@ -487,9 +488,21 @@ async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}
   const outcome = outcomeVerdict({ read: read.daily, sitemapUrls: sitemap.ok ? sitemap.urls.size : null, ...(lwo?.current && lwo?.previous ? { lastWeek: { current: lwo.current, previous: lwo.previous, source: "stored", day: lastWeekSite.day } } : {}) });
   // Leads (3 Nov 2026): her own sites only; a client site is never read (site-leads.mjs).
   const leads = isOwnSite(site) ? leadVerdict({ site, read: await readLeads(site, macContext()), outcome }) : null;
-  const qUrls = pickSample(sitemap.urls, { exclude: protectedPaths });
-  const qFetched = await pool(qUrls, 5, (u) => get(u));
-  const quality = qualitySample({ site, host, checklist, pages: qFetched.map((r, i) => ({ url: qUrls[i], status: r.status, error: r.error, html: r.status === 200 ? r.text : null })) });
+  const exactHosts = new Set([host, otherHost]);
+  const allowed = (url) => {
+    const u = URL.parse(url);
+    return u?.protocol === "https:" && !u.port && !u.username && !u.password && exactHosts.has(u.hostname)
+      && !protectedPaths.includes(u.pathname.replace(/\.html$/, ""));
+  };
+  const pending = (previousQuality?.pending ?? []).filter(allowed);
+  const qUrls = [...new Set([...pending, ...pickSample(sitemap.urls, { exclude: protectedPaths })])].filter(allowed);
+  // Retry existing unread pages first, and avoid increasing the batch without bound during an outage.
+  qUrls.length = Math.min(qUrls.length, Math.max(pending.length, QUALITY.SAMPLE));
+  const qFetched = await pool(qUrls, 5, (url) => get(url, { redirect: "manual" }));
+  const quality = await qualitySample({ site, checklist,
+    pages: qFetched.map((r, i) => ({ url: qUrls[i], status: r.status, html: r.text })),
+    read: (input) => readWorkerSource(input, process.env),
+  });
   const consolidation = sitemap.ok
     ? consolidationQueue({ sitemapUrls: [...sitemap.urls], lastmods: sitemap.urlLastmod, firstSeen, gsc: read.pages, protectedPaths })
     : { status: "not_read", candidates: 0, hubs: [], why: sitemap.why ?? "no sitemap" };
@@ -573,12 +586,16 @@ async function main() {
   const firstSeenPath = join(OUT, "first-seen.json");
   const firstSeen = existsSync(firstSeenPath) ? JSON.parse(readFileSync(firstSeenPath, "utf8")) : {};
   const siteResults = [];
+  const prevPath = join(OUT, "latest.json");
+  const previous = existsSync(prevPath) ? JSON.parse(readFileSync(prevPath, "utf8")) : null;
+  const previousBySite = new Map((previous?.sites ?? []).map((entry) => [entry.site?.domain, entry.quality]));
   const lastWeek = lastWeekRows(new Date().toISOString().slice(0, 10));
   for (const site of sites) {
     try {
-      const r = await auditSite(site, checklist, g, gscSites, portfolio, firstSeen[site.domain] ?? {}, lastWeek.get(site.domain) ?? null);
+      const r = await auditSite(site, checklist, g, gscSites, portfolio, firstSeen[site.domain] ?? {}, lastWeek.get(site.domain) ?? null, previousBySite.get(site.domain));
       siteResults.push(r);
       say(summaryLines([r])[0]);
+      if (r.quality?.status === "not_read") say(`  ${r.quality.line}`);
       if (r.lanes) say(`  ${r.lanes.line}`);
       if (r.leads) say(`  ${r.leads.line}${r.leads.red ? " — RED: people come, nobody acts" : ""}`);
     } catch (e) {
@@ -595,8 +612,6 @@ async function main() {
   if (!only) writeJson(firstSeenPath, firstSeen);
   const red = redLines(siteResults);
   const gold = slipLines(siteResults);
-  const prevPath = join(OUT, "latest.json");
-  const previous = existsSync(prevPath) ? JSON.parse(readFileSync(prevPath, "utf8")) : null;
   // Why each failure is on the list (owner, 6 Nov 2026): new site, slipped back, new item, still open,
   // counted from this run against the earlier dated runs.
   const history = earlierRuns(day);

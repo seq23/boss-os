@@ -5049,7 +5049,7 @@
     {
       "id": "sites-audit",
       "name": "Sites audit",
-      "what": "Runs the Search Readiness checklist on every site; feeds Tuesday's fix.",
+      "what": "Runs the Search Readiness checklist and reviews a page sample; feeds Tuesday's fix.",
       "business": "spry",
       "brand": "Industry Guides",
       "system": "mac",

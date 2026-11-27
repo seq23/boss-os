@@ -47,10 +47,6 @@
     "reason": "Noelle: boss-os #574 and #581.",
     "edges": ["command $AI_RUN"]
   },
-  "scripts/ops/outside-locks.mjs": {
-    "reason": "Toni's existing personal Gmail tool read, pending the Step 7 source-reading work.",
-    "edges": ["call askClaudeJson"]
-  },
   "scripts/ops/pnp-corporate-outreach.mjs": {
     "reason": "Camille's discovery requires live public web search. The available free inference adapters do not provide that capability.",
     "edges": ["import ../sync-agent/runner.mjs", "import ../lib/codex-seat.mjs"]
@@ -59,13 +55,13 @@
     "reason": "Danielle's repository editing and landing tool loop, retained under Section D.",
     "edges": ["import ../lib/codex-seat.mjs", "command claude", "command codex", "command codex"]
   },
-  "scripts/ops/risk-watch.mjs": {
-    "reason": "Toni's remaining personal Gmail tool read, pending the Step 7 source-reading work.",
-    "edges": ["call askClaudeJson"]
-  },
   "scripts/ops/ship-review.mjs": {
     "reason": "Separate delivery review tool for images and audio. The shared text reader cannot accept these inputs.",
     "edges": ["endpoint https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "command ai-run"]
+  },
+  "scripts/ops/sr-fix-permissions-probe.mjs": {
+    "reason": "Danielle: boss-os #601 probes the retained Section D code-editing seat permissions.",
+    "edges": ["command claude", "command claude"]
   },
   "scripts/ops/simone-commands.mjs": {
     "reason": "Simone: boss-os #577 and #582.",

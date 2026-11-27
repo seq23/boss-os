@@ -364,7 +364,9 @@ all, because an empty register renders as "nothing is stuck", which is indisting
 
 ---
 
-## What it costs
+## Historical seat-cost estimate
+
+The table records the old seat setup. For current worker reading, see [Operating facts](OPERATING_FACTS.md#routing-and-api).
 
 **Claude Max is a flat subscription, so these are equivalent-usage figures, not a separate bill.**
 That makes the scarcity worse rather than better: the employees and you draw on the same plan.
@@ -725,7 +727,7 @@ npm run kdp:check                 # run Simone's KDP watch now, instead of waiti
 npm run mailbox:sweep             # run Monique's mailbox sweep now, instead of waiting for Sunday
 npm run capital:scan -- --backfill    # read the whole spry.vc history into candidate messages
 npm run capital:scan                  # resume the open window or start from the last completed scan
-npm run capital:extract               # candidates into the interest ledger (Haiku, on this Mac)
+npm run capital:extract               # candidates into the interest ledger (shared free reader on this Mac)
 npm run capital:review                # 25 rows with the sentence behind each — the acceptance test
 npm run capital:review -- --wrong <id>   # that row was wrong: struck everywhere, and counted
 npm run capital:match                 # who fits whom right now, at most five, each with its reason
@@ -791,12 +793,10 @@ Not gaps. Decisions, with reasons.
   well every week — a false alarm, which is worse than the gap, because a screen that cries wolf is
   one you stop reading. They stay launchd jobs until each has something to report.
 
-- ~~**Reading your mail's contents.**~~ **Decided and built, 8 September 2026** — narrowly. The
-  scheduled *extraction* still takes metadata only and always will; `validate:gmail` fails the build
-  if it changes. What was added is a third local job that reads contents inside `claude -p` on this
-  machine, exactly as Simone's KDP watch does, so no script in this repository gained the ability to
-  read a body. The decision that made it safe was choosing that route over the obvious one: a
-  `format=full` extractor here would have meant widening the guard for everyone.
+- **Mailbox data.** The contacts extraction still requests only its approved metadata headers.
+  `validate:gmail` checks that reader and the named content readers separately. Toni's billing and
+  account-lock checks need complete thread text, so they use the named read-only transport and shared
+  free model reader described in [Operating facts](OPERATING_FACTS.md#routing-and-api).
 - **Client repos.** Out of Boss OS entirely, permanently.
 - **Anything that commits, merges, pushes or deploys.** Every agent run ends as a proposal.
 

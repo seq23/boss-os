@@ -405,8 +405,7 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
    moves memory strays (any `*.md` but `MEMORY.md` under `~/.claude/projects/*/memory/`) into
    `~/.claude/memory-archive/<date>/`, never deletes; flags a home `MEMORY.md` grown past an index,
    active repos under `~/GitHub` without a `## Company brain` section (client repos never named,
-   `isClientRepo`), skills carrying a phrase that contradicts `~/.claude/CLAUDE.md`
-   (`BAD_SKILL_PHRASES`); restarts a `~/Brains` copy older than 2 hours. It posts to
+   `isClientRepo`), skills whose full text the free reader finds contradicts `~/.claude/CLAUDE.md`; restarts a `~/Brains` copy older than 2 hours. It posts to
    `POST /api/boss/brains/cohesion/mac`; `GET /cohesion` folds it with the stale brains into ONE line
    (`cohesionCheckLine`): "Cohesion: all clear", or what it fixed and what it could not. **Rule 0:** no
    Mac record this week reads "the Mac's weekly check did not run this week", never "all clear".
