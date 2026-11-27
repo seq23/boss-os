@@ -148,7 +148,7 @@ real roles someone can have when they work for a Boss."*
 
 | | Role | |
 |---|---|---|
-| **Simone** | Chief of Staff | absorbed Task Intake |
+| **Simone** | Chief of Staff | Runs your day and is in charge of everything Boss OS runs |
 | **Camille** | Director of Research | new — the morning report |
 | **Danielle** | Technical Program Manager | |
 | **Zora** | Archivist | |

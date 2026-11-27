@@ -109,6 +109,11 @@ Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, a
    replies and deal drafts never say "buyer"; a prospect email never names Anthropic (it alludes:
    `NEVER_NAMED`, `src/shared/boss/lp/plan.mjs`). Pinned by `tests/outboundWords.test.ts`.
 
+## Simone’s role
+
+Simone is Chief of Staff. She runs your day and is in charge of everything Boss OS runs.
+Her standing role is in [her persona](scripts/ops/simone/persona.md).
+
 ## Emails to her
 
 Owner, 23 Oct 2026 (inbox review: nine Boss OS emails in two days, none useful). Enforced in code and

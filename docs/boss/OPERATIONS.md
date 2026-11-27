@@ -31,7 +31,7 @@ the work; the job is the only thing that can do it.
 | **Danielle** | Technical Program Manager | Execution | The shipping heartbeat |
 | **Imani** | Director of Practice | Body + Spirit | The week's practice, rituals, technique research |
 | **Kendra** | Systems Manager | — | Tool scouting |
-| **Simone** | Chief of Staff | Execution | Getting your books published, and chasing Amazon until they are |
+| **Simone** | Chief of Staff | Execution | Runs your day and is in charge of everything Boss OS runs |
 | **Toni** | Chief Risk Officer | — | The credentials this whole system runs on, and the West Peek reply path |
 | Zora | Archivist | — | No standing duty |
 
@@ -962,7 +962,11 @@ vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dr
 
 ## Simone, the Chief of Staff
 
-Her persona is in `scripts/ops/simone/persona.md`. The existing Simone Mac poll runs
+Simone runs your day and is in charge of everything Boss OS runs. [Her persona](../../scripts/ops/simone/persona.md)
+sets her mandate. `scripts/ops/simone-permissions.json` sets the Mac runner’s tool and sandbox
+permissions. The sections below describe the runtime and the tools it currently provides.
+
+The existing Simone Mac poll runs
 `scripts/ops/simone.mjs`, which claims one task and opens one session for it. The task includes the
 owner’s words and separate context from the original mail. A fresh run reads `owner-notes.md`,
 `HANDOFF.md`, the latest daily note, and task sheets under `~/Work/simone`.

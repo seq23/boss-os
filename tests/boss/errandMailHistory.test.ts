@@ -34,6 +34,16 @@ describe("booking platforms only join an identifiable errand", () => {
     expect((await openErrandFor(env as never, `booking@${domain}`, Date.now(), { text: "Dear Alex, please finish this booking." }))?.id).toBe("cmd_mail1");
     expect(await openErrandFor(env as never, `booking@${domain}`, Date.now(), { text: "A different venue needs a card" })).toBeNull();
   });
+  it.each(["Assistant to", "Chief of Staff to"])("can identify a booking from the archived %s signature", async (title) => {
+    await seed("cmd_signed", {
+      spec: { owner_name: null },
+      result: { text: `Thanks,\nSimone\n${title} Alex Example` },
+    });
+    const found = await openErrandFor(env as never, "booking@resy.com", Date.now(), {
+      text: "Dear Alex Example, please confirm your booking.",
+    });
+    expect(found?.id).toBe("cmd_signed");
+  });
   it("refuses lookalike domains, arbitrary senders, expired threads and ambiguous owner matches", async () => {
     await seed();
     expect(await openErrandFor(env as never, "booking@sevenrooms.com.evil.test", Date.now(), { text: CARD })).toBeNull();

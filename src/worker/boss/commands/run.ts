@@ -643,7 +643,8 @@ export async function openErrandFor(env: Env, sender: string, now = Date.now(), 
       const result = j(r.result);
       const venue = String(result.request ?? spec.ask ?? "").match(/\bat\s+(.+?)\s+on\b/i)?.[1];
       const domainName = to.split("@")[1]?.split(".")[0];
-      const ownerName = String(result.text ?? "").match(/assistant to\s+([^\r\n]+)/i)?.[1];
+      // Read both titles from archived outgoing letters.
+      const ownerName = String(result.text ?? "").match(/^(?:Chief of Staff to|Assistant to) ([^\r\n]+)$/im)?.[1];
       const venueNames = [venue, domainName, spec.venue];
       const ownerNames = [spec.owner_name, spec.owner_email, ownerName, r.owner_email, String(spec.owner_name ?? ownerName ?? "").trim().split(/\s+/)[0]];
       const content = `${message.subject ?? ""}\n${message.text ?? ""}`.toLowerCase();

@@ -48,6 +48,34 @@ describe("the brains API", () => {
     expect(list.find((b: any) => b.slug === "team").missing_count).toBe(0);
   });
 
+  it("updates Simone’s About charter and only her description in a populated team brain", async () => {
+    const charter = "Chief of Staff: runs your day and is in charge of everything Boss OS runs";
+    const team = [
+      "# Team", "",
+      "| Name | Title | Does | Serves | How to reach |",
+      "|---|---|---|---|---|",
+      "| **Simone** | Chief of Staff | Routes incoming requests. | All | Tell Simone |",
+      "| **Noelle** | Growth Director | Owns growth. | Growth businesses | #noelle |",
+      "", "The rest of the team’s notes.", "",
+    ].join("\n");
+    const expected = team.replace("Routes incoming requests.", "Runs your day and is in charge of everything Boss OS runs");
+    const migration = env.TEST_MIGRATIONS.find(({ name }) => name === "0384_boss_simone_mandate.sql");
+    expect(migration).toBeDefined();
+    await env.DB.prepare("UPDATE brains SET body_md = ? WHERE slug = 'team'").bind(team).run();
+    await env.DB.prepare("UPDATE employees SET charter = 'Routes incoming requests.' WHERE id = 'emp_chief'").run();
+
+    for (let pass = 0; pass < 2; pass++) {
+      await env.DB.batch(migration!.queries.map((query) => env.DB.prepare(query)));
+    }
+
+    const about = await apiJson<any>("/api/duties/employee/emp_chief");
+    expect(about.status).toBe(200);
+    expect(about.body.data.employee).toMatchObject({ role: "Chief of Staff", charter });
+    const roster = await apiJson<any>("/api/brains/team");
+    expect(roster.body.data.body_md).toBe(expected);
+    expect(await all("SELECT body_md FROM brain_revisions WHERE slug = 'team'")).toEqual([{ body_md: expected }]);
+  });
+
   it("marks a brain untouched for 90+ days stale", async () => {
     await env.DB.prepare(`UPDATE brains SET updated_at = ? WHERE slug = 'spry'`).bind(Date.now() - 94 * 86_400_000).run();
     const list = (await apiJson<any>("/api/brains")).body.data.brains;

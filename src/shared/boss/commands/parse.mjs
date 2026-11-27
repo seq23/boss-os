@@ -308,6 +308,15 @@ export function errandIn({ sender = "", subject = "", text = "" } = {}) {
   return { to: addressesIn(words)[0], ask: words.slice(0, 2000) };
 }
 
+const ERRAND_TITLE = "Chief of Staff to Sequoia Taylor";
+const SIGN = ["Thank you,", "Simone", ERRAND_TITLE];
+const LEGACY_ERRAND_SIGNATURE = /(^|\n)(Simone\r?\n)Assistant to Sequoia Taylor\s*$/;
+
+/** Update the signature on a follow-up queued before the title changed. */
+export function refreshErrandSignature(text) {
+  return String(text ?? "").replace(LEGACY_ERRAND_SIGNATURE, `$1$2${ERRAND_TITLE}`);
+}
+
 /** The request Simone sends, word for word. `request` is one phrase ("a table for two on Thursday, October 29, any time after 8:00 pm"). */
 export function errandText(request, { freeOnly = false } = {}) {
   const terms = freeOnly
@@ -318,9 +327,7 @@ export function errandText(request, { freeOnly = false } = {}) {
     "",
     `I'm writing on behalf of Sequoia Taylor to request ${String(request ?? "").trim().replace(/[.\s]+$/, "")}. ${terms}`,
     "",
-    "Thank you,",
-    "Simone",
-    "Assistant to Sequoia Taylor",
+    ...SIGN,
   ].join("\n");
 }
 
@@ -632,7 +639,6 @@ export function errandReplyNotice({ to, asked, read, kind, confirmed, booking, d
   };
 }
 
-const SIGN = ["Thank you,", "Simone", "Assistant to Sequoia Taylor"];
 /** What Simone notes back about their rules: "Noted on the dress code and the 24-hour cancellation policy." */
 function notedLine(offer) {
   const bits = [];
@@ -670,6 +676,6 @@ export function followUpProblems(text) {
   if (CARD_WORDS_RE.test(t) || CARD_DIGITS_RE.test(t.replace(PHONE_RE, ""))) p.push("it carries card details");
   if (/\b(?:AI|artificial intelligence|bot|automated|language model|Claude)\b/.test(t)) p.push("it mentions AI");
   if (/https?:\/\//.test(t)) p.push("it carries a link");
-  if (!/Assistant to Sequoia Taylor\s*$/.test(t.trim())) p.push("it is not signed by Simone");
+  if (!t.replaceAll("\r\n", "\n").trimEnd().endsWith(`\nSimone\n${ERRAND_TITLE}`)) p.push("it is not signed by Simone");
   return p;
 }

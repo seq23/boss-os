@@ -51,5 +51,8 @@ test("Simone replies in both message boxes at 390 px", async ({ page }, info) =>
   await page.getByTestId("tell-sheet").getByTestId("sheet-close").click();
   await tab(page, "Team");
   await page.getByTestId("team-card").filter({ hasText: "Simone" }).click();
+  await expect(page.getByTestId("employee-page").locator(".charter")).toHaveText(
+    "Chief of Staff: runs your day and is in charge of everything Boss OS runs",
+  );
   await sendAndRead(page.getByTestId("employee-message-simone"), "/api/boss/simone/message", "simone-page-390.png");
 });

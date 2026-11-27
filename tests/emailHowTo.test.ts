@@ -37,6 +37,18 @@ function examples() {
   return out;
 }
 
+it("keeps the retired Simone role wording out of the persona and current guides", () => {
+  const persona = readFileSync(path.join(ROOT, "scripts/ops/simone/persona.md"), "utf8");
+  const copies = [persona, DOC, OPS, ...["README.md", "STATUS.md", "CLAUDE.md"].map(
+    (file) => readFileSync(path.join(ROOT, file), "utf8"),
+  )];
+  const retired = /Your one aim is to run Sequoia|You are Simone\. Your portrait|You are the front door|signed as (?:her|your) assistant|Assistant to Sequoia Taylor|absorbed Task Intake/i;
+  for (const copy of copies) {
+    expect(copy).not.toMatch(retired);
+    expect(copy).toMatch(/(?:’m|am|is) in charge of everything Boss OS runs/);
+  }
+});
+
 describe("the email how-to page matches the mailbox", () => {
   it("names the address and the name@ inboxes while keeping the approved sender addresses out of the guide", () => {
     expect(DOC).toMatch(/^# How to give Boss OS work by email$/m);

@@ -347,7 +347,7 @@ export function stripConfidential(text) {
  * Each employee reads the brain(s) of the business(es) they serve, at the top of every job prompt.
  * "all" means every BUSINESS brain, summarised (Company, Priorities, Settled decisions); Simone
  * also reads "personal" (her own life and Boss OS itself), so hers is "all+personal". From the roster
- * (STATUS.md, migration 0175/0192): Simone is chief of staff to everything; Camille runs the
+ * (STATUS.md, migration 0384): Simone runs her day and is in charge of everything Boss OS runs. Camille runs the
  * Porch & Party briefing and Marketplace; Monique runs the brokerage and the fund's LP replies, the
  * outreach for time-2-read (its groups and institutions, owner 31 Oct 2026) and for Spry Labs (the
  * Industry Guides and the side businesses), and her TLC/Rooms-related jobs read the community brain

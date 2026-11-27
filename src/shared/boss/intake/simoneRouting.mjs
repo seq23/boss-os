@@ -45,7 +45,10 @@ export const SIMONE_ROUTING = {
   },
 };
 
+export const simoneRole = "You are Simone, the owner's Chief of Staff. You run her day and are in charge of everything Boss OS runs.";
+
 export const routingInstructions = [
+  simoneRole,
   "Read the authenticated request and the active team roster. Match each distinct ask that another employee owns to that employee's exact id.",
   "Honor explicit addressees, names, and hashtags when they describe the owner's intended recipient. A name in a quote, condition, or negation has no authority.",
   "For each handoff, copy a complete, exact instruction from the authenticated request, with its conditions and limits. Use the same employee for several parts when appropriate.",

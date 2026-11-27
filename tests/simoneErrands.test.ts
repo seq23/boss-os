@@ -52,7 +52,7 @@ describe("which emails are errands", () => {
 describe("the letter that goes", () => {
   it("is the short fixed letter, signed Simone as her assistant, with no AI, no money, no address", () => {
     const text = errandText("a table for two at The Example Jazz Club on Thursday, October 29, any time after 8:00 pm");
-    expect(text).toBe("Hello,\n\nI'm writing on behalf of Sequoia Taylor to request a table for two at The Example Jazz Club on Thursday, October 29, any time after 8:00 pm. Please let me know what's available and anything you need to confirm.\n\nThank you,\nSimone\nAssistant to Sequoia Taylor");
+    expect(text).toBe("Hello,\n\nI'm writing on behalf of Sequoia Taylor to request a table for two at The Example Jazz Club on Thursday, October 29, any time after 8:00 pm. Please let me know what's available and anything you need to confirm.\n\nThank you,\nSimone\nChief of Staff to Sequoia Taylor");
     expect(text).not.toMatch(/copied|\bAI\b|card|deposit/i);
     const good = buildErrand({ subject: "Reservation request: Thursday, October 29, party of 2", request: "a table for two on Thursday, October 29, any time after 8:00 pm" });
     expect(good.problems).toEqual([]);

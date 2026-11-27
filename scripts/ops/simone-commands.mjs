@@ -16,7 +16,7 @@
  *      word with Send / Change / Try again. A DRAFT IS NEVER SENT TO A THIRD PARTY FROM HERE.
  *   2b. ERRANDS (owner, 26 Oct 2026), the one exception: a booking or request to a business whose
  *      address she wrote in her own email (`errandIn`). Her email is the approval, so the request
- *      goes now, as "Simone, Assistant to Sequoia Taylor", from simone@ with Reply-To simone@ and no
+ *      goes now, as "Simone, Chief of Staff to Sequoia Taylor", from simone@ with Reply-To simone@ and no
  *      copy to her (`postErrandMail` in notify.mjs). The words are one fixed letter around one phrase
  *      (`errandText`), checked by `errandProblems` before anything goes. Their answer comes back to
  *      the Worker, which tells her what they said; a card or deposit request is always hers.
@@ -35,7 +35,7 @@ import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
 import { finishPrep } from "./meeting-prep.mjs";
 import { neverBounceCheck } from "./lp-prospects.mjs";
 import { eachItem } from "../../src/shared/boss/duties/stall.mjs";
-import { PRODUCT_REPOS, ACCESS_CODE_SHAPE, errandText, errandProblems, followUpProblems, OWNER_TZ } from "../../src/shared/boss/commands/parse.mjs";
+import { PRODUCT_REPOS, ACCESS_CODE_SHAPE, errandText, errandProblems, followUpProblems, refreshErrandSignature, OWNER_TZ } from "../../src/shared/boss/commands/parse.mjs";
 
 /*
  * TIME-2-READ'S CODE TABLE (seq23/dailystory, supabase/migrations/20261025120000_access_codes.sql).
@@ -199,10 +199,11 @@ async function main() {
   // Her answer or her cancellation, in THEIR thread (her reply was the approval). Never a card: the
   // Worker refused those words before they were queued, and followUpProblems checks again here.
   for (const f of work.errand_follow_ups ?? []) {
-    const problems = followUpProblems(f.text);
+    const text = refreshErrandSignature(f.text);
+    const problems = followUpProblems(text);
     if (problems.length) { await api.post(`/commands/${f.id}/failed`, { why: `the follow-up was not fit to send (${problems.join("; ")})` }); failures.push(f.id); continue; }
     if ((await api.get(`/commands/${f.id}`)).state !== "follow_up") continue;
-    const sent = await postErrandMail(errandMail({ to: f.to, cc: f.cc ?? [], subject: f.subject, text: f.text, inReplyTo: f.in_reply_to }), fetch, { commandId: f.id });
+    const sent = await postErrandMail(errandMail({ to: f.to, cc: f.cc ?? [], subject: f.subject, text, inReplyTo: f.in_reply_to }), fetch, { commandId: f.id });
     if (sent.ok) { await api.post(`/commands/${f.id}/errand-followed-up`, { message_id: sent.id }); did++; }
     else { console.error(`NAMED STOP [ERRAND_FOLLOW_UP_NOT_SENT] ${f.id}: ${sent.error}`); failures.push(f.id); }
   }

@@ -186,6 +186,7 @@ async function runAgent(call, prompt, api, provider = "claude") {
       const outcome = await runOnCodex({ home, work, socket, prompt: [rules, persona, context].join("\n\n") });
       return { ...outcome, receipts: [...outcome.receipts, ...tools.receipts] };
     }
+    // This file configures the runner. Simone’s Chief of Staff mandate is in persona.md.
     const template = await readFile(join(HERE, "simone-permissions.json"), "utf8");
     const resolved = template.replaceAll("__RUN__", id).replaceAll("__SOCKET__", socket);
     if (!JSON.parse(resolved).sandbox?.failIfUnavailable) throw new Error("Simone requires an available sandbox.");

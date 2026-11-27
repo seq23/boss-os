@@ -8,8 +8,9 @@ mail can start work.
 **simone@sequoiataylor.com does exactly the same thing as boss@.** Use whichever you like: it is one
 front door.
 
-You do not need to name anybody. Simone (Chief of Staff) reads it, splits it into its asks, and gives
-each ask to the employee who can do it. If you want a particular person, write to them directly:
+Simone is your Chief of Staff. She runs your day and is in charge of everything Boss OS runs.
+Write to her in your own words. She handles the work or gets it to the colleague who owns it.
+If you want a particular person, write to them directly:
 danielle@, camille@, monique@, zora@, toni@, imani@, kendra@ or noelle@sequoiataylor.com, or put their
 name with a # in front (#danielle). Simone reads both as part of your request.
 Send edits to your deal lists directly to Monique. She confirms the changes on the thread.
@@ -59,9 +60,9 @@ becomes three jobs on three desks, and the reply says who has which.
 
 Ask Simone to book or request something from a business (a restaurant, a club, a salon, a venue, an
 appointment) and **give the business's email address in the same email**. Your email is the
-approval: she sends the request as your assistant straight away, signed "Simone, Assistant to Sequoia
-Taylor", from simone@ (you are not copied). She watches for their answer and tells you, in your
-morning email, What I asked for, What they said, and What you need to do, if anything.
+approval. She sends the request on your behalf, signed “Simone, Chief of Staff to Sequoia Taylor”.
+She follows the venue’s reply and tells you in your morning email what she asked for, what they said,
+and what you need to do, if anything.
 
 ```
 To:      simone@sequoiataylor.com
