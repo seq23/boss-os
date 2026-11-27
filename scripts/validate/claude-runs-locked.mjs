@@ -53,11 +53,35 @@ export function permissionProblems(settings) {
   if (settings.env?.ENABLE_CLAUDEAI_MCP_SERVERS !== "false") out.push("env ENABLE_CLAUDEAI_MCP_SERVERS is not \"false\" (her claude.ai connectors would load)");
   if (settings.enabledPlugins?.["openseo@openseo"] !== true) out.push("the openseo plugin is not enabled in the file (the session would read nothing)");
   if (settings.permissions.defaultMode && settings.permissions.defaultMode !== "dontAsk") out.push(`defaultMode is ${settings.permissions.defaultMode}`);
+  out.push(...hookProblems(settings.hooks));
+  return out;
+}
+
+/**
+ * THE ONE HOOK (27 Nov 2026): code of ours reads every OpenSEO result (scripts/ops/ai-visibility-hook.mjs)
+ * and hands the session a digest. Exactly one PostToolUse entry, matching the OpenSEO plugin's tools only,
+ * running exactly that file through $AI_VISIBILITY_HOOK (set by ai-visibility.sh). No other hook event:
+ * a hook is a command run on her Mac, so a second one is a second door.
+ */
+export const HOOK_COMMAND = 'node "$AI_VISIBILITY_HOOK"';
+export const HOOK_MATCHER = "mcp__plugin_openseo_openseo__.*";
+export function hookProblems(hooks) {
+  if (!hooks || typeof hooks !== "object") return ["the permissions file has no hooks (the OpenSEO results would reach the session whole and code would build no week)"];
+  const out = [];
+  for (const ev of Object.keys(hooks)) if (ev !== "PostToolUse") out.push(`a ${ev} hook is set (only the PostToolUse digest hook may run)`);
+  const post = hooks.PostToolUse;
+  if (!Array.isArray(post) || post.length !== 1) return [...out, "PostToolUse must hold exactly one entry"];
+  if (post[0]?.matcher !== HOOK_MATCHER) out.push(`the hook's matcher is ${JSON.stringify(post[0]?.matcher)}, not the OpenSEO tools only`);
+  const cmds = post[0]?.hooks;
+  if (!Array.isArray(cmds) || cmds.length !== 1 || cmds[0]?.type !== "command" || cmds[0]?.command !== HOOK_COMMAND) out.push(`the hook must run exactly ${HOOK_COMMAND}`);
   return out;
 }
 
 export function scriptProblems(sh) {
   const out = [];
+  if (!/^HOOK="\$REPO\/scripts\/ops\/ai-visibility-hook\.mjs"$/m.test(sh)) out.push("ai-visibility.sh's HOOK is not scripts/ops/ai-visibility-hook.mjs");
+  if (!/AI_VISIBILITY_HOOK="\$HOOK" AI_VISIBILITY_STASH="\$WORK\/openseo\.jsonl"/.test(sh)) out.push("ai-visibility.sh no longer hands the session its hook and the stash in $WORK");
+  if (!/ai-visibility-report\.mjs post "\$RUN_LOG" "\$WORK\/state\.json" "\$WORK\/openseo\.jsonl"/.test(sh)) out.push("ai-visibility.sh's post step no longer reads the stash");
   if (!/--permission-mode dontAsk --setting-sources= --settings \$SETTINGS/.test(sh)) out.push("ai-visibility.sh no longer runs the session with --permission-mode dontAsk --setting-sources= --settings $SETTINGS");
   if (!/SETTINGS="\$REPO\/scripts\/ops\/ai-visibility-permissions\.json"/.test(sh)) out.push("ai-visibility.sh's SETTINGS is not scripts/ops/ai-visibility-permissions.json");
   if (/dangerously-skip-permissions|bypassPermissions/.test(sh)) out.push("ai-visibility.sh skips permissions");
@@ -290,11 +314,17 @@ function selfTest() {
     ["connectors on", (s) => { s.env.ENABLE_CLAUDEAI_MCP_SERVERS = "true"; }],
     ["no allow list", (s) => { delete s.permissions.allow; }],
     ["plugin off", (s) => { s.enabledPlugins["openseo@openseo"] = false; }],
+    ["no hook", (s) => { delete s.hooks; }],
+    ["a second hook event", (s) => { s.hooks.PreToolUse = s.hooks.PostToolUse; }],
+    ["the hook on every tool", (s) => { s.hooks.PostToolUse[0].matcher = ".*"; }],
+    ["the hook running another command", (s) => { s.hooks.PostToolUse[0].hooks[0].command = "bash -c 'curl x'"; }],
   ]) { const s = clone(good); f(s); must(`ai-visibility: ${name}`, permissionProblems(s)); }
   if (permissionProblems(good).length) { console.error("self-test: the real ai-visibility file fails"); bad++; }
   const sh = readFileSync(join(ROOT, "scripts/ops/ai-visibility.sh"), "utf8");
   if (scriptProblems(sh).length) { console.error("self-test: the real ai-visibility.sh fails"); bad++; }
   must("ai-visibility.sh skipping permissions", scriptProblems(sh.replace("--permission-mode dontAsk", "--dangerously-skip-permissions")));
+  must("ai-visibility.sh's hook pointed elsewhere", scriptProblems(sh.replace('HOOK="$REPO/scripts/ops/ai-visibility-hook.mjs"', 'HOOK="/tmp/x.mjs"')));
+  must("ai-visibility.sh's post step without the stash", scriptProblems(sh.replace(' "$WORK/openseo.jsonl")', ")")));
   must("ai-visibility.sh back on text output", scriptProblems(sh.replace(" --output-format stream-json --verbose", "")));
   must("ai-visibility.sh's stream sent to the log", scriptProblems(sh.replace('--out "$WORK/session.jsonl"', '--out "$RUN_LOG"')));
   must("ai-visibility.sh without the transcript step", scriptProblems(sh.replace(/^.*ai-visibility-report\.mjs transcript.*$/m, "")));
