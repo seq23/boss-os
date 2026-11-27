@@ -101,7 +101,8 @@ it("the runner hands the worker its own emptied scratch folder, in the prompt an
   expect(r.seen).toContain("--out ~/.boss-os/site-audit/sr-test-repo/tmp/crawl-<domain>.json");
   expect(r.seen).toContain(`git show --output=${scratch}/<name> origin/main:<path>`);
   expect(r.seen).not.toMatch(/<scratch/);
-  expect(r.seen).not.toMatch(/[\s`(]\/tmp\//); // no path that starts at the shared /tmp
+  // No path that starts at the shared /tmp (the test's own HOME is under /tmp on Linux CI, so it is taken out first).
+  expect(r.seen.split(r.home).join("<HOME>")).not.toMatch(/[\s`(=]\/tmp\//);
 });
 
 it("OUTAGE: a scratch folder that cannot be made is a named stop, and the worker never runs", () => {
