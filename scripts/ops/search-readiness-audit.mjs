@@ -524,7 +524,7 @@ async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}
     protectedReport.push({ path: pp.path, status: r.status, sha256_matches: sha === pp.sha256, sha256: sha, buy_link_on_page: buy, buy_link_status: buyLive });
   }
 
-  const ctx = { site, host, home, pages, robots: { status: robots.status, type: robots.type, text: robots.text ?? "" }, sitemap, files, gsc, repo, crawl: crawled, coverage, psi: ps, portfolio, protectedPaths, now: Date.now() };
+  const ctx = { site, host, home, pages, robots: { status: robots.status, type: robots.type, text: robots.text ?? "" }, sitemap, files, gsc, repo, crawl: crawled, coverage, psi: ps, portfolio, protectedPaths, quality, now: Date.now() };
   const results = runChecks(checklist, ctx);
   // Which searches win (engine v1.6.0 lanes): the site's row and the Monday email.
   const lanes = searchLanes(ctx);

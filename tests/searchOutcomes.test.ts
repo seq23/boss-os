@@ -14,7 +14,7 @@ import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { renderStandings } from "../src/shared/boss/searchReadiness/page.mjs";
 import { qualitySample, pickSample, similarity } from "../src/shared/boss/searchReadiness/page-quality-sample.mjs";
 import { consolidationQueue, nextFirstSeen } from "../src/shared/boss/searchReadiness/consolidation-queue.mjs";
-import { loadChecklist, loadSites, morningLines, workQueue, fixBriefs } from "../src/shared/boss/searchReadiness/audit.mjs";
+import { CHECKS, loadChecklist, loadSites, morningLines, workQueue, fixBriefs } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
 
 const wpp = JSON.parse(readFileSync(new URL("./fixtures/searchOutcomes/wpp-llm-2026.json", import.meta.url), "utf8"));
@@ -110,6 +110,7 @@ describe("quality sampling", () => {
       return { status: "ok", provider: "workers-ai", text, inTokens: 1, outTokens: 1 };
     } });
     expect(q).toMatchObject({ sampled: 1, red: true, pages: [{ failing: ["editorial"] }], pending: [] });
+    expect(CHECKS.steps_and_tables({ quality: q }).status).toBe("pass");
     const red = redLines([{ site, outcome: { status: "green" }, quality: q }]);
     expect(red[0]).toMatchObject({ kind: "quality" });
     for (const l of morningLines(checklist, [{ site, results: [], quality: q }], { redLines: red })) expect(lineProblems(l), l).toEqual([]);
@@ -124,6 +125,7 @@ describe("quality sampling", () => {
       } });
     expect(q).toMatchObject({ status: "not_read", sampled: 0, pending: [weak.url, "https://theaccidentguides.com/b"], why: "free allowance exhausted" });
     expect(redLines([{ site, quality: q }])[0]?.line).toContain("couldn't be checked");
+    expect(CHECKS.steps_and_tables({ quality: q }).status).toBe("not_checked");
   });
   it("compares copied text and rotates the sample without including utility pages", () => {
     expect(similarity("A careful guide explains the rules in plain words.", "A careful guide explains the rules in plain words.")).toBe(1);

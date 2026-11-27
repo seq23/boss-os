@@ -36,6 +36,11 @@ export function pickSample(urls, { n = QUALITY.SAMPLE, week = isoWeek(), exclude
   return pool.map((u) => [hash(`${week}|${u}`), u]).sort((a, b) => a[0] - b[0]).slice(0, n).map((x) => x[1]);
 }
 
+function comparableBody(html) {
+  const main = html.match(/<main\b[\s\S]*?<\/main>/i)?.[0] ?? html.match(/<article\b[\s\S]*?<\/article>/i)?.[0];
+  return visibleText(main ?? html.replace(/<(nav|header|footer)\b[\s\S]*?<\/\1>/gi, " "));
+}
+
 const wordsOf = (text) => String(text).toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{M}\p{N}_'’-]*/gu) ?? [];
 
 /** Jaccard similarity of two bodies' 5-word shingles. */
@@ -83,7 +88,7 @@ export async function qualitySample({ site, pages, checklist, read }) {
     exhausted = result.status === "allowance-exhausted";
     const checks = result.status === "ok" ? parse(result.text) : null;
     if (!checks) { pending.push(page.url); continue; }
-    sampled.push({ url: page.url, body: visibleText(page.html), checks });
+    sampled.push({ url: page.url, body: comparableBody(page.html), checks });
   }
   const scored = sampled.map(({ url, body, checks }) => {
     const failing = checks.filter((c) => c.status === "fail").map((c) => c.id);

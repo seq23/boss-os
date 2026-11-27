@@ -363,13 +363,13 @@
    "title_html": "A 40–60 word definition directly under the H1: \"X is …\"",
    "burned": false,
    "why_html": "The sentence a snippet, a voice answer and an AI citation all want. If the page makes the reader scroll for it, the engine moves on.",
-   "how_html": "Validator: first paragraph after H1 starts with the entity name + \"is\", 40–60 words.",
+   "how_html": "The opening paragraph after the H1 defines the subject, with 40–60 words as the target.",
    "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "definition_paragraph",
     "source": "html",
-    "how": "On sampled guide pages, the first paragraph after the H1 runs 40 to 60 words and contains \" is \".",
+    "how": "Guide pages open with a real definition after the H1. The audit measures the opening paragraph against a 40 to 60 word target, and the page-quality reader checks whether it actually defines the subject.",
     "applies_to": [
      "guide",
      "hyperlocal",
@@ -664,13 +664,13 @@
    "title_html": "Numbered steps for processes, tables for comparisons, bullet lists for options",
    "burned": false,
    "why_html": "List and table snippets are extracted from literal lists and tables, never from prose.",
-   "how_html": "Any \"how to\" page has an ordered list; any \"X vs Y\" page has a table.",
+   "how_html": "Use numbered steps for a process, a table for a comparison, and bullet points for a list of options.",
    "added": "2026-10-11",
    "check": {
     "mode": "auto",
     "type": "steps_and_tables",
     "source": "html",
-    "how": "Sampled pages whose title says \"how to\" carry an ordered list; pages whose title says \" vs \" carry a table.",
+    "how": "The page-quality reader checks the full page for numbered steps when it explains a process, a table when it compares options, or a list when it presents alternatives.",
     "applies_to": [
      "guide",
      "hyperlocal",

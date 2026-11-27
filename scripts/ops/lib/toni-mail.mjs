@@ -59,7 +59,9 @@ async function readGmailJson(url, access) {
     redirect: "error", signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok) throw new Error(`Gmail API read failed (${response.status})`);
-  return response.json();
+  const data = await response.json();
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Gmail returned an unreadable response");
+  return data;
 }
 
 export async function classifyToniThread(thread, targets, rule, read = readWorkerSource) {

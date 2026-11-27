@@ -417,11 +417,11 @@ export const CHECKS = {
       const paras = [...after.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)].map((m) => visibleText(m[1]));
       const para = paras.find((x) => wordCount(x) >= 20) ?? paras[0] ?? "";
       const w = wordCount(para);
-      if (w < hardFloor(40) || !/\b(is|are)\b/.test(para)) bad.push(`${p.url} first paragraph ${w} words`);
+      if (w < hardFloor(40)) bad.push(`${p.url} first paragraph ${w} words`);
       else if (w < 40 || w > 60) notes.push(`${p.url} (${w} words)`);
     }
     return bad.length ? fail(list(bad), { evidence: bad })
-      : pass(`${guides.length} guide pages open with a definition${notes.length ? `; ${notes.length} outside the 40–60 word target, not blocking: ${list(notes)}` : ""}`);
+      : pass(`${guides.length} guide pages have an opening paragraph long enough to check${notes.length ? `; ${notes.length} outside the 40–60 word target, not blocking: ${list(notes)}` : ""}`);
   },
   faq_schema_visible(ctx) {
     const bad = [];
@@ -558,13 +558,12 @@ export const CHECKS = {
     return linked ? pass("About page exists and the homepage links it") : fail("the homepage does not link the About page");
   },
   steps_and_tables(ctx) {
-    const bad = [];
-    for (const p of okPages(ctx)) {
-      const t = titleOf(p.html).toLowerCase();
-      if (/\bhow to\b/.test(t) && !/<ol\b/i.test(p.html)) bad.push(`${p.url} is a how-to without numbered steps`);
-      if (/\bvs\.?\b|\bversus\b/.test(t) && !/<table\b/i.test(p.html)) bad.push(`${p.url} is a comparison without a table`);
-    }
-    return bad.length ? fail(list(bad), { evidence: bad }) : pass("how-to pages carry steps; comparisons carry tables");
+    const sample = ctx.quality;
+    const pages = sample?.pages ?? [];
+    const bad = pages.filter((p) => p.failing.includes("d2")).map((p) => `${p.url}: steps, tables or lists are missing for the content type`);
+    if (bad.length) return fail(list(bad), { evidence: bad });
+    if (sample?.status === "not_read" || !pages.length) return notChecked("the page-quality reader could not check the full sample");
+    return pass("the page-quality reader found no missing steps, tables or lists on the sampled pages");
   },
   dates_visible(ctx) {
     const bad = []; let n = 0;
