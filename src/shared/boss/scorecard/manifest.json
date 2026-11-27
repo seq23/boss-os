@@ -2608,6 +2608,10 @@
       "kind": "system",
       "why": "Keeps the system running or checks it; it has no customer result of its own."
     },
+    "chatgpt-searches": {
+      "kind": "helper",
+      "why": "Research that feeds search-loop: each site's gaps become seeds in its search-loop config, and the pages they make are measured on the search-loop rows; its own floor (1 question a night) is in the Schedule."
+    },
     "agent-search-guard": {
       "kind": "system",
       "why": "A money guard: it checks AI Search usage and can only switch the trial site off; it has no customer result of its own."

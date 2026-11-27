@@ -1674,6 +1674,31 @@
       "macWindow": "LIGHT"
     },
     {
+      "id": "chatgpt-searches",
+      "name": "ChatGPT hidden searches",
+      "what": "Each night asks the week's buyer questions for the sites due that night in ChatGPT Temporary Chats (her Chrome), records the searches ChatGPT ran, what it read and cited and whether her site showed up, and sends each site's gaps to its search pages as new searches; a limit or sign-out moves the rest to the next night.",
+      "business": "spry",
+      "brand": "Spry Labs",
+      "system": "mac",
+      "slots": [
+        "daily 22:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.chatgpt-searches"
+        ]
+      },
+      "output": {
+        "metric": "questions_checked",
+        "floor": 1,
+        "runs": 2,
+        "reason": "A night with sites due that checks 0 questions is FAIL (exit 1) or COULDNT-CHECK with its reason (exit 75), each a Notices line; a night with nothing left due says so."
+      },
+      "macWindow": "HEAVY"
+    },
+    {
       "id": "ci-sweep-resume",
       "name": "CI sweep resume",
       "what": "Resumes a sweep the Mac's sleep interrupted.",
