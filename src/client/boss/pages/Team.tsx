@@ -7,6 +7,7 @@ import { OutreachDesk } from "../components/Outreach";
 import { buildOperations } from "../operationsSource";
 import type { OperationsRow } from "../../../shared/boss/operations";
 import { YourTeam } from "./YourTeam";
+import { EMAIL_MAP } from "./EmailMap";
 import { EmployeePage } from "./EmployeePage";
 
 export type TeamView = "team" | "duties" | "owns" | "outreach" | "prompts" | "capabilities";
@@ -810,14 +811,14 @@ function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
                 <div className="row-title">
                   {d.name}
                   {d.suspended ? <span className="pill">suspended</span> : d.overdue ? <span className="pill pill-forbid">overdue</span> : null}
-                  {d.model_warning && <span className="pill state-live">no model named</span>}
+                  {d.model_warning && <span className="pill state-live">Model needs setup</span>}
                 </div>
                 <div className="row-sub">
                   {when(d)} · {executor(d)} · about ${d.estimated_per_month_usd}/mo
                 </div>
                 <div className="row-sub">
-                  last run {stamp(d.last_run_at)}
-                  {d.last_outcome ? ` · ${d.last_outcome}${d.last_failure_reason ? ` — ${d.last_failure_reason}` : ""}` : d.last_run_at ? "" : " · never fired"}
+                  {d.last_run_at ? `Last ran ${stamp(d.last_run_at)}` : "Hasn’t run yet"}
+                  {d.last_outcome ? ` · ${d.last_outcome}${d.last_failure_reason ? ` — ${d.last_failure_reason}` : ""}` : ""}
                 </div>
               </div>
               <div className="row-val">{d.suspended ? "off" : `next ${stamp(d.next_due_at)}`}</div>
@@ -866,33 +867,50 @@ const OUTSIDE = (ops: ReturnType<typeof buildOperations>) =>
   [...ops.bySeat.entries()].filter(([, rows]) => rows[0]?.ownerKind === "outside");
 
 /**
- * One machine-run sending path from docs/OUTBOUND_EMAIL_MAP.md, as a duty row: what it is, when it
- * fires next, where it runs, the From address and footer it carries, the last outcome where a
- * ledger exists, and a pause control only where a real switch exists — otherwise "no switch".
+ * The Email Map's plain words for each sending path (what it is, who to, when), so Team → Duties and
+ * the Email Map describe the same email the same way. The fund's rows are left out: the Email Map
+ * page lists the fund, Team → Duties never names it (tests/helpers/fundCrossings.ts), so those rows
+ * keep the document's own wording, with its dated notes taken out (`plainWhat`).
  */
+const FUND_BUSINESSES = new Set(["west-peek-ventures"]);
+const EMAIL_BY_ID = new Map(EMAIL_MAP.rows.filter((email) => !FUND_BUSINESSES.has(email.business)).map((email) => [email.id, email]));
+
+/** A document cell as a title: no bracketed notes or citations, the first clause only. */
+export function plainWhat(text: string): string {
+  let out = text;
+  for (let prev = ""; prev !== out; ) { prev = out; out = out.replace(/\s*\([^()]*\)/g, ""); }
+  out = (out.split(";")[0] ?? "").replace(/\s+([,.:])/g, "$1").replace(/\s{2,}/g, " ").trim();
+  return out;
+}
+
 function PathRow({ row, stamp, onOpenOutreach }: { row: OperationsRow; stamp: (ms: number | null) => string; onOpenOutreach: () => void }) {
+  const email = EMAIL_BY_ID.get(row.id);
   const p = row.pause;
   return (
     <div className="row" data-testid="path-row" data-path-id={row.id}>
       <div className="row-main">
-        <div className="row-title">
-          {row.what}
+        <div className="row-title">{email?.what ?? plainWhat(row.what)}</div>
+        <div className="row-sub">
+          {email && <span>From {email.sender} · to {email.to} · </span>}
           <span className="pill">{row.where}</span>
           {row.inert && <span className="pill">off</span>}
           {row.ownerKind === "unassigned" && <span className="pill state-live">unassigned</span>}
         </div>
-        <div className="row-sub">{row.business} · {row.cadence}</div>
-        <div className="row-sub">From {row.from} · footer: {row.footer}</div>
-        <div className="row-sub">{row.lastOutcome ? `last ${row.lastOutcome}` : "no ledger in Boss OS"}</div>
+        <div className="row-sub">{email?.when ?? plainWhat(row.cadence).replace(/^launchd\s+\S+\s+/, "")}</div>
+        {row.lastOutcome && <div className="row-sub">Last result: {row.lastOutcome}</div>}
+        <details className="brain-rev">
+          <summary>Show details</summary>
+          <dl className="email-map-dl">
+            <dt>From address</dt><dd>{email?.from ?? plainWhat(row.from)}</dd>
+            <dt>How to pause it</dt>
+            <dd>{p.kind === "command" ? <code>{p.command}</code> : p.kind === "action" ? "Open Team → Outreach to manage sending." : p.label}</dd>
+          </dl>
+        </details>
       </div>
       <div className="row-val">
         <div>{row.next.at ? `next ${stamp(row.next.at)}` : row.next.label}</div>
-        {p.kind === "action" ? (
+        {p.kind === "action" && (
           <button className="btn btn-small" onClick={onOpenOutreach} data-testid="path-pause">{p.label}</button>
-        ) : p.kind === "command" ? (
-          <code title="Run on the machine that runs it">{p.command}</code>
-        ) : (
-          <span>{p.label}</span>
         )}
       </div>
     </div>

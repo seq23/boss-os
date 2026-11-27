@@ -60,7 +60,7 @@ test.describe("Team → Duties", () => {
     await expect(camille).toContainText(/daily at 04:00/); // migration 0373, the Mac's day (06:00 before)
     await expect(camille).toContainText(/agent · Sonnet/);
     await expect(camille).toContainText(/next /);
-    await expect(camille).toContainText(/last run/);
+    await expect(camille.getByTestId("duty-row").first()).toContainText(/Last ran [^·]+|Hasn’t run yet/);
     // A local job says it runs on her Mac and names the script.
     await expect(page.locator("main.page")).toContainText(/your Mac · [a-z-]+\.(sh|mjs)/);
   });
@@ -145,6 +145,10 @@ test.describe("Team → Duties", () => {
     await expect(page.getByTestId("add-duty")).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBe(0);
+    const row = page.locator('[data-path-id="simone-your-day"]');
+    const copy = (await row.locator(".row-main").boundingBox())!;
+    const next = (await row.locator(".row-val").boundingBox())!;
+    expect(next.y).toBeGreaterThanOrEqual(copy.y + copy.height);
     const bb = (await page.getByTestId("duty-phrase").boundingBox())!;
     expect(bb.x + bb.width).toBeLessThanOrEqual(390);
   });
@@ -175,7 +179,8 @@ test.describe("Team → Duties", () => {
     // Monique's outreach sits in her section, with the one in-app switch that exists.
     const outreach = page.getByRole("region", { name: "Monique's duties" }).locator('[data-path-id="monique-outreach"]');
     await expect(outreach).toContainText(/Cloudflare cron/);
-    await expect(outreach).toContainText(/From hello@/);
+    await outreach.getByText("Show details", { exact: true }).click();
+    await expect(outreach.getByText(/^hello@/)).toBeVisible();
     await expect(outreach).toContainText(/next /);
     // The only owner outside Boss OS is the client; the fund has no row and no seat here (owner, 12 Oct 2026).
     await expect(page.getByTestId("duties-outside")).toHaveCount(1);

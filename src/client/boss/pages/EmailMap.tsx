@@ -11,7 +11,7 @@ import manifest from "@shared/boss/emailMap/manifest.json";
  *
  * Phone first (390px), calm: the summary first, a pull-down to pick a business, then one labelled
  * expander per business. Each email shows what it is, who sends it, to whom and when without
- * opening; "Show details ▾" holds the from address, where it runs, its trigger and how to pause it.
+ * opening; "Show details" holds the from address, where it runs, its trigger and how to pause it.
  *
  * Links in: /?tab=emails, /?tab=emails&business=<key>.
  */
@@ -67,7 +67,7 @@ export function EmailMap() {
     <div className="brains" data-testid="email-map">
       <p className="brain-summary">{summaryLine()}</p>
       <FromRepoLine tab="emails" />
-      <p className="brain-hint">Tap a business to see its emails. Each one says who sends it, to whom and when; "Show details ▾" says where it runs and how to pause it.</p>
+      <p className="brain-hint">Tap a business to see its emails. Each one says who sends it, to whom and when; "Show details" says where it runs and how to pause it.</p>
       <label className="email-map-filter">
         <span>Show:</span>
         <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Show: choose a business">
@@ -83,7 +83,7 @@ export function EmailMap() {
           <details key={`${pick}-${b.key}`} className="brain-expander email-map-business" open={pick !== "all" || Boolean(only)} data-testid={`email-business-${b.key}`}>
             <summary>
               <span className="email-map-business-name">{b.label}</span>
-              <span className="email-map-count">{live} {live === 1 ? "email" : "emails"}{rows.length > live ? ` · ${rows.length - live} more listed` : ""} — tap to open ▾</span>
+              <span className="email-map-count">{live} {live === 1 ? "email" : "emails"}{rows.length > live ? ` · ${rows.length - live} more listed` : ""}</span>
             </summary>
             <p className="brain-hint">{b.blurb}</p>
             <div className="brain-cards">
@@ -105,7 +105,7 @@ function EmailCard({ row }: { row: EmailRow }) {
       <span className="brain-card-line">{row.when}</span>
       <span className="email-map-runs">{RUNS_SHORT[row.runs] ?? row.runs}</span>
       <details className="brain-rev">
-        <summary>Show details ▾</summary>
+        <summary>Show details</summary>
         <dl className="email-map-dl">
           <dt>Sent by</dt><dd>{row.sender}{row.owner !== row.sender ? ` (looked after by ${row.owner})` : ""}</dd>
           <dt>From address</dt><dd>{row.from}</dd>

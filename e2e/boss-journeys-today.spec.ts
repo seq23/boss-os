@@ -283,7 +283,7 @@ for (const vp of [PHONE, LAPTOP]) {
       if (vp.name === "phone") await expectNoSidewaysScroll(page);
     });
 
-    test("✎ Tell Simone floats on every tab, opens a sheet, hands off the job, and closes back where she was", async ({ page }) => {
+    test("✎ Tell Simone is available across tabs, opens a sheet, hands off the job, and closes back where she was", async ({ page }) => {
       await unlock(page);
       await tab(page, "Capital");
       const fab = page.getByTestId("tell-simone-fab");

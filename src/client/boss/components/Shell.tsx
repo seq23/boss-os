@@ -150,7 +150,7 @@ export function Shell({
 }: {
   /** Today's one "needs you" count (/practice/list), on the Today tab. */
   needsYou?: number;
-  /** The floating "✎ Tell Simone" button, on every tab. */
+  /** The "✎ Tell Simone" button, on every tab. */
   onTellSimone?: () => void;
   /** An overlay sheet (Tell Simone, a coach talk) drawn above the page. */
   sheet?: ReactNode;
@@ -171,6 +171,7 @@ export function Shell({
 }) {
   const { navRef, shellRef } = useMeasuredNav();
   const [moreOpen, setMoreOpen] = useState(false);
+  useLayoutEffect(() => { window.scrollTo(0, 0); }, [tab, title]);
   const { progress, scrollable, atEnd } = useReadingPosition();
 
   return (
@@ -199,6 +200,9 @@ export function Shell({
       <div className="railgauge" aria-hidden="true" />
       <header className="topbar">
         <h1>{title}</h1>
+        {onTellSimone && !settingsOpen && !sheet && !moreOpen && (
+          <button className="fab" onClick={onTellSimone} data-testid="tell-simone-fab">✎ Tell Simone</button>
+        )}
         {settingsOpen && (
           <button className="lane-chip" onClick={onSettings} aria-pressed="true" aria-label="Close settings">✕ Close</button>
         )}
@@ -250,10 +254,6 @@ export function Shell({
         * like there is something beyond it.
         */}
       <div className="page-scrim" aria-hidden="true" />
-
-      {onTellSimone && !sheet && !moreOpen && (
-        <button className="fab" onClick={onTellSimone} data-testid="tell-simone-fab">✎ Tell Simone</button>
-      )}
 
       {sheet}
 
