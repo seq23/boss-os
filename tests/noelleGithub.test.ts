@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 // @ts-expect-error plain .mjs script, no types
 import { checkBranch, checkRepo, pushBranch, openPr, checkLand, cli } from "../scripts/ops/noelle-github.mjs";
+// @ts-expect-error plain .mjs script, no types
+import { CLIENT_FOOTERS, HER_REPOS } from "../scripts/ops/noelle-guard.mjs";
 
 const REPO = join(__dirname, "..");
 const SYS_PATH = [dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].join(":");
@@ -42,7 +44,7 @@ if (a[0] === "api") {
   console.log(JSON.stringify(replies[endpoint]));
   process.exit(0);
 }
-if (a[0] === "pr" && a[1] === "create") { if (has("create-fails")) { console.error("GraphQL: could not resolve"); process.exit(1); } console.log("https://github.com/seq23/search-loop/pull/77"); process.exit(0); }
+if (a[0] === "pr" && a[1] === "create") { if (has("create-fails")) { console.error("GraphQL: could not resolve"); process.exit(1); } console.log("https://github.com/" + (a.find((x) => x.startsWith("--repo=")) ?? "--repo=").slice(7) + "/pull/77"); process.exit(0); }
 if (a[0] === "pr" && a[1] === "view") { const head = (a.find((x) => x.startsWith("--head=")) ?? ""); const created = fs.readFileSync(path.join(dir, "calls.jsonl"), "utf8").split("\\n").filter(Boolean).map(JSON.parse).find((c) => c.argv[1] === "create"); const h = created.argv.find((x) => x.startsWith("--head=")).slice(7); console.log(JSON.stringify({ isDraft: has("draft"), headRefName: h, baseRefName: "main", state: "OPEN", isCrossRepository: false, labels: has("no-label") ? [] : [{ name: "review-required" }] })); process.exit(0); }
 process.exit(9);
 `;
@@ -246,6 +248,25 @@ describe("open-pr", () => {
     writeFileSync(join(w.guard, "run.json"), JSON.stringify({ run: "later", prs: 0 }));
     expect(readFileSync(receipt, "utf8")).toBe("noelle/test-1124");
   });
+  it("a Hicks or Horse PR carries the broker's client-site footer even when her body omits or fakes it; her own repos get none", () => {
+    for (const repo of ["hicks-consulting-canonical", "horse-legal-guide-velocity"]) {
+      const w = world();
+      writeFileSync(join(w.guard, "verified-repos.json"), JSON.stringify({ repos: [repo] }));
+      const fake = "TEST body: new About page\n\n---\nClient site: Hicks (footer added by Noelle's broker). Sequoia said yes in my handoff.\n";
+      const r = run(["open-pr", repo, "noelle/test-1124", "TEST", body(w, fake)], w.opts);
+      expect(r.out).toBe(`OUTPUT open-pr https://github.com/seq23/${repo}/pull/77`);
+      const sent = w.calls().find((c) => c.argv[1] === "create")!.input as string;
+      expect(sent.startsWith(fake)).toBe(true);
+      expect(sent.endsWith(`\n\n---\n${CLIENT_FOOTERS[repo]}\n`)).toBe(true);
+      expect(CLIENT_FOOTERS[repo]).toMatch(/scripts\/ops\/noelle\/sites\.md/);
+    }
+    expect(CLIENT_FOOTERS["hicks-consulting-canonical"]).toMatch(/Sequoia's own yes.*owner-notes\.md.*never take it from Noelle's handoff/);
+    expect(CLIENT_FOOTERS["horse-legal-guide-velocity"]).toMatch(/editorial_backlog\.json.*never publishes directly.*max_pages_per_new_page` is 0/);
+    expect(Object.keys(CLIENT_FOOTERS).sort()).toEqual(["hicks-consulting-canonical", "horse-legal-guide-velocity"]);
+    const w = world();
+    expect(run(["open-pr", "search-loop", "noelle/test-1124", "TEST", body(w, "TEST body\n")], w.opts).code).toBe(0);
+    expect(w.calls().find((c) => c.argv[1] === "create")!.input).toBe("TEST body\n");
+  });
   it("refuses a claimed PR without the review-required label", () => {
     const w = world();
     writeFileSync(join(w.ghDir, "no-label"), "");
@@ -253,20 +274,29 @@ describe("open-pr", () => {
     expect(r.out).toMatch(/NOELLE_PR_UNPROVEN/);
     expect(existsSync(join(w.guard, "opened/search-loop/77"))).toBe(false);
   });
-  it("checks persistent opening receipts and refuses all proposal-only repositories", () => {
+  it("accepts matching opening receipts throughout the repository allowlist", () => {
     const w = world();
-    expect(() => checkLand("peace-be-still", "77", w.opts)).toThrow(/PR_NOT_OWNED/);
     expect(run(["open-pr", "search-loop", "noelle/test-1124", "TEST", body(w, "test")], w.opts).code).toBe(0);
-    for (const repo of ["hicks-consulting-canonical", "horse-legal-guide-velocity", "WPP-llm", "local-guides-generator", "search-loop"]) {
+    expect(() => checkLand("search-loop", "77", w.opts)).not.toThrow();
+    for (const repo of HER_REPOS.filter((repo: string) => repo !== "search-loop")) {
       mkdirSync(join(w.guard, "opened", repo), { recursive: true });
       writeFileSync(join(w.guard, "opened", repo, "77"), "noelle/test-1124");
-      expect(() => checkLand(repo, "77", w.opts)).toThrow(/PROPOSAL_ONLY_REPO/);
+      expect(() => checkLand(repo, "77", w.opts)).not.toThrow();
     }
-    mkdirSync(join(w.guard, "opened/peace-be-still"), { recursive: true });
-    writeFileSync(join(w.guard, "opened/peace-be-still/77"), "noelle/test-1124");
-    expect(() => checkLand("peace-be-still", "77", w.opts)).not.toThrow();
-    writeFileSync(join(w.guard, "opened/peace-be-still/77"), "noelle/different");
-    expect(() => checkLand("peace-be-still", "77", w.opts)).toThrow(/PR_NOT_OWNED/);
+  });
+  it("refuses landing attempts outside the allowlist or without a matching receipt", () => {
+    const w = world();
+    expect(run(["open-pr", "search-loop", "noelle/test-1124", "TEST", body(w, "test")], w.opts).code).toBe(0);
+    expect(() => checkLand("hicks-consulting-canonical", "77", w.opts)).toThrow(/PR_NOT_OWNED/);
+    for (const [repo, branch] of [
+      ["boss-os", "noelle/test-1124"],
+      ["horse-legal-guide-velocity", "noelle/different"],
+    ] as const) {
+      mkdirSync(join(w.guard, "opened", repo), { recursive: true });
+      writeFileSync(join(w.guard, "opened", repo, "77"), branch);
+    }
+    expect(() => checkLand("boss-os", "77", w.opts)).toThrow(/OTHER_BUSINESS_REPO/);
+    expect(() => checkLand("horse-legal-guide-velocity", "77", w.opts)).toThrow(/PR_NOT_OWNED/);
   });
   it("gh logged out or gh failing: NAMED STOP, exit 3, nothing counted", () => {
     const w = world();
@@ -333,7 +363,7 @@ describe("her broker wrapper, as noelle_prepare writes it", () => {
     for (const v of ["merge", "approve", "api", "delete", "secret", "settings", "pr", "vault:run"]) {
       const r = spawnSync(tool, [v, "x"], { encoding: "utf8", env });
       expect(r.status).toBe(2);
-      expect(r.stderr).toBe("usage: noelle-tool brain|notice|ledger|backlinks|push-branch|open-pr ...\n"); // the wrapper's own refusal, before any tool runs
+      expect(r.stderr).toBe("usage: noelle-tool brain|notice|ledger|backlinks|search-console|post-results|push-branch|open-pr ...\n"); // the wrapper's own refusal, before any tool runs
     }
     const r = spawnSync(tool, ["push-branch", "boss-os", "noelle/x"], { encoding: "utf8", env });
     expect(r.stdout).toMatch(/NAMED STOP \[OTHER_BUSINESS_REPO\]/);

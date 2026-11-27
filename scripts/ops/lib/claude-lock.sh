@@ -24,13 +24,18 @@ claude_lock_args() {
   printf '%s' "--permission-mode dontAsk --setting-sources= --settings $settings"
 }
 
+claude_transcript() {
+  local src="$1"
+  if [ -f "$src" ]; then
+    printf '%s\n' "$src"
+  else
+    find "$HOME/.claude/projects" -maxdepth 2 -name "$src.jsonl" 2>/dev/null | head -1
+  fi
+}
+
 claude_denials() {
   local src="$1" log="$2" transcript out n
-  if [ -f "$src" ]; then
-    transcript="$src"
-  else
-    transcript="$(find "$HOME/.claude/projects" -maxdepth 2 -name "$src.jsonl" 2>/dev/null | head -1)"
-  fi
+  transcript="$(claude_transcript "$src")"
   [ -n "$transcript" ] || { echo unknown; return 0; }
   grep -q '^{' "$transcript" 2>/dev/null || { echo unknown; return 0; } # empty or not JSON: nothing was read
   out="$(node "$CLAUDE_LOCK_LIB/permission-denials.mjs" "$transcript" 2>&1)"

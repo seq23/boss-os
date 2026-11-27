@@ -131,10 +131,11 @@ export const JOBS = Object.freeze([
   // Noelle (24 Nov 2026; sandbox redesign the same day): builder-level tools inside Claude Code's OS sandbox with no
   // GitHub login (gh is not allowed at all; she pushes and opens PRs through noelle-tool), her two brokers outside it, one reviewer agent per PR (the Agent tool held by her guard).
   { name: "noelle", scripts: ["scripts/ops/noelle.sh"],
-    needs: ["Agent", "WebFetch", "Edit(~/Work/noelle/**)", "Bash(__HOME__/.boss-os/noelle/bin/noelle-tool *)", "Bash(__HOME__/.boss-os/noelle/bin/land-after *)",
+    needs: ["Agent", "WebFetch", "WebSearch", "Edit(~/Work/noelle/**)", "Bash(__HOME__/.boss-os/noelle/bin/noelle-tool *)", "Bash(__HOME__/.boss-os/noelle/bin/land-after *)",
       "Bash(git:*)", "Bash(npm:*)"],
     mustDeny: ["Bash(claude:*)", "Bash(ai-run:*)", "Bash(gh pr merge:*)", "Bash(git push --force:*)", "Bash(wrangler deploy:*)", "Bash(gh secret:*)", "Bash(npm run -s vault:set:*)", "Skill",
-      "Edit(~/Work/noelle/.claude/**)", "Edit(~/bin/**)", "Edit(~/.boss-os/**)", "Edit(~/Brains/**)"],
+      "Edit(~/Work/noelle/.claude/**)", "Edit(~/bin/**)", "Edit(~/.boss-os/**)", "Edit(~/Brains/**)",
+      "mcp__openseo", "mcp__plugin_openseo_openseo"],
     hook: "noelle-guard.mjs", agentGuard: "noelle-guard.mjs",
     sandbox: {
       allowWrite: ["~/Work/noelle", "~/.boss-os/noelle/runs/__RUN__"],
@@ -199,6 +200,10 @@ export function sandboxProblems(settings, spec) {
   if (!same(net.allowedDomains ?? [], spec.domains)) out.push(`sandbox.network.allowedDomains is not exactly her hosts (${spec.domains.join(", ")})`);
   for (const k of ["allowAllUnixSockets", "allowUnixSockets", "allowLocalBinding", "allowMachLookup"]) if (net[k] !== undefined && !(Array.isArray(net[k]) && !net[k].length) && net[k] !== false) out.push(`sandbox.network.${k} is set (a way out of the sandbox)`);
   const allow = settings.permissions?.allow ?? [];
+  for (const rule of allow) {
+    if (rule.startsWith("WebFetch(")) out.push(`${rule} widens command network access; use bare WebFetch`);
+    if (rule.startsWith("mcp__")) out.push(`${rule} exposes a connector directly; use the existing read paths`);
+  }
   for (const t of ["Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit", "MultiEdit"]) if (allow.includes(t)) out.push(`allows bare ${t}: that tool runs outside the sandbox, so it may touch only her paths`);
   if (settings.permissions?.additionalDirectories?.length) out.push("permissions.additionalDirectories is set (it widens what her tools and sandbox may write)");
   for (const a of allow) {
