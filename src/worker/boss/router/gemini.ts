@@ -1,7 +1,10 @@
-import { ProviderCallError, quotaHint, statusIsRetryable, type ProviderAdapter } from "./types";
+import { ProviderCallError, quotaHint, statusIsRetryable, type ProviderAdapter } from "./types.ts";
+
+export const GEMINI_HOST = "https://generativelanguage.googleapis.com/v1beta";
+export const GEMINI_WORKER_READ_MODEL = "gemini-3.1-flash-lite";
 
 /** Mirrors GEMINI_FREE_SEARCH_MODELS (backends.ts), kept here so the adapter imports no wiring. */
-const FREE_SEARCH = new Set(["gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview"]);
+const FREE_SEARCH = new Set(["gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", GEMINI_WORKER_READ_MODEL, "gemini-3-flash-preview"]);
 
 /**
  * THINKING HAS ITS OWN ALLOWANCE, ON TOP OF THE ANSWER'S (6 Nov 2026).
@@ -23,8 +26,8 @@ export function generationConfig(slug: string, maxOutputTokens: number, temperat
 /**
  * GOOGLE GEMINI, DIRECT, ON THE FREE TIER (owner, 4 Nov 2026).
  *
- * One host (`GEMINI_HOST` in backends.ts, never read from a request), one key (`GEMINI_API_KEY`, a
- * Worker secret). Only the free-tier model ids in `GEMINI_FREE_MODELS` are recorded free
+ * One host (`GEMINI_HOST`). The general router uses `GEMINI_API_KEY` and the worker
+ * reading route uses its dedicated unbilled project key. Only the model ids in `GEMINI_FREE_MODELS` are recorded free
  * (guard.ts `routeIsBilled`); the same models through OpenRouter stay the paid fallback.
  *
  * THE FREE TIER TRAINS ON WHAT IT IS SENT. Google's terms let it use free-tier prompts to improve its
@@ -55,6 +58,7 @@ export const gemini: ProviderAdapter = {
       method: "POST",
       // The call is abandoned when the router's deadline fires; see deadlines.ts.
       signal: req.signal,
+      redirect: "manual",
       headers: { "content-type": "application/json", "x-goog-api-key": ctx.apiKey },
       body: JSON.stringify({
         ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
@@ -69,7 +73,11 @@ export const gemini: ProviderAdapter = {
     });
     if (!res.ok) {
       const detail = await res.text();
-      throw new ProviderCallError(`Gemini returned ${res.status}${quotaHint(res.status, detail)}: ${detail.slice(0, 300)}`, res.status, statusIsRetryable(res.status));
+      const quota = quotaHint(res.status, detail);
+      throw new ProviderCallError(
+        `Gemini returned ${res.status}${quota}: ${detail.slice(0, 300)}`,
+        res.status, statusIsRetryable(res.status), quota === " [quota: daily]",
+      );
     }
     const json = (await res.json()) as any;
     const cand = json?.candidates?.[0];

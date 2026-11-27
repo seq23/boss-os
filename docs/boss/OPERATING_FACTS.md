@@ -48,6 +48,14 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   `model_job_outcome` and returns the work to a subscription seat when results drop or the free
   model cannot finish. Simone can choose a free route again after its evidence qualifies. The daily operating note lists
   each change and the reason. The move records use `settings` and `task_events`.
+- **Worker reading** uses `readWorkerSource` in `src/worker/boss/router/freeModel.ts` from Node or the Worker.
+  Monique starts with Gemini and the other workers start with Workers AI. A provider error can move a
+  read to the other provider. A provider's daily quota response returns `allowance-exhausted` so the job
+  can stop at its current item. Jobs pass their instructions and the complete source in distinct roles.
+  The route reads `BOSS_WORKER_GEMINI_FREE_KEY` for a Gemini project with billing disabled and
+  `BOSS_WORKER_CF_FREE_ACCOUNT_ID` plus `BOSS_WORKER_CF_FREE_TOKEN` for an account on the Workers Free
+  plan. Verify those plans before provisioning the vault keys and keep billing disabled on both.
+  A provider with missing credentials is skipped. With both unavailable the caller receives `unavailable`.
 - **Boss OS model access** (owner, 24–26 Nov 2026): ordinary deal and LP wording travels intact to
   eligible models. The router and the intake ladder cut sections marked confidential in brain text.
   The recipient still determines outward approval. The router still applies capability, an explicit

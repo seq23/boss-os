@@ -1,9 +1,9 @@
 import { anthropic, probeAnthropicKey } from "./anthropic";
 import { fireworks } from "./fireworks";
-import { gemini } from "./gemini";
+import { gemini, GEMINI_HOST, GEMINI_WORKER_READ_MODEL } from "./gemini";
 import { openai, probeOpenAiKey } from "./openai";
 import { openrouter } from "./openrouter";
-import { workersAi } from "./workersAi";
+import { workersAi, WORKERS_AI_READ_MODEL } from "./workersAi";
 import type { ProviderAdapter, WorkersAiBinding } from "./types";
 
 /**
@@ -57,8 +57,7 @@ export interface CloudBackendWiring {
   models: BackendModelSeed[];
 }
 
-/** Google's Gemini API, reached directly (4 Nov 2026). The one host bk_gemini may call. */
-export const GEMINI_HOST = "https://generativelanguage.googleapis.com/v1beta";
+export { GEMINI_HOST };
 /**
  * The Gemini models Google serves on its FREE tier (owner, 4 Nov 2026: verified live on her key with
  * billing off). Only these slugs are free on bk_gemini (guard.ts routeIsBilled); any other slug there
@@ -66,7 +65,7 @@ export const GEMINI_HOST = "https://generativelanguage.googleapis.com/v1beta";
  * prompts: data_use TRAINS_ON_PROMPTS.
  */
 export const GEMINI_FREE_MODELS = [
-  "gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview",
+  "gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", GEMINI_WORKER_READ_MODEL, "gemini-3-flash-preview",
 ] as const;
 /**
  * WHICH FREE MODELS A GROUNDED GOOGLE SEARCH MAY ASK: ALL OF THEM, AND THE KEY'S ANSWERS DECIDE
@@ -117,7 +116,7 @@ export const CLOUD_BACKENDS: CloudBackendWiring[] = [
         inMicros1k: 152, outMicros1k: 287, contextTokens: 8192,
       },
       {
-        id: "mdl_cf_llama33_70b", slug: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        id: "mdl_cf_llama33_70b", slug: WORKERS_AI_READ_MODEL,
         displayName: "Llama 3.3 70B (Workers AI)", capabilityTier: "general",
         inMicros1k: 293, outMicros1k: 2253, contextTokens: 24000,
       },

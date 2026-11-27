@@ -96,11 +96,9 @@ const BOSS_ROUTER = new Set([
   // Named individually, exactly as the others are, so nothing drifts in behind them.
   "src/worker/boss/router/anthropic.ts",
   "src/worker/boss/router/openai.ts",
-  // ── 0338 · Google Gemini direct, FREE TIER ONLY (4 Nov 2026). Same router, same guards, one host
-  // (GEMINI_HOST in backends.ts); its rows are TRAINS_ON_PROMPTS, so no private work reaches it.
+  // Google Gemini direct uses the fixed GEMINI_HOST.
   "src/worker/boss/router/gemini.ts",
-  // Workers AI needs no entry at all — it is the env.AI BINDING, so it calls no fetch, holds no
-  // bearer token and names no host. That absence is the argument for preferring it.
+  "src/worker/boss/router/workersAi.ts", // REST transport for the dedicated Workers Free account.
 ]);
 
 // Google Workspace data transport uses OAuth bearer headers. Its pathname and origin are

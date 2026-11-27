@@ -2,6 +2,9 @@
   "_note": "worker_name is a DECLARATION, checked against wrangler.toml [env.production] name. If the two disagree the sync aborts. Every key the vault holds must appear in secret_names or in not_synced with a written reason; one in neither aborts the sync by name.",
   "worker_name": "boss-os",
   "secret_names": [
+    "BOSS_WORKER_GEMINI_FREE_KEY",
+    "BOSS_WORKER_CF_FREE_ACCOUNT_ID",
+    "BOSS_WORKER_CF_FREE_TOKEN",
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
     "GEMINI_API_KEY",
@@ -24,6 +27,9 @@
     "GITHUB_SEQ23_PAT"
   ],
   "optional_secret_names": [
+    "BOSS_WORKER_GEMINI_FREE_KEY",
+    "BOSS_WORKER_CF_FREE_ACCOUNT_ID",
+    "BOSS_WORKER_CF_FREE_TOKEN",
     "BOSS_SIMONE_GOOGLE_CLIENT_ID",
     "BOSS_SIMONE_GOOGLE_CLIENT_SECRET",
     "BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT",

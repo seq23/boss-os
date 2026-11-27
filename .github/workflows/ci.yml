@@ -40,7 +40,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, simone-mandate, workers]
   workflow_dispatch:
 
 concurrency:
