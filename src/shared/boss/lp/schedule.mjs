@@ -16,9 +16,7 @@
  *   her calendars      busy time from BOTH Workspace calendars, merged once (`mergeBusy`), so a
  *                      meeting on both is one block and never counted twice.
  *
- * NO MODEL WRITES ANY OF IT. The words are fixed templates filled in code (first name, times), so an
- * LP's name or terms never reach a route. A model draft of LP content is Claude-seat only and the
- * Worker's router refuses it outright (`confidentialDraftRefusal`, router/index.ts).
+ * Scheduling replies use fixed templates filled with the first name and meeting times.
  *
  * NO NAMES LIVE HERE. Tests use invented names at example.com.
  */

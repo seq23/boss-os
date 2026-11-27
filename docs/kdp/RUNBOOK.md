@@ -1,6 +1,7 @@
 # Kindle publishing: Simone's runbook
 
-Simone (Boss OS) owns Kindle publishing from start to finish: upkeep, new batches and reporting.
+Kindle publishing is one part of Simone’s [Chief of Staff role](../boss/OPERATIONS.md#simone-the-chief-of-staff).
+She follows upkeep and new batches through to what readers can actually find on Kindle.
 The strategy is in the spry brain (Company › "KDP strategy (approved 8 Nov 2026)"). This page
 covers how to run it. Every command runs from a boss-os checkout. Anything that touches Amazon or
 Boss OS runs through the vault: `npm run -s vault:run -- node scripts/ops/<script>`.

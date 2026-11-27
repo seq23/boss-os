@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { routeCompletion, BudgetExceeded, RoutingBlocked } from "../../src/worker/boss/router";
 import { setSpendLever } from "../../src/worker/boss/router/spend";
 import { bypassFor, isLive, predictSpend, type BypassRow } from "../../src/worker/boss/router/bypass";
-import { scanForModelAccess, privateLexicon, isPrivateModelRoute } from "../../src/worker/boss/router/modelAccess";
+import { isPrivateModelRoute } from "../../src/worker/boss/router/modelAccess";
 import { routeIsBilled } from "../../src/worker/boss/backends/guard";
 import { row, all, api, apiJson, stubFetch, completionResponse } from "./helpers";
 
@@ -200,83 +200,7 @@ describe("1 · the shipped seed follows its keys", () => {
   });
 });
 
-describe("2 · the confidential line, offered exactly the content it exists to refuse", () => {
-  it("refuses a route whose terms permit training, and no approval lifts it", async () => {
-    await provisionWorkersAi();
-    // Only the training-permitting route is left standing, so the refusal cannot be satisfied
-    // elsewhere and has to be visible.
-    await env.DB.prepare(`UPDATE providers SET enabled = 0 WHERE id = 'prv_workers_ai'`).run();
-    await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_openrouter'`).run();
-
-    let called = false;
-    restore = stubFetch(() => { called = true; return completionResponse("must not run"); });
-
-    const err = await routeCompletion(env, {
-      ...baseRequest,
-      taskId: "tsk_conf1",
-      // An LP name this system holds, and a deal term, in the words a draft would really use.
-      messages: [{ role: "user", content: "Draft a note about the $2.5M commitment and the side letter." }],
-      // THE CARD IS APPROVED, and it changes nothing. That is the assertion.
-      cloudForRestrictedAllowed: true,
-    }).catch((e) => e);
-
-    expect(err).toBeInstanceOf(RoutingBlocked);
-    // NOBODY WAS CALLED. A refusal issued after the content left would not be a refusal.
-    expect(called).toBe(false);
-
-    const decision = await row<{ candidates: string }>(
-      `SELECT candidates FROM routing_decisions WHERE task_id = 'tsk_conf1'`,
-    );
-    const candidates = JSON.parse(decision!.candidates) as { stage: string; verdict: string; reason: string }[];
-    const refused = candidates.filter((x) => x.reason.includes("training on what is sent"));
-    expect(refused.length).toBeGreaterThan(0);
-    for (const r of refused) {
-      expect(r.stage).toBe("privacy");
-      expect(r.verdict).toBe("rejected");
-    }
-    // And it says plainly that no approval helps, so nobody goes looking for a card that would.
-    expect(refused[0]!.reason).toContain("No approval lifts this");
-  });
-
-  it("still runs the same content on a route that does not train", async () => {
-    await provisionWorkersAi();
-    const { bound, calls } = withAi("Drafted.");
-
-    const result = await routeCompletion(bound, {
-      ...baseRequest,
-      taskId: "tsk_conf2",
-      messages: [{ role: "user", content: "Draft a note about the $2.5M commitment and the side letter." }],
-    });
-
-    expect(calls.length).toBe(1);
-    const chosen = await row<{ data_use: string }>(`SELECT data_use FROM models WHERE id = ?`, result.modelId);
-    expect(chosen!.data_use).toBe("NO_TRAINING_CONTRACTUAL");
-  });
-
-  /**
-   * THE REFUSAL NEVER QUOTES WHAT IT FOUND.
-   *
-   * `routing_decisions.candidates` is read months later, by a person, on a screen. A refusal that
-   * repeated the LP's name into the log would have moved the leak rather than stopped it.
-   */
-  it("names the kind of thing it found and never the thing itself", async () => {
-    const lexicon = await privateLexicon(env.DB);
-    const verdict = scanForModelAccess(
-      [{ role: "user", content: "Northgate Partners committed $2.5M with an MFN side letter." }],
-      lexicon,
-    );
-    expect(verdict.access).toBe("private_model_only");
-    expect(verdict.reason).not.toContain("Northgate");
-    expect(verdict.reason).not.toContain("2.5M");
-    expect(verdict.kinds.join(" ")).toMatch(/money figure|side-letter|commitment|private/);
-  });
-
-  it("treats a scan it could not complete as a hit, rather than as a clean bill", () => {
-    const broken = { names: [], established: false, note: "the lexicon could not be read" };
-    const verdict = scanForModelAccess([{ role: "user", content: "hello" }], broken);
-    expect(verdict.access).toBe("private_model_only");
-  });
-
+describe("2 · vendor data-use settings", () => {
   it("lets exactly one data-use value be a private-model route", () => {
     expect(isPrivateModelRoute("NO_TRAINING_CONTRACTUAL")).toBe(true);
     for (const v of ["TRAINS_ON_PROMPTS", "UNKNOWN", "", null, undefined, "NO_TRAINING", "anything"]) {

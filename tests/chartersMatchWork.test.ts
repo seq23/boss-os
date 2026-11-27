@@ -31,7 +31,7 @@ const FACTS: Record<string, { says: RegExp[]; never: RegExp[] }> = {
   emp_repo: { says: [/land/i, /Ahrefs/, /Search Readiness/], never: [/do not commit/i, /not .*merge/i, /not .*deploy/i] },
   emp_relationship: { says: [/capital/i, /\bLP\b/, /institutional sales/i, /Time-2-Read groups/, /outreach/i], never: [/never send anything outward/i] },
   emp_research: { says: [/Executive Intelligence Report/, /Marketplace listings/, /offices/] , never: [] },
-  emp_chief: { says: [/front door/i, /morning email/i, /errands/i], never: [] },
+  emp_chief: { says: [/Chief of Staff/i, /runs your day/i, /in charge of everything Boss OS runs/i], never: [/front door/i, /signed as her assistant/i] },
   emp_knowledge: { says: [/Scooter's LP tracker/, /unowned/, /archive/i], never: [/^Turn conversation into candidate memory/] },
   emp_risk: { says: [/trading lane/, /logins/, /locks/], never: [] },
   emp_continuity: { says: [/property is up/, /disk/, /tools/], never: [] },
@@ -58,6 +58,9 @@ describe("every charter matches the seat's real work", () => {
     const met = Object.entries(FACTS).every(([id, f]) => seedOnly[id] && f.says.every((re) => re.test(seedOnly[id]!)));
     expect(met).toBe(false);
     const stale = "Prepare repository work as artifacts and scoped changes. You do not commit, merge, or deploy.";
+    const oldChief = latestCharters(files.filter(({ name }) => name < "0384")).emp_chief!;
+    expect(FACTS.emp_chief!.says.every((re) => re.test(oldChief))).toBe(false);
+    expect(FACTS.emp_chief!.never.some((re) => re.test(oldChief))).toBe(true);
     expect(FACTS.emp_repo!.never.some((re) => re.test(stale))).toBe(true);
     expect(FACTS.emp_relationship!.never.some((re) => re.test("Track who matters. Never send anything outward."))).toBe(true);
   });

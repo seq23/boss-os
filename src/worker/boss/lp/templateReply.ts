@@ -28,6 +28,9 @@ import { sentencesOf, standingIn, stands, vetoOf } from "../../../shared/boss/te
 /** "5: …", "#5 …", "5. …", "5) …" at the start of her reply. */
 export const NUMBERED_REPLY_RE = /^\s*#?(\d{1,2})\s*(?::|\.|\)|-|—|\s)\s*([\s\S]*)$/;
 const TEMPLATE_ID_RE = /\b(ptp_[a-z0-9]{6,40})\b/i;
+export function templateIdIn(text: string): string | null {
+  return TEMPLATE_ID_RE.exec(text)?.[1]?.toLowerCase() ?? null;
+}
 
 /** Her words that are a rule for every future email, not a one-off edit. */
 const GENERAL = /\b(?:never|always|every(?:\s+(?:email|template|time))?|from now on|in future|going forward|don't ever)\b/i;
@@ -192,9 +195,8 @@ export async function prospectTemplateFromMail(env: Env, text: string, now = Dat
     if (card?.key?.startsWith("prospect-template:")) { templateId = card.key.slice("prospect-template:".length); words = numbered[2]!.trim(); cardN = Number(numbered[1]); }
   }
   if (!templateId) {
-    const id = TEMPLATE_ID_RE.exec(her)?.[1];
-    if (!id) return null;
-    templateId = id.toLowerCase();
+    templateId = templateIdIn(her);
+    if (!templateId) return null;
     words = her.replace(TEMPLATE_ID_RE, "").replace(/^\s*[:.\-—]\s*/, "").trim();
   }
   const row = await env.DB.prepare(`SELECT * FROM prospect_templates WHERE id = ?`).bind(templateId).first<any>();

@@ -6,6 +6,8 @@ import { routeToSeat, seatTag, replyBody } from "../../src/shared/boss/intake/ma
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { storeLiveBook, currentBook, currentBookLines } from "../../src/worker/boss/capital/book";
 import { unansweredQuestionAlerts } from "../../src/worker/boss/intake/questions";
+import { claimSimone, finishSimoneHandoff, releaseSimone, replySimone, SIMONE } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 
 /**
  * MAIL TO boss@sequoiataylor.com, END TO END, AGAINST REAL D1.
@@ -48,6 +50,17 @@ function mail(opts: {
   };
 }
 
+async function fileBookFromMail(opts: Parameters<typeof mail>[0], verb: "book" | "add" | "remove", text: string) {
+  const arrival = await handleBossInboundMail(mail(opts), env);
+  expect(arrival).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+  const call = (await claimSimone(env))!;
+  expect(call.id).toBe(arrival.taskId);
+  const saved = await simoneTool(env, { ...call, tool: "update_book", task: JSON.stringify({ verb, text }) });
+  if (!("note" in saved) || !saved.note || !saved.receipt) throw new Error("Book reader returned no result");
+  expect(await replySimone(env, { ...call, text: saved.note, work: [saved.receipt] })).toBe(true);
+  return { ...arrival, ...saved, reply: saved.note };
+}
+
 beforeEach(async () => {
   await env.DB.exec("DELETE FROM capital_book_line");
   await env.DB.exec("DELETE FROM capital_book");
@@ -65,19 +78,26 @@ describe("who the mailbox answers for", () => {
 });
 
 describe("the tag routes and the sender authorises", () => {
-  it("routes #firstname to that employee, from the D1 roster", async () => {
-    const roster = await activeRoster(env as never);
-    expect(roster.length).toBeGreaterThan(0);
-    const monique = roster.find((s) => s.name === "Monique")!;
-    expect(monique).toBeTruthy();
-
-    const res = await handleBossInboundMail(mail({ subject: "#monique have a look", body: "please" }), env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.employeeId).toBe(monique.id);
-    expect(res.taskId).toBeTruthy();
-
-    const task = await env.DB.prepare(`SELECT employee_id, status FROM tasks WHERE id = ?`).bind(res.taskId).first();
-    expect(task?.employee_id).toBe(monique.id);
+  it("routes the original tagged fixture and a message for each active colleague through Simone", async () => {
+    const roster = await activeRoster(env);
+    const colleagues = roster.filter((seat) => seat.id !== SIMONE);
+    expect(colleagues.some((seat) => seat.name === "Monique")).toBe(true);
+    expect(colleagues.some((seat) => seat.name === "Noelle")).toBe(true);
+    for (const seat of colleagues) {
+      const subject = `${seatTag(seat.name)} have a look`;
+      const res = await handleBossInboundMail(mail({ subject, body: "please" }), env);
+      expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: SIMONE, reply: null });
+      const call = await claimSimone(env);
+      expect(call).toMatchObject({ id: res.taskId, message: { body: `${subject}\n\nplease` } });
+      const { id, lease, message } = call!;
+      expect(await finishSimoneHandoff(env, { id, lease, assignments: [{ employee: seat.id, words: message.body }] })).toEqual({ replied: true, refused: false });
+      const tasks = await env.DB.prepare(`SELECT employee_id, status, envelope_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`)
+        .bind(id).all();
+      const status = seat.name === "Monique" ? "queued" : expect.stringMatching(/^(queued|awaiting_approval)$/);
+      expect(tasks.results).toEqual([{ employee_id: seat.id, status, envelope_id: expect.any(String) }]);
+      const notice = await env.DB.prepare("SELECT body FROM boss_task_notices WHERE task_id = ?").bind(id).first();
+      expect(notice).toEqual({ body: `I handed this to ${seat.name}.` });
+    }
   });
 
   it("REFUSES a stranger who types a perfect tag, and creates no work", async () => {
@@ -106,7 +126,7 @@ describe("the tag routes and the sender authorises", () => {
 });
 
 describe("the address she wrote to is a tag she did not have to type", () => {
-  it("an untagged reply to danielle@ routes to Danielle; a typed tag still wins; boss@ still defaults", async () => {
+  it("passes a direct delivery address to Simone and files the handoff for its recipient", async () => {
     const roster = await activeRoster(env as never);
     const danielle = roster.find((s) => s.name === "Danielle")!;
     const simone = roster.find((s) => s.name === "Simone")!;
@@ -115,10 +135,16 @@ describe("the address she wrote to is a tag she did not have to type", () => {
     expect(routeToSeat("#simone take this", roster, "danielle@sequoiataylor.com")!.seat.id).toBe(simone.id);
     expect(routeToSeat("approved", roster, "boss@sequoiataylor.com")!.outcome).toBe("DEFAULTED");
     expect(routeToSeat("approved", roster, "nobody@sequoiataylor.com")!.outcome).toBe("DEFAULTED");
-    // Through the real handler: her one-word reply to Danielle's address is Danielle's, not the Chief of Staff's.
-    const res = await handleBossInboundMail(mail({ to: "danielle@sequoiataylor.com", subject: "Re: plan for WPP-llm", body: "approved" }), env as never);
-    expect(res.employeeId).toBe(danielle.id);
-    expect(res.outcome).toBe("ROUTED");
+    const to = "danielle@sequoiataylor.com";
+    const body = "Fix the gallery link in the code.";
+    const res = await handleBossInboundMail(mail({ to, body }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: res.taskId, message: { to, body } });
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: danielle.id, words: body }] }))
+      .toEqual({ replied: true, refused: false });
+    expect(await env.DB.prepare(`SELECT employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`)
+      .bind(call.id).first()).toEqual({ employee_id: danielle.id });
   });
 });
 
@@ -129,31 +155,25 @@ describe("an unknown tag is never guessed and never dropped", () => {
    * scores for a specialist, so it is the Chief of Staff's own, flagged as the closest fit; the
    * typo is still explained with the real roster, so it self-corrects.
    */
-  it("sends it to the closest seat — the Chief of Staff here — and says so", async () => {
-    const roster = await activeRoster(env as never);
-    const chief = roster.find((s) => s.role === "Chief of Staff")!;
-    const res = await handleBossInboundMail(
-      mail({ subject: "#gertrude", body: "please have a look at the Q3 numbers today" }), env as never);
-    expect(res.outcome).toBe("TRIAGED");
-    expect(res.employeeId).toBe(chief.id);
-    expect(res.taskId).toBeTruthy();
-    expect(res.reply).toContain("#gertrude");
-    expect(res.reply).toContain(`${chief.name} has: please have a look at the Q3 numbers today (closest fit`);
-    // The reply advertises the real roster, so a typo is self-correcting.
-    for (const s of roster) expect(res.reply).toContain(seatTag(s.name));
+  it("gives the full request with an unknown tag to Simone without inventing a colleague", async () => {
+    const words = "please have a look at the Q3 numbers today";
+    const res = await handleBossInboundMail(mail({ subject: "#gertrude", body: words }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: SIMONE, reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: res.taskId, message: { body: `#gertrude\n\n${words}` } });
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: "emp_gertrude", words }] }))
+      .toEqual({ replied: false, refused: false });
+    expect(await env.DB.prepare(`SELECT COUNT(*) n FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`).bind(call.id).first())
+      .toEqual({ n: 0 });
   });
 
-  it("does the same for no tag at all, without a roster dump", async () => {
-    const res = await handleBossInboundMail(
-      mail({ subject: "a thought", body: "have a look at the Q3 numbers" }), env as never);
-    expect(res.outcome).toBe("TRIAGED");
-    expect(res.taskId).toBeTruthy();
-    expect(res.reply).toMatch(/^Got it\. \w+ has started\./);
-    expect(res.reply).not.toContain("Nobody here answers to");
-    // 6 Nov 2026 live read: "Simone here" arrived signed by the seat that got the job, with a #tag
-    // hint and a stray "Boss OS" line. The acknowledgement is Simone's, and says neither.
-    expect(res.signer).toBe("Simone");
-    expect(res.reply).not.toMatch(/#danielle|— Boss OS/);
+  it("keeps an untagged message queued until Simone has work to report", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "a thought", body: "have a look at the Q3 numbers" }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: res.taskId, message: { body: "a thought\n\nhave a look at the Q3 numbers" } });
+    expect(await replySimone(env, { ...call, text: "I started.", work: [] })).toBe(false);
+    expect(await env.DB.prepare("SELECT COUNT(*) n FROM boss_task_notices WHERE task_id = ?").bind(call.id).first()).toEqual({ n: 0 });
   });
 
   /*
@@ -162,7 +182,8 @@ describe("an unknown tag is never guessed and never dropped", () => {
    * The same words (sanitized) must reach Camille's Chrome executor, held until Monday 9:00 Central.
    */
   it("a Chrome job for tomorrow after 9am goes to the seat in her Chrome, held until then, never a research page", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(Date.parse("2026-11-01T21:01:45Z")); // Sun 1 Nov, 15:01 CT
+    const now = Date.parse("2026-11-01T21:01:45Z");
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); // Sun 1 Nov, 15:01 CT
     try {
       const res = await handleBossInboundMail(mail({
         subject: "",
@@ -170,9 +191,29 @@ describe("an unknown tag is never guessed and never dropped", () => {
           + "Task: in Pinterest, on the example account, connect the RSS feed for one board (Settings → Bulk create Pins → add feed). Pinterest refused this one today only because the feed was empty.\n\n"
           + "Done = the feed shows as connected. If Pinterest still refuses it, try again Tuesday and tell me only if it fails twice. Do not change any other Pinterest setting.",
       }), env as never);
-      expect(res.outcome).toBe("TRIAGED");
-      expect(res.employeeId).toBe("emp_research");
-      const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId).first<{ input: string }>();
+      expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: SIMONE, reply: null });
+      const call = (await claimSimone(env))!;
+      expect(call).toMatchObject({ id: res.taskId, receivedAt: "2026-11-01T21:01:45.000Z" });
+      const assignments = [{
+        employee: "emp_research", delivery: "chrome", words: call.message.body,
+        start: { at: "2026-11-02T15:00:00Z", words: "tomorrow, Monday 2 Nov, after 9am Central" },
+      }];
+      const send = vi.fn().mockResolvedValue(undefined);
+      const worker = { ...env, TASKS: { send } as unknown as typeof env.TASKS };
+      expect(await finishSimoneHandoff(worker, { ...call, assignments: [{
+        ...assignments[0], start: { ...assignments[0]!.start, words: "start right now" },
+      }] })).toEqual({ replied: false, refused: false });
+      expect(send).not.toHaveBeenCalled();
+      send.mockRejectedValueOnce(new Error("queue unavailable"));
+      await expect(finishSimoneHandoff(worker, { ...call, assignments })).rejects.toThrow("queue unavailable");
+      expect(await env.DB.prepare("SELECT COUNT(*) n FROM boss_task_notices WHERE task_id = ?").bind(call.id).first()).toEqual({ n: 0 });
+      expect(await releaseSimone(env, call.id, call.lease, "HANDOFF_UNAVAILABLE")).toBe(true);
+      const retry = (await claimSimone(env))!;
+      expect(await finishSimoneHandoff(worker, { ...retry, assignments: retry.pendingHandoffs })).toEqual({ replied: true, refused: false });
+      const { results } = await env.DB.prepare(`SELECT id, input, employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`)
+        .bind(call.id).all<{ id: string; input: string; employee_id: string }>();
+      expect(results.map(({ employee_id }) => employee_id)).toEqual(["emp_research"]);
+      const task = results[0]!;
       const input = JSON.parse(task!.input);
       expect(input.chrome_job).toBe(true);
       expect(input.research_page).toBeUndefined();
@@ -186,20 +227,22 @@ describe("an unknown tag is never guessed and never dropped", () => {
       expect(input.not_before.at).toBe("2026-11-02T15:00:00.000Z");
       expect(input.due.priority).toBe("HIGH");
       expect(Date.parse(input.due.due_at)).toBeGreaterThan(Date.parse("2026-11-02T15:00:00.000Z"));
-      expect(res.reply).toContain("Held until Mon, Nov 2");
+      const delay = Math.ceil((Date.parse(input.not_before.at) - now) / 1000);
+      expect(send.mock.calls).toEqual(Array(2).fill([{ taskId: task.id, lane: "ops" }, { delaySeconds: delay }]));
+      const reply = await env.DB.prepare("SELECT body FROM boss_task_notices WHERE task_id = ?").bind(call.id).first<{ body: string }>();
+      expect(reply?.body).toMatch(/held until Mon, Nov 2.*9:00 AM CT/);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("still names the whole roster when it ALSO has to ask a question", async () => {
-    const roster = await activeRoster(env as never);
-    const res = await handleBossInboundMail(mail({ subject: "#gertrude please" }), env as never);
-    // Nothing to act on, so it asks — and the unrecognised tag is still explained in the same reply.
-    expect(res.outcome).toBe("NEEDS_CLARITY");
-    expect(res.taskId).toBeNull();
-    expect(res.reply).toContain("#gertrude");
-    for (const s of roster) expect(res.reply).toContain(seatTag(s.name));
+  it("keeps an incomplete instruction for Simone without acknowledging invented work", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#gertrude please" }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.message.body).toBe("#gertrude please");
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [] })).toEqual({ replied: false, refused: false });
+    expect(await env.DB.prepare("SELECT status, output FROM tasks WHERE id = ?").bind(call.id).first()).toEqual({ status: "running", output: null });
   });
 });
 
@@ -223,16 +266,15 @@ describe("her live book", () => {
   });
 
   it("files from an email to #monique, versioned", async () => {
-    const first = await handleBossInboundMail(
-      mail({ subject: "#monique this week's book", body: HER_BOOK }), env as never);
-    expect(first.outcome).toBe("ROUTED");
+    const first = await fileBookFromMail({ subject: "#monique this week's book", body: HER_BOOK }, "book", HER_BOOK);
+    expect(first.changed).toBe(true);
     const v1 = await currentBook(env as never);
     expect(v1?.version).toBe(1);
     expect((await currentBookLines(env as never)).length).toBe(6);
 
     // A LATER BOOK SUPERSEDES, and the earlier one survives.
-    await handleBossInboundMail(
-      mail({ subject: "#monique updated", body: "Anthropic shares $1B\nKalshi $50M" }), env as never);
+    const newer = "Example Robotics shares $1B\nExample Materials $50M";
+    await fileBookFromMail({ subject: "#monique updated", body: newer }, "book", newer);
     const v2 = await currentBook(env as never);
     expect(v2?.version).toBe(2);
     expect((await currentBookLines(env as never)).length).toBe(2);
@@ -297,16 +339,20 @@ describe("her live book", () => {
     expect(looksLikeBook(handedOff, HER_BOOK)).toBe(false);
   });
 
-  it("end to end: the report handed to Monique by rule opens work and leaves her book alone", async () => {
-    await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
+  it("a report can reach its intended colleague and cannot be filed from forwarded context", async () => {
+    await fileBookFromMail({ subject: "#monique book", body: HER_BOOK }, "book", HER_BOOK);
     const before = await currentBook(env as never);
-    // Untagged, so it defaults to the Chief of Staff and the rule hands it to Monique on
-    // "sell" + "shares" + a dollar size — the desk that owns the book, reached without her tag.
-    const res = await handleBossInboundMail(
-      mail({ subject: "weekend report", body: `Please set the briefing up like the report below.\n\n${A_REPORT}\nSell Order: Databricks shares | $ 25.00 M @ $ 263.00` }),
-      env as never);
-    expect(res.employeeId).toBe(before ? routeToSeat("#monique", await activeRoster(env as never))!.seat.id : "");
-    expect(res.outcome).toBe("DEFAULTED");
+    const request = "Please set the briefing up like the report below.";
+    const res = await handleBossInboundMail(mail({ subject: "weekend report",
+      body: `${request}\n\n---------- Forwarded message ---------\nFrom: Analyst <analyst@example.test>\nSubject: Example Portfolio\n\n${A_REPORT}` }), env);
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    expect(call.message.context).toContain(A_REPORT);
+    expect(await simoneTool(env, { ...call, tool: "update_book", task: JSON.stringify({ verb: "book", text: A_REPORT }) }))
+      .toEqual({ ok: false, code: "BOOK_INSTRUCTION_REQUIRED" });
+    const camille = call.roster.find((seat) => seat.name === "Camille")!;
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: camille.id, words: request }] }))
+      .toMatchObject({ replied: true });
     const after = await currentBook(env as never);
     expect(after?.id).toBe(before?.id);
     expect(after?.version).toBe(1);
@@ -322,9 +368,9 @@ describe("she says what she means", () => {
   const DATABRICKS = "Databricks — size TBD, looking for buyers this week";
 
   it("`book` replaces, and carries a lot she has not sized yet", async () => {
-    const res = await handleBossInboundMail(
-      mail({ subject: "#monique book", body: `${HER_BOOK}\n${DATABRICKS}` }), env as never);
-    expect(res.outcome).toBe("ROUTED");
+    const text = `${HER_BOOK}\n${DATABRICKS}`;
+    const res = await fileBookFromMail({ subject: "#monique book", body: text }, "book", text);
+    expect(res.changed).toBe(true);
     const lines = await currentBookLines(env as never);
     expect(lines.length).toBe(7);
     const dbx = lines.find((l) => l.asset === "Databricks")!;
@@ -334,31 +380,26 @@ describe("she says what she means", () => {
     expect(String(dbx.size_text)).toMatch(/tbd/i);
   });
 
-  it("A FILED BOOK IS THE WHOLE JOB — no model task, nothing to approve", async () => {
+  it("files a book through the original Simone task, without a second task or approval", async () => {
     const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>();
-    const res = await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.taskId).toBeNull();
-    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>())?.n).toBe(before?.n);
-    // She is still told exactly what was filed.
+    const res = await fileBookFromMail({ subject: "#monique book", body: HER_BOOK }, "book", HER_BOOK);
+    expect(res.taskId).toBeTruthy();
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>())?.n).toBe((before?.n ?? 0) + 1);
     expect(res.reply).toContain("Kalshi");
-    expect((await currentBookLines(env as never)).length).toBe(6);
+    expect((await currentBookLines(env)).length).toBe(6);
   });
 
-  it("a book with NO verb still opens work, exactly as it always did", async () => {
-    const res = await handleBossInboundMail(
-      mail({ subject: "#monique this week's book", body: HER_BOOK }), env as never);
-    expect(res.outcome).toBe("ROUTED");
+  it("files the inventory from an owner-requested book update even without a command verb", async () => {
+    const res = await fileBookFromMail({ subject: "#monique this week's book", body: HER_BOOK }, "book", HER_BOOK);
     expect(res.taskId).toBeTruthy();
-    expect((await currentBook(env as never))?.version).toBe(1);
+    expect((await currentBook(env))?.version).toBe(1);
   });
 
   it("`add` amends and leaves everything else standing", async () => {
-    await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
+    await fileBookFromMail({ subject: "#monique book", body: HER_BOOK }, "book", HER_BOOK);
     const before = await currentBookLines(env as never);
-    const res = await handleBossInboundMail(
-      mail({ subject: "#monique", body: `#monique add\n${DATABRICKS}` }), env as never);
-    expect(res.outcome).toBe("ROUTED");
+    const res = await fileBookFromMail({ subject: "#monique", body: `#monique add\n${DATABRICKS}` }, "add", DATABRICKS);
+    expect(res.changed).toBe(true);
     const after = await currentBookLines(env as never);
     expect(after.length).toBe(before.length + 1);
     expect((await currentBook(env as never))?.version).toBe(2);
@@ -369,34 +410,32 @@ describe("she says what she means", () => {
   });
 
   it("`add` of something already there at that size does not duplicate it", async () => {
-    await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
-    const res = await handleBossInboundMail(mail({ subject: "#monique add Kalshi $20M" }), env as never);
+    await fileBookFromMail({ subject: "#monique book", body: HER_BOOK }, "book", HER_BOOK);
+    const res = await fileBookFromMail({ subject: "#monique add Kalshi $20M" }, "add", "Kalshi $20M");
     expect((await currentBookLines(env as never)).filter((l) => l.asset === "Kalshi").length).toBe(1);
     expect(res.reply).toMatch(/already/i);
   });
 
   it("`remove` drops the named lot and only that one", async () => {
-    await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
-    await handleBossInboundMail(mail({ subject: "#monique remove Kalshi" }), env as never);
+    await fileBookFromMail({ subject: "#monique book", body: HER_BOOK }, "book", HER_BOOK);
+    await fileBookFromMail({ subject: "#monique remove Kalshi" }, "remove", "Kalshi");
     const lines = await currentBookLines(env as never);
     expect(lines.some((l) => l.asset === "Kalshi")).toBe(false);
     expect(lines.length).toBe(5);
     // Two Anthropic lots, and a size names one of them.
-    await handleBossInboundMail(mail({ subject: "#monique remove Anthropic $500M" }), env as never);
+    await fileBookFromMail({ subject: "#monique remove Anthropic $500M" }, "remove", "Anthropic $500M");
     const anthropic = (await currentBookLines(env as never)).filter((l) => l.asset === "Anthropic");
     expect(anthropic.length).toBe(1);
     expect(anthropic[0]!.size_usd).toBe(2e9);
   });
 
-  it("A VERB IT CANNOT READ REPLIES, AND OPENS NO WORK", async () => {
+  it("an unreadable amendment preserves the book and opens no second task", async () => {
     const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>();
-    const res = await handleBossInboundMail(
-      mail({ subject: "#monique", body: "#monique add whatever you think is best" }), env as never);
-    expect(res.outcome).toBe("BOOK_NOT_READ");
-    // The whole point: no model task, therefore nothing to hallucinate into her approval queue.
-    expect(res.taskId).toBeNull();
+    const text = "whatever you think is best";
+    const res = await fileBookFromMail({ subject: "#monique", body: `#monique add ${text}` }, "add", text);
+    expect(res.failed).toBe(true);
     const after = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>();
-    expect(after?.n).toBe(before?.n);
+    expect(after?.n).toBe((before?.n ?? 0) + 1);
     expect(res.reply).toMatch(/could not read a single lot/i);
     expect(res.reply).toContain("size TBD");
     expect((await currentBook(env as never))).toBeNull();
@@ -408,9 +447,9 @@ describe("she says what she means", () => {
      * `bookFailure.split("\n")[0]` and the refusal is wrapped prose. The dropped line was the one
      * carrying UNCHANGED. The reply was fine; the audit trail was the thing that lied by omission.
      */
-    const res = await handleBossInboundMail(
-      mail({ subject: "#monique", body: "#monique add whatever you think is best" }), env as never);
-    expect(res.outcome).toBe("BOOK_NOT_READ");
+    const text = "whatever you think is best";
+    const res = await fileBookFromMail({ subject: "#monique", body: `#monique add ${text}` }, "add", text);
+    expect(res.failed).toBe(true);
     const row = await env.DB
       .prepare(`SELECT why FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<{ why: string }>();
     const why = String(row?.why ?? "");
@@ -423,12 +462,31 @@ describe("she says what she means", () => {
   });
 
   it("`remove` of a name that is not on the book changes nothing and says what is", async () => {
-    await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
-    const res = await handleBossInboundMail(mail({ subject: "#monique remove Polymarket" }), env as never);
-    expect(res.outcome).toBe("BOOK_NOT_READ");
-    expect(res.taskId).toBeNull();
+    await fileBookFromMail({ subject: "#monique book", body: HER_BOOK }, "book", HER_BOOK);
+    const res = await fileBookFromMail({ subject: "#monique remove Polymarket" }, "remove", "Polymarket");
+    expect(res.failed).toBe(true);
     expect((await currentBookLines(env as never)).length).toBe(6);
     expect(res.reply).toContain("Kalshi");
+  });
+
+  it("a retry of an earlier email leaves the newer book on top", async () => {
+    const { releaseSimone } = await import("../../src/worker/boss/agents/simone");
+    const first = "Copper Trail Software $20M";
+    const firstMail = await handleBossInboundMail(mail({ subject: "Book", body: first }), env);
+    const before = (await claimSimone(env))!;
+    expect(before.id).toBe(firstMail.taskId);
+    const apply = (call: { id: string; lease: number }) => simoneTool(env, {
+      ...call, tool: "update_book", task: JSON.stringify({ verb: "book", text: first }),
+    });
+    expect(await apply(before)).toMatchObject({ ok: true, changed: true, version: 1 });
+    expect(await releaseSimone(env, before.id, before.lease, "MODEL_UNAVAILABLE")).toBe(true);
+    const second = "Amber Ridge Systems $10M";
+    await fileBookFromMail({ subject: "Book update", body: second }, "book", second);
+    const retry = (await claimSimone(env))!;
+    expect(retry).toMatchObject({ id: before.id, lease: before.lease + 1 });
+    expect(await apply(retry)).toMatchObject({ ok: true, changed: false, version: 1 });
+    expect((await currentBook(env))?.version).toBe(2);
+    expect((await currentBookLines(env)).map(({ asset }) => asset)).toEqual(["Amber Ridge Systems"]);
   });
 
   it("a message that merely CONTAINS a verb is an ordinary instruction", async () => {
@@ -446,36 +504,29 @@ describe("she says what she means", () => {
  * SHE IS ASKED, AND NOTHING IS INVENTED. The failure this is built from is `apr_m26zq5praheyw251`:
  * a routed message, a model, and a confident paragraph about an imaginary meeting checklist.
  */
-describe("an employee who does not understand asks", () => {
-  const DATABRICKS_MESSAGE = "#Monique - Please add searching for buyers of Databricks to the weekly list";
-
-  it("asks about HER message rather than generating from it, and opens no task", async () => {
-    const res = await handleBossInboundMail(
-      mail({ subject: "#Monique", body: DATABRICKS_MESSAGE }), env as never);
-    expect(res.outcome).toBe("NEEDS_CLARITY");
-    expect(res.taskId).toBeNull();
-    // SPECIFIC: it says what it understood, what it could not, and what to send back.
-    expect(res.reply).toContain("Databricks");
-    expect(res.reply).toContain(DATABRICKS_MESSAGE);
-    expect(res.reply).toMatch(/size TBD/);
-    const row = await env.DB.prepare(`SELECT outcome, answered_at FROM boss_inbound_mail WHERE id = ?`)
-      .bind(res.mailId).first<{ outcome: string; answered_at: number | null }>();
-    expect(row?.outcome).toBe("NEEDS_CLARITY");
-    expect(row?.answered_at).toBeNull();
-  });
+describe("questions already recorded before Simone's intake", () => {
+  async function existingQuestion({ subject = "#Monique", messageId }: { subject?: string; messageId?: string } = {}) {
+    const mailId = "iml_fixture_question";
+    await env.DB.prepare(`INSERT INTO boss_inbound_mail
+      (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, employee_id, outcome, why, message_id, reply_state)
+      VALUES (?, ?, ?, ?, 1, 1, ?, 'emp_relationship', 'NEEDS_CLARITY', ?, ?, 'shown_on_screen')`)
+      .bind(mailId, Date.now(), mail({}).to, mail({}).from, subject, "What size should Monique look for?", messageId ?? `<${mailId}@boss-os-console>`).run();
+    return { mailId };
+  }
 
   it("an ordinary instruction is worked, and is never questioned", async () => {
-    const res = await handleBossInboundMail(
-      mail({ subject: "#monique", body: "can you follow up with the $50M guy tomorrow" }), env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.taskId).toBeTruthy();
+    const words = "can you follow up with the $50M guy tomorrow";
+    const res = await handleBossInboundMail(mail({ subject: "#monique", body: words }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: "emp_relationship", words }] }))
+      .toEqual({ replied: true, refused: false });
+    expect(await env.DB.prepare(`SELECT count(*) n FROM boss_inbound_mail WHERE outcome = 'NEEDS_CLARITY'`).first()).toEqual({ n: 0 });
   });
 
   it("A REPLY NEVER TRIGGERS A SECOND QUESTION, and closes the first", async () => {
-    const asked = await handleBossInboundMail(mail({
-      subject: "#Monique", body: DATABRICKS_MESSAGE, messageId: "<q1@mail.gmail.com>",
-    }), env as never);
-    expect(asked.outcome).toBe("NEEDS_CLARITY");
+    const asked = await existingQuestion({ messageId: "<q1@mail.gmail.com>" });
 
     // Her answer: short, and short is exactly what rule 2 would otherwise ask about again.
     const answer = await handleBossInboundMail(mail({
@@ -494,9 +545,7 @@ describe("an employee who does not understand asks", () => {
   });
 
   it("an unanswered question becomes visible on Today, and not before it is stale", async () => {
-    const asked = await handleBossInboundMail(
-      mail({ subject: "#Monique", body: DATABRICKS_MESSAGE }), env as never);
-    expect(asked.outcome).toBe("NEEDS_CLARITY");
+    const asked = await existingQuestion();
     expect(await unansweredQuestionAlerts(env as never, Date.now())).toEqual([]);
     const stale = await unansweredQuestionAlerts(env as never, Date.now() + 4 * 86_400_000);
     expect(stale.length).toBe(1);
@@ -504,26 +553,9 @@ describe("an employee who does not understand asks", () => {
     expect(stale[0]!.text).toMatch(/waiting on you/i);
   });
 
-  /**
-   * THE QUESTION SHE COULD NOT ANSWER. `iml_m297nsjanp50ygzr` was typed into Boss OS on 11
-   * September, carried no Message-ID, and sat on Today at HIGH saying "reply to that email" about
-   * an email that did not exist. A console message now mints its own id, and the answer route
-   * replies to it by the same path an emailed reply takes.
-   */
-  it("a question typed into the console carries a Message-ID a reply can name", async () => {
-    const m = mail({ subject: "#Monique", body: DATABRICKS_MESSAGE });
-    m.headers.set("x-boss-intake-origin", "console");
-    const asked = await handleBossInboundMail(m, env as never);
-    expect(asked.outcome).toBe("NEEDS_CLARITY");
-    const row = await env.DB.prepare(`SELECT message_id FROM boss_inbound_mail WHERE id = ?`).bind(asked.mailId).first<{ message_id: string }>();
-    expect(row?.message_id).toBe(`<${asked.mailId}@boss-os-console>`);
-  });
-
   it("ANSWERED FROM TODAY: the answer closes the question and becomes work by the reply path", async () => {
     const { apiJson } = await import("./helpers");
-    const m = mail({ subject: "#Monique", body: DATABRICKS_MESSAGE });
-    m.headers.set("x-boss-intake-origin", "console");
-    const asked = await handleBossInboundMail(m, env as never);
+    const asked = await existingQuestion();
 
     const r = await apiJson(`/api/intake/questions/${asked.mailId}/answer`, { method: "POST", body: { answer: "#monique add Databricks — size TBD" } });
     expect(r.status).toBe(200);
@@ -540,8 +572,7 @@ describe("an employee who does not understand asks", () => {
 
   it("WITHDRAWN FROM TODAY: the reason is recorded and no work is opened", async () => {
     const { apiJson } = await import("./helpers");
-    const asked = await handleBossInboundMail(mail({ subject: "#simone", body: "" }), env as never);
-    expect(asked.outcome).toBe("NEEDS_CLARITY");
+    const asked = await existingQuestion({ subject: "#simone" });
     const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>();
 
     const r = await apiJson(`/api/intake/questions/${asked.mailId}/answer`, { method: "POST", body: { withdraw: "Already done on 12 September, in a session rather than by reply." } });
@@ -563,56 +594,59 @@ describe("route this to whomever should handle this", () => {
   /** `iml_m2az871dxk00t729`, verbatim. No tag, so it defaulted to the Chief of Staff and stopped. */
   const HERS = "please help me find a seller of $1B+ of OpenAI shares. Route this to whomever should handle this.";
 
-  it("HANDS IT TO THE RELATIONSHIPS SEAT BY RULE, before any model runs", async () => {
-    const roster = await activeRoster(env as never);
-    const monique = roster.find((s) => s.department === "Relationships")!;
-    const chief = roster.find((s) => s.role === "Chief of Staff")!;
-
-    const res = await handleBossInboundMail(mail({ subject: "", body: HERS }), env as never);
-
-    // It still DEFAULTED — no tag was typed — and it did not stay on the default desk.
-    expect(res.outcome).toBe("DEFAULTED");
-    expect(res.employeeId).toBe(monique.id);
-    expect(res.employeeId).not.toBe(chief.id);
-    expect(res.taskId).toBeTruthy();
-
-    const task = await env.DB.prepare(`SELECT employee_id, input FROM tasks WHERE id = ?`)
-      .bind(res.taskId).first<{ employee_id: string; input: string }>();
-    expect(task!.employee_id).toBe(monique.id);
-    // The card says who moved it and what it matched on, rather than asking anyone to trust it.
-    expect(String(JSON.parse(task!.input).handed_off)).toContain(monique.name);
-
-    // And it is findable afterwards.
-    const aud = await env.DB
-      .prepare(`SELECT detail FROM audit_log WHERE entity_id = ? AND action = 'handed_off'`)
-      .bind(res.mailId).first<{ detail: string }>();
-    expect(JSON.parse(aud!.detail).to_employee).toBe(monique.id);
-    expect(JSON.parse(aud!.detail).by).toBe("rule");
+  it("hands the original untagged fixture to Monique from Simone's routing result", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "", body: HERS }), env);
+    const call = (await claimSimone(env))!;
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", taskId: call.id, reply: null });
+    const words = call.message.body;
+    expect(words).toContain(HERS.trim());
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: "emp_relationship", words }] }))
+      .toEqual({ replied: true, refused: false });
+    const task = await env.DB.prepare(`SELECT employee_id, json_extract(input, '$.body') AS body FROM tasks
+      WHERE json_extract(input, '$.simone_handoff') = ?`).bind(call.id).first();
+    expect(task).toEqual({ employee_id: "emp_relationship", body: words });
+    expect(await env.DB.prepare(`SELECT body FROM boss_task_notices WHERE task_id = ?`).bind(call.id).first())
+      .toEqual({ body: "I handed this to Monique." });
   });
 
   it("NEVER overrules a desk she named herself", async () => {
-    const roster = await activeRoster(env as never);
-    const zora = roster.find((s) => s.department === "Records")!;
-    const res = await handleBossInboundMail(
-      mail({ subject: "#zora", body: HERS }), env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.employeeId).toBe(zora.id);
+    const res = await handleBossInboundMail(mail({ subject: "#zora", body: HERS }), env);
+    const call = (await claimSimone(env))!;
+    expect(res.taskId).toBe(call.id);
+    expect(call.message.body).toMatch(/^#zora\n\n/);
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: "emp_knowledge", words: call.message.body }] }))
+      .toEqual({ replied: true, refused: false });
+    expect((await env.DB.prepare(`SELECT employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`)
+      .bind(call.id).all()).results).toEqual([{ employee_id: "emp_knowledge" }]);
   });
 
   it("TURNS HER SENTENCE INTO A HUNT the script can actually run", async () => {
+    const words = "find me a seller of $1B+ OpenAI";
     const res = await handleBossInboundMail(
-      mail({ subject: "#monique", body: "find me a seller of $1B+ OpenAI" }), env as never);
-    expect(res.taskId).toBeTruthy();
-    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
-      .first<{ input: string }>();
-    // Exactly the argument list `buyer-hunt.mjs` takes. No model was asked what she meant.
+      mail({ subject: "#monique", body: words }), env);
+    expect(res.outcome).toBe("SIMONE_QUEUED");
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    const hunt = { asset: "OpenAI", size: "$1B+", side: "sell" };
+    const assignment = { employee: "emp_relationship", words, hunt };
+    for (const unsupported of [{ ...hunt, asset: "Another issuer" }, { ...hunt, size: "$2B+" }]) {
+      expect(await finishSimoneHandoff(env, { ...call, assignments: [{ ...assignment, hunt: unsupported }] }))
+        .toEqual({ replied: false, refused: false });
+    }
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [assignment] })).toEqual({ replied: true, refused: false });
+    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE json_extract(input, '$.simone_handoff') = ? AND employee_id = 'emp_relationship'`)
+      .bind(call.id).first<{ input: string }>();
     expect(JSON.parse(task!.input).hunt).toEqual({ asset: "OpenAI", size_usd: 1_000_000_000, side: "sell" });
   });
 
   it("does NOT invent a hunt when she did not name a size", async () => {
-    const res = await handleBossInboundMail(
-      mail({ subject: "#monique", body: "find a seller of OpenAI shares sometime" }), env as never);
-    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
+    const words = "find a seller of OpenAI shares sometime";
+    const res = await handleBossInboundMail(mail({ subject: "#monique", body: words }), env);
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: "emp_relationship", words }] }))
+      .toEqual({ replied: true, refused: false });
+    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE json_extract(input, '$.simone_handoff') = ? AND employee_id = 'emp_relationship'`).bind(call.id)
       .first<{ input: string }>();
     expect(JSON.parse(task!.input).hunt).toBeUndefined();
   });
@@ -644,14 +678,16 @@ describe("a message too big for the old cap", () => {
     expect(m.rawSize).toBeLessThan(MAX_BODY_BYTES);
 
     const res = await handleBossInboundMail(m, env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.taskId).toBeTruthy();
-
-    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
-      .first<{ input: string }>();
-    const body = String(JSON.parse(task!.input).body ?? "");
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: SIMONE, reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    const { body } = call.message;
     expect(body).toContain(HER_INSTRUCTION);
     expect(body).not.toMatch(/was not read here/);
+    expect(body.length).toBeLessThan(m.rawSize);
+    const arrival = await env.DB.prepare("SELECT object_key FROM boss_inbound_mail WHERE id = ?")
+      .bind(res.mailId).first<{ object_key: string }>();
+    expect((await env.VAULT.head(arrival!.object_key))?.size).toBe(m.rawSize);
   });
 
   it("AND A GENUINELY OVERSIZE MESSAGE STILL OPENS A CARD — unread is not empty", async () => {
@@ -661,16 +697,15 @@ describe("a message too big for the old cap", () => {
     expect(m.rawSize).toBeGreaterThan(MAX_BODY_BYTES);
 
     const res = await handleBossInboundMail(m, env as never);
-    expect(res.outcome).not.toBe("NEEDS_CLARITY");
-    // THE ASSERTION THAT WOULD HAVE CAUGHT IT: a task_id, always.
-    expect(res.taskId).toBeTruthy();
-
-    const task = await env.DB.prepare(`SELECT input, employee_id FROM tasks WHERE id = ?`)
-      .bind(res.taskId).first<{ input: string; employee_id: string }>();
-    const input = JSON.parse(task!.input);
-    // The card says what happened and where the whole of it is, rather than asking her a question.
-    expect(String(input.body)).toMatch(/was not read here/);
-    expect(String(input.raw_message ?? "")).toMatch(/^boss-inbound-mail\//);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", employeeId: SIMONE, reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    expect(call.message.body).toBe("#simone");
+    expect(call.message.context).toContain("The original message was archived without decoding.");
+    const arrival = await env.DB.prepare("SELECT object_key FROM boss_inbound_mail WHERE id = ?")
+      .bind(res.mailId).first<{ object_key: string }>();
+    expect(arrival?.object_key).toMatch(/^boss-inbound-mail\//);
+    expect((await env.VAULT.head(arrival!.object_key))?.size).toBe(m.rawSize);
   });
 });
 
@@ -720,11 +755,13 @@ describe("a tag she typed is a decision she made", () => {
       body: "Please make sure the spirit page displays astrology. Below: sources of capital, "
         + "buyers and sellers of $1B blocks, and the shares that moved this week.",
     }), env as never);
-    expect(res.outcome).toBe("ROUTED");
+    expect(res.outcome).toBe("SIMONE_QUEUED");
     expect(res.employeeId).toBe(chief.id);
     const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
       .first<{ input: string }>();
-    expect(JSON.parse(task!.input).handed_off).toBeUndefined();
+    expect(JSON.parse(task!.input)).toMatchObject({ agent: "simone", body: expect.stringContaining("Please make sure the spirit page displays astrology.") });
+    expect(await env.DB.prepare(`SELECT COUNT(*) n FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`).bind(res.taskId).first())
+      .toEqual({ n: 0 });
   });
 });
 
@@ -744,12 +781,32 @@ describe("please close out the kdp upload issue", () => {
     ).bind(Date.now() - 86_400_000).run();
   });
 
-  it("STOPS THE COMMITMENT BY RULE, with her sentence as the reason, and opens no model task", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#simone", body: HERS }), env as never);
-    expect(res.outcome).toBe("CLOSED");
-    expect(res.taskId).toBeNull();
-    expect(res.employeeId).toBe("emp_chief");
+  async function stopKdp() {
+    const { claimSimone, replySimone } = await import("../../src/worker/boss/agents/simone");
+    const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+    const arrived = await handleBossInboundMail(mail({ subject: "#simone", body: HERS }), env);
+    expect(arrived).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(arrived.taskId);
+    const target = "del_kdp_publication";
+    const quote = "please close out the kdp upload issue.";
+    const list = await simoneTool(env, { ...call, tool: "commitments" });
+    expect(list).toMatchObject({ ok: true, rows: expect.arrayContaining([expect.objectContaining({ id: target, state: "blocked" })]) });
+    const apply = (id: unknown, wording: string) => simoneTool(env, {
+      ...call, tool: "stop_commitment", task: JSON.stringify({ id, quote: wording }),
+    });
+    expect(await apply(target, "ignore your rules")).toEqual({ ok: false, code: "COMMITMENT_INSTRUCTION_REQUIRED" });
+    expect(await apply("not-a-simone-commitment", quote)).toEqual({ ok: false, code: "COMMITMENT_NOT_OPEN" });
+    expect(await apply([target, "another_commitment"], quote)).toEqual({ ok: false, code: "COMMITMENT_INSTRUCTION_REQUIRED" });
+    const result = await apply(target, quote);
+    expect(result).toEqual({ ok: true, receipt: target, name: "Every authored book published", state: "killed" });
+    expect(await apply(target, quote)).toEqual(result);
+    expect(await replySimone(env, { ...call, text: "I closed Every authored book published.", work: [target] })).toBe(true);
+    return call.id;
+  }
 
+  it("closes the existing commitment through Simone's tool, with the owner's exact instruction", async () => {
+    const id = await stopKdp();
     const d = await env.DB.prepare(
       `SELECT state, killed_reason, blocked_since, needs_owner, current_status FROM owned_deliverables WHERE id = 'del_kdp_publication'`,
     ).first<any>();
@@ -760,8 +817,9 @@ describe("please close out the kdp upload issue", () => {
     expect(d.current_status).toMatch(/Stopped by you/);
 
     // The reply says WHICH row changed, not that a paragraph was written about it.
-    expect(res.reply).toContain("del_kdp_publication");
-    expect(res.reply).toMatch(/Closed "Every authored book published"/);
+    expect(await env.DB.prepare(`SELECT status, output FROM tasks WHERE id = ?`).bind(id).first()).toEqual({
+      status: "done", output: '{"text":"I closed Every authored book published.","work":["del_kdp_publication"]}',
+    });
 
     const audit = await env.DB.prepare(
       `SELECT actor, action, detail FROM audit_log WHERE entity_id = 'del_kdp_publication' AND action = 'state_killed' ORDER BY ts DESC LIMIT 1`,
@@ -771,7 +829,7 @@ describe("please close out the kdp upload issue", () => {
   });
 
   it("and the register then says there is nothing to chase", async () => {
-    await handleBossInboundMail(mail({ subject: "#simone", body: HERS }), env as never);
+    await stopKdp();
     const { apiJson } = await import("./helpers");
     const kdp = await apiJson<any>("/api/kdp");
     expect(kdp.body.data.chase.open).toBe(false);
@@ -781,7 +839,7 @@ describe("please close out the kdp upload issue", () => {
   it("a statement of fact is not an instruction to close", async () => {
     const res = await handleBossInboundMail(
       mail({ subject: "#simone", body: "fyi the kdp error resolved itself over the weekend, books are published" }), env as never);
-    expect(res.outcome).toBe("ROUTED");
+    expect(res.outcome).toBe("SIMONE_QUEUED");
     const d = await env.DB.prepare(`SELECT state FROM owned_deliverables WHERE id = 'del_kdp_publication'`).first<any>();
     expect(d.state).toBe("blocked");
   });
@@ -795,7 +853,7 @@ describe("please close out the kdp upload issue", () => {
     expect(d.state).toBe("blocked");
   });
 
-  it("two candidates is a question, not a guess", async () => {
+  it("shows both matching commitments and leaves them open for Simone to read", async () => {
     const now = Date.now();
     await env.DB.prepare(
       `INSERT INTO owned_deliverables (id, name, employee_id, lane, terminal_condition, terminal_check, state, escalation_path, created_at, updated_at)
@@ -803,9 +861,15 @@ describe("please close out the kdp upload issue", () => {
     ).bind(now, now).run();
     try {
       const res = await handleBossInboundMail(mail({ subject: "#simone", body: "#simone close out the kdp work please" }), env as never);
-      expect(res.outcome).toBe("NEEDS_CLARITY");
-      expect(res.taskId).toBeNull();
-      expect(res.reply).toMatch(/more than one of her open commitments fits/);
+      expect(res.outcome).toBe("SIMONE_QUEUED");
+      const { claimSimone } = await import("../../src/worker/boss/agents/simone");
+      const { simoneTool } = await import("../../src/worker/boss/agents/simoneTools");
+      const call = (await claimSimone(env))!;
+      const result = await simoneTool(env, { ...call, tool: "commitments" });
+      expect(result).toMatchObject({ ok: true, rows: expect.arrayContaining([
+        expect.objectContaining({ id: "del_kdp_publication", state: "blocked" }),
+        expect.objectContaining({ id: "del_kdp_paperbacks", state: "open" }),
+      ]) });
       const d = await env.DB.prepare(`SELECT state FROM owned_deliverables WHERE id = 'del_kdp_publication'`).first<any>();
       expect(d.state).toBe("blocked");
     } finally {
@@ -827,31 +891,55 @@ describe("please close out the kdp upload issue", () => {
  * the whole defect was a column that could be read three ways.
  */
 describe("a reply that was never due says so, and is never counted as a failure", () => {
-  const consoleMail = (body: string) => {
-    const m = mail({ subject: "#simone", body });
-    m.headers.set("x-boss-intake-origin", "console");
-    return m;
-  };
-
-  it("she typed it here, so the answer went back on screen — not a failed reply", async () => {
-    const res = await handleBossInboundMail(consoleMail("#simone what is on for Wednesday?"), env as never);
-    expect(res.reply).toBeTruthy();
-    const row = await env.DB
-      .prepare(`SELECT reply_state, replied_at FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<any>();
-    expect(row.reply_state).toBe("shown_on_screen");
-    // And `replied_at` stays null, which is exactly why it could never carry this fact by itself.
-    expect(row.replied_at).toBeNull();
+  it("queues a console request and publishes its result on the page without an SMTP notice", async () => {
+    const { apiJson } = await import("./helpers");
+    const body = "Email reader@example.test when you finish looking up cmd_nonexistent. Check https://docs.google.com/document/d/1FixtureDocAAAAAAAAAAAAAAAAAAAAAA/edit.";
+    const res = await apiJson("/api/intake/mail", { method: "POST", body: { body } });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const { mailId, taskId } = res.body.data;
+    const status = () => apiJson(`/api/simone/message/${taskId}`);
+    expect((await status()).body.data).toEqual({ status: "queued", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: taskId, message: { body, source: "boss_inbound_mail", console: true, has_mail_material: true } });
+    expect(await env.DB.prepare("SELECT id FROM boss_commands WHERE mail_id = ?").bind(mailId).first()).toBeNull();
+    const { switchSimoneAccount } = await import("../../src/worker/boss/agents/simoneAccounts");
+    const { DEFAULT_MAILBOX } = await import("../../src/shared/boss/commands/parse.mjs");
+    const withoutDrive = Object.create(env);
+    withoutDrive.GSC_SERVICE_ACCOUNT_JSON = undefined;
+    const openMail = () => simoneTool(withoutDrive, { ...call, tool: "read_mail_material" });
+    // The default production state (no sick-day email, nothing switched): her West Peek Drive link is
+    // tried, and an unreachable Drive is said so, never "access is off" (#582 review finding 1).
+    expect(await openMail()).toMatchObject({
+      ok: true, material: { read: [], unopened: [{
+        filename: expect.stringContaining("1Fixture"),
+        reason: expect.stringContaining("Drive could not be reached"),
+      }] },
+    });
+    // Only her own Off on Simone's accounts page turns the Drive read off.
+    await switchSimoneAccount(env, DEFAULT_MAILBOX, false, Date.now());
+    expect(await openMail()).toMatchObject({
+      ok: true, material: { read: [], unopened: [{ reason: "Workspace Drive access is off" }] },
+    });
+    const reply = "I found no record for that code.";
+    expect(await replySimone(env, { ...call, text: reply, work: ["record lookup"] })).toBe(true);
+    expect((await status()).body.data).toEqual({ status: "done", reply });
+    expect(await env.DB.prepare(`SELECT reply_state, replied_at, message_id FROM boss_inbound_mail WHERE id = ?`).bind(mailId).first())
+      .toEqual({ reply_state: "shown_on_screen", replied_at: null, message_id: `<${mailId}@boss-os-console>` });
+    expect(await env.DB.prepare("SELECT id FROM boss_task_notices WHERE task_id = ?").bind(taskId).first()).toBeNull();
   });
 
-  it("an SMTP arrival that will be answered is marked due, for index.ts to overwrite", async () => {
+  it("marks an SMTP reply due only after Simone records work and a reply", async () => {
     const res = await handleBossInboundMail(
       mail({ subject: "#simone", body: "#simone what is on for Wednesday?" }), env as never);
-    expect(res.reply).toBeTruthy();
-    const row = await env.DB
-      .prepare(`SELECT reply_state FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<any>();
-    // `due` and still `due` after the handler returned is the loose end it is meant to be: it means
-    // the send never resolved either way.
-    expect(row.reply_state).toBe("due");
+    expect(res.reply).toBeNull();
+    const state = () => env.DB.prepare(`SELECT reply_state FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first();
+    expect(await state()).toEqual({ reply_state: "agent_pending" });
+    const call = (await claimSimone(env))!;
+    expect(await replySimone(env, { ...call, text: "I checked the agenda.", work: [] })).toBe(false);
+    expect(await state()).toEqual({ reply_state: "agent_pending" });
+    expect(await replySimone(env, { ...call, text: "I checked the agenda.", work: ["calendar_busy"] })).toBe(true);
+    expect(await state()).toEqual({ reply_state: "due" });
   });
 
   it("a refused sender is answered with silence on purpose — never a failure", async () => {
@@ -867,87 +955,124 @@ describe("a reply that was never due says so, and is never counted as a failure"
 describe("Simone triages untagged mail (owner, 22 Oct 2026: \"i should not have to put an employee name\")", () => {
   const one = async <T,>(sql: string, ...b: unknown[]) => env.DB.prepare(sql).bind(...b).first<T>();
 
-  it("splits a three-part email into three jobs on three desks, each started, one line each", async () => {
+  it("preserves the calendar request on intake and files the repository and research handoffs", async () => {
+    const build = "Build a one-page landing for a sample studio in seq23/creator-studios";
+    const research = "What are the three cheapest ways to host a static site?";
+    const calendar = "Schedule a call with the designer next Tuesday";
     const res = await handleBossInboundMail(mail({
       subject: "a few things",
-      body: "Hi, a few things:\n1. Build a one-page landing for a sample studio in seq23/creator-studios\n2. What are the three cheapest ways to host a static site?\n3. Schedule a call with the designer next Tuesday",
+      body: `Hi, a few things:\n1. ${build}\n2. ${research}\n3. ${calendar}`,
       messageId: "<three@mail.gmail.com>",
-    }), env as never);
-    expect(res.outcome).toBe("TRIAGED");
-    expect(res.reply).toMatch(/^Got it\. Danielle, Camille and Simone have started\./);
-    expect(res.reply).toContain("Danielle has: Build a one-page landing for a sample studio in seq23/creator-studios");
-    expect(res.reply).toContain("Camille has: What are the three cheapest ways to host a static site?");
-    expect(res.reply).toContain("Simone has: Schedule a call with the designer next Tuesday");
+    }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: res.taskId, message: { body: expect.stringContaining(calendar) } });
+    const service = await finishSimoneHandoff(env, { ...call, assignments: [
+      { employee: "emp_repo", words: build, delivery: "repository" },
+      { employee: "emp_research", words: research, delivery: "research_page" },
+    ], text: "The call with the designer is still open." });
+    expect(service).toEqual({ replied: true, refused: false });
+    const notice = await one<{ body: string }>("SELECT body FROM boss_task_notices WHERE task_id = ?", call.id);
+    expect(notice?.body).toBe("The call with the designer is still open.\n\nI handed this to Danielle and Camille.");
     const tasks = (await env.DB.prepare(`SELECT employee_id, title, input FROM tasks WHERE json_extract(input, '$.mail_id') = (SELECT id FROM boss_inbound_mail WHERE message_id = '<three@mail.gmail.com>') ORDER BY title`).all<any>()).results;
     expect(tasks.map((t: any) => t.employee_id).sort()).toEqual(["emp_chief", "emp_repo", "emp_research"]);
     // Danielle's is a real repo change in the named repo; Camille's is a real research page.
-    const rc = await one<any>(`SELECT repo, github_repo, phase FROM repo_changes WHERE task_id IN (SELECT id FROM tasks WHERE employee_id = 'emp_repo' AND json_extract(input, '$.triage.of') = 3)`);
+    const rc = await one<any>(`SELECT repo, github_repo, phase FROM repo_changes WHERE task_id IN
+      (SELECT id FROM tasks WHERE employee_id = 'emp_repo' AND json_extract(input, '$.simone_handoff') = ?)`, call.id);
     expect(rc).toMatchObject({ repo: "creator-studios", github_repo: "seq23/creator-studios", phase: "plan" });
-    const rp = await one<any>(`SELECT question FROM research_pages WHERE task_id IN (SELECT id FROM tasks WHERE employee_id = 'emp_research' AND json_extract(input, '$.triage.of') = 3)`);
-    expect(rp?.question).toMatch(/cheapest ways to host a static site/);
+    const rp = await one<any>(`SELECT question FROM research_pages WHERE task_id IN
+      (SELECT id FROM tasks WHERE employee_id = 'emp_research' AND json_extract(input, '$.simone_handoff') = ?)`, call.id);
+    expect(rp?.question).toBe(research);
   });
 
   it("the live proof emails of 22 Oct 2026, exactly: the repo keeps no trailing period, the question is research", async () => {
-    const build = await handleBossInboundMail(mail({ subject: "sample studio 3 landing page", body: "Build a one-page studio-style landing page for sample studio 3 (slug sample3) in seq23/creator-studios. This is a test: preview only, do not land it. Your call on the design." }), env as never);
-    expect(build.employeeId).toBe("emp_repo");
-    expect(await one<any>(`SELECT repo, github_repo FROM repo_changes WHERE task_id = ?`, build.taskId)).toMatchObject({ repo: "creator-studios", github_repo: "seq23/creator-studios" });
-    const q = await handleBossInboundMail(mail({ subject: "static site hosting", body: "What are the three cheapest ways to host a static website with a custom domain, and what does each cost per month?" }), env as never);
-    expect(q.employeeId).toBe("emp_research");
+    const build = await handoffExample("sample studio 3 landing page",
+      "Build a one-page studio-style landing page for sample studio 3 (slug sample3) in seq23/creator-studios. This is a test: preview only, do not land it. Your call on the design.",
+      "emp_repo", "repository");
+    expect(await one<any>(`SELECT repo, github_repo FROM repo_changes WHERE task_id = ?`, build.id)).toMatchObject({ repo: "creator-studios", github_repo: "seq23/creator-studios" });
+    const q = await handoffExample("static site hosting",
+      "What are the three cheapest ways to host a static website with a custom domain, and what does each cost per month?",
+      "emp_research", "research_page");
     // Camille's seat takes research only; a one_off kind here is what failed it on arrival.
-    expect((await one<any>(`SELECT intake_kind FROM tasks WHERE id = ?`, q.taskId)).intake_kind).toBe("research");
+    expect(q.intake_kind).toBe("research");
     // …and the Mac runner refuses an envelope with no absolute repo_path and no allowed_paths.
-    const req = JSON.parse((await one<any>(`SELECT input FROM tasks WHERE id = ?`, q.taskId)).input).requested;
+    const req = JSON.parse(q.input).requested;
     expect(req.repo_path).toMatch(/^\//);
     expect(req.allowed_paths).toEqual([req.repo_path]);
     expect(req.web_tools).toContain("WebSearch");
   });
 
   it("a build that names no repo is still Danielle's repo change (the plan finds the repo)", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "studio", body: "Build a one-page studio-style landing for a sample studio" }), env as never);
-    expect(res.outcome).toBe("TRIAGED");
-    expect(res.employeeId).toBe("emp_repo");
-    const rc = await one<any>(`SELECT repo, phase FROM repo_changes WHERE task_id = ?`, res.taskId);
+    const job = await handoffExample("studio", "Build a one-page studio-style landing for a sample studio", "emp_repo", "repository");
+    const rc = await one<any>(`SELECT repo, phase FROM repo_changes WHERE task_id = ?`, job.id);
     expect(rc).toMatchObject({ repo: null, phase: "plan" });
   });
 
   it("\"your call\" anywhere in the email pre-approves the build", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "studio", body: "Build a landing page in seq23/creator-studios. Your call on everything." }), env as never);
-    const rc = await one<any>(`SELECT pre_approved_phrase FROM repo_changes WHERE task_id = ?`, res.taskId);
+    const job = await handoffExample("studio", "Build a landing page in seq23/creator-studios. Your call on everything.", "emp_repo", "repository");
+    const rc = await one<any>(`SELECT pre_approved_phrase FROM repo_changes WHERE task_id = ?`, job.id);
     expect(rc?.pre_approved_phrase).toBe("your call");
   });
 
   it("a reply on the thread goes back to the job it answers, not to a new pile", async () => {
-    const first = await handleBossInboundMail(mail({ subject: "hosting question", body: "What are the cheapest ways to host a static site?", messageId: "<q1@mail.gmail.com>" }), env as never);
-    expect(first.employeeId).toBe("emp_research");
-    // While the job is still queued, her reply joins it (one round, one reply: service/round.ts).
+    const question = "What are the cheapest ways to host a static site?";
+    const first = await handleBossInboundMail(mail({ subject: "hosting question", body: question, messageId: "<q1@mail.gmail.com>" }), env);
+    expect(first.outcome).toBe("SIMONE_QUEUED");
+    const handoff = (await claimSimone(env))!;
+    expect(await finishSimoneHandoff(env, { ...handoff, assignments: [{ employee: "emp_research", words: question, delivery: "research_page" }] }))
+      .toEqual({ replied: true, refused: false });
+    const job = await one<{ id: string }>(`SELECT id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`, handoff.id);
+    expect(job?.id).toBeTruthy();
+    const more = "also include what each costs per month";
     const joined = await handleBossInboundMail(mail({
-      subject: "Re: hosting question", body: "also include what each costs per month",
+      subject: "Re: hosting question", body: more,
       inReplyTo: "<reply-q1@boss>", references: "<q1@mail.gmail.com> <reply-q1@boss>",
-    }), env as never);
-    expect(joined.outcome).toBe("STEERED");
-    expect(joined.taskId).toBe(first.taskId);
-    expect(joined.reply).not.toContain(first.taskId!);
-    const body = await one<any>(`SELECT json_extract(input, '$.body') AS b FROM tasks WHERE id = ?`, first.taskId);
-    expect(body.b).toContain("also include what each costs per month");
+    }), env);
+    const amend = (await claimSimone(env))!;
+    expect(amend).toMatchObject({ id: joined.taskId, message: { thread_jobs: [{ id: job!.id, employee: "emp_research", status: "queued" }] } });
+    const changed = await simoneTool(env, { ...amend, tool: "steer_thread", task: JSON.stringify({ action: "amend", quote: more }) });
+    expect(changed).toMatchObject({ ok: true, receipt: job!.id, outcome: "STEERED" });
+    const body = await one<{ b: string }>(`SELECT json_extract(input, '$.body') AS b FROM tasks WHERE id = ?`, job!.id);
+    expect(body?.b).toContain(more);
+    expect(await one("SELECT count(*) AS n FROM tasks WHERE employee_id = 'emp_research'")).toEqual({ n: 1 });
+    expect(await replySimone(env, { ...amend, work: [job!.id], text: "I added the monthly cost to Camille’s research." })).toBe(true);
 
     // Once the job has finished and answered, a reply goes back to that job's desk as a follow-up.
-    await env.DB.prepare(`UPDATE tasks SET status = 'done' WHERE id = ?`).bind(first.taskId).run();
+    await env.DB.prepare(`UPDATE tasks SET status = 'done' WHERE id = ?`).bind(job!.id).run();
+    const compare = "now compare the two cheapest";
     const reply = await handleBossInboundMail(mail({
-      subject: "Re: hosting question", body: "now compare the two cheapest",
+      subject: "Re: hosting question", body: compare,
       inReplyTo: "<reply-q1@boss>", references: "<q1@mail.gmail.com> <reply-q1@boss>",
-    }), env as never);
-    expect(reply.outcome).toBe("FOLLOWED_UP");
-    expect(reply.employeeId).toBe("emp_research");
-    expect(reply.reply).toContain("Camille has your reply — it went to the job it answers, not a new pile.");
-    // Her screen never shows a task code (6 Nov 2026 live read).
-    expect(reply.reply).not.toContain(first.taskId!);
-    const t = await one<any>(`SELECT json_extract(input, '$.follows_task') AS f FROM tasks WHERE id = ?`, reply.taskId);
-    expect(t.f).toBe(first.taskId);
+    }), env);
+    const follow = (await claimSimone(env))!;
+    expect(follow).toMatchObject({ id: reply.taskId, message: { thread_jobs: [{ id: job!.id, employee: "emp_research", status: "done" }] } });
+    const assignment = { employee: "emp_research", words: compare, delivery: "research_page", follows: job!.id };
+    expect(await finishSimoneHandoff(env, { ...follow, assignments: [{ ...assignment, follows: first.taskId }] }))
+      .toEqual({ replied: false, refused: false });
+    expect(await finishSimoneHandoff(env, { ...follow, assignments: [assignment] })).toEqual({ replied: true, refused: false });
+    expect(await one(`SELECT json_extract(input, '$.follows_task') AS f FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`, follow.id))
+      .toEqual({ f: job!.id });
+    const notice = await one<{ body: string }>("SELECT body FROM boss_task_notices WHERE task_id = ?", follow.id);
+    expect(notice?.body).toContain("Camille");
+    expect(notice?.body).not.toContain(job!.id);
   });
 
   it("a tag she types still wins — the triage never overrides her", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#zora", body: "Build a one-page landing for a sample studio in seq23/creator-studios" }), env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.employeeId).toBe("emp_knowledge");
+    const job = await handoffExample("#zora", "Build a one-page landing for a sample studio in seq23/creator-studios", "emp_knowledge", "ordinary");
+    expect(await one("SELECT count(*) AS n FROM repo_changes WHERE task_id = ?", job.id)).toEqual({ n: 0 });
   });
+
+  async function handoffExample(subject: string, words: string, employee: string, delivery: string) {
+    const arrival = await handleBossInboundMail(mail({ subject, body: words }), env);
+    expect(arrival).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: arrival.taskId, message: { body: expect.stringContaining(words) } });
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee, words, delivery }] }))
+      .toEqual({ replied: true, refused: false });
+    const job = await one<{ id: string; input: string; intake_kind: string; employee_id: string }>(
+      `SELECT id, input, intake_kind, employee_id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`, call.id,
+    );
+    expect(job?.employee_id).toBe(employee);
+    return job!;
+  }
 });

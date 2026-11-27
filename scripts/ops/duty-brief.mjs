@@ -12,9 +12,8 @@
  *                                         BOSS_DUTY_PROMPT_FILE, which each prompt-file script reads
  *                                         before its repo default.
  *
- * UNREACHABLE IS NOT "NOT DUE". With --only-if-due (ONLY_IF_DUE=1) it is a failure, exit 6, exactly
- * as duty-due.mjs always was. Without it the job ran on its own calendar before this existed, so it
- * still runs, on the repository's instructions, and says so in the log (NOTE [BRIEF_UNREACHABLE]).
+ * Without a readable brief the runner cannot tell whether the owner has stopped operations.
+ * Exit 6 without running, with a named failure in the log.
  *
  *   LOCAL_JOB=lp-daily.mjs BRIEF_OUT=/tmp/x npm run vault:run -- node scripts/ops/duty-brief.mjs
  */
@@ -27,8 +26,7 @@ const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 /** Pure: a fetched brief (or a failure) → { code, lines, instructions }. Exported for the test. */
 export function plan(result, { onlyIfDue = false } = {}) {
   if (!result.ok) {
-    if (onlyIfDue) return { code: 6, lines: [`NAMED STOP [DUE_UNKNOWN] ${result.why}`, "  Boss OS could not say whether this is due. That is a failure, not a skip."], instructions: null };
-    return { code: 0, lines: [`NOTE [BRIEF_UNREACHABLE] ${result.why} — running on its own schedule with the repository's instructions.`], instructions: null };
+    return { code: 6, lines: [`NAMED STOP [DUE_UNKNOWN] ${result.why}. Couldn’t check whether the owner stopped operations.`], instructions: null };
   }
   const d = briefDecision(result.data, { onlyIfDue });
   return { code: d.code, lines: [d.line], instructions: d.run ? d.instructions ?? null : null };

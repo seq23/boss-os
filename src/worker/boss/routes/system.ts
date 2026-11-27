@@ -6,6 +6,9 @@ import { reconcileSpend } from "../spend/reconcile";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { getSetting, setSetting } from "../lib/settings";
+import { GOOGLE_ACCOUNT_PREFIX } from "../agents/simoneAccounts";
+import { SIMONE_OPERATIONS_SETTING } from "../agents/simoneOperations";
+import { OPERATING_STOP } from "../lib/operatingStop";
 import { validZone, HOME_TZ, OWNER_TZ_KEY } from "../../../shared/boss/meetingPrep/prep.mjs";
 import { rollBudgetWindows } from "../router/budget";
 import { COST_MODES, COST_MODE_POLICY, isCostMode } from "../../../shared/boss/governance";
@@ -361,12 +364,16 @@ system.get("/usage", async (c) => {
 
 
 system.get("/settings", async (c) => {
-  const rows = await c.env.DB.prepare(`SELECT * FROM settings ORDER BY key`).all();
+  const rows = await c.env.DB.prepare(`SELECT * FROM settings WHERE key != ? AND substr(key, 1, ?) != ? ORDER BY key`)
+    .bind(SIMONE_OPERATIONS_SETTING, GOOGLE_ACCOUNT_PREFIX.length, GOOGLE_ACCOUNT_PREFIX).all();
   return ok(c, rows.results ?? []);
 });
 
 system.put("/settings/:key", async (c) => {
   const key = c.req.param("key");
+  if (key === SIMONE_OPERATIONS_SETTING) throw badRequest("The operating inventory is written by Simone’s check.");
+  if (key.startsWith(GOOGLE_ACCOUNT_PREFIX)) throw badRequest("Use Simone’s Accounts page to manage access.");
+  if (key === OPERATING_STOP) throw badRequest("Use the owner’s stop switch to pause or resume operations.");
   const { value, via } = await c.req.json<{ value: string; via?: string }>();
 
   // Live trading is not a settings toggle. It lives behind the authority

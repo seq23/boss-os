@@ -6,6 +6,8 @@
  */
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { claimSimone, replySimone } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { partiesAskIn, partiesReply, companyMatches } from "../../src/shared/boss/capital/partiesAsk.mjs";
 
@@ -77,21 +79,33 @@ describe("her email gets the answer, not a failed job", () => {
     await env.DB.prepare(`INSERT INTO capital_party_lists (id, list, kind, value, source, created_at) VALUES ('pl_dns', 'do_not_suggest', 'email', 'ruled.out@example.com', 'seed', 0)`).run();
 
     const res = await handleBossInboundMail(mail("I need to find all buyers if example ai", "Monique needs to go into my inbox and find any buyers for example ai \n\n\nGive me their emails \n\n\nSent from my iPhone") as never, env as never);
-    expect(res.outcome).toBe("COMMAND");
-    expect(res.taskId ?? null).toBeNull();
-    expect(res.reply).toContain("ana@firm-a.example");
-    expect(res.reply).toContain("ben@firm-b.example");
-    expect(res.reply).not.toContain("ruled.out@example.com");
-    expect(res.reply).not.toContain("cy@firm-c.example");
-    expect(res.reply).toContain("2 buyers");
-    const row = await env.DB.prepare(`SELECT outcome, why FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<any>();
-    expect(row.outcome).toBe("COMMAND");
-    expect(row.why).toContain("deals grid");
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    expect(call.message.body).toContain("Give me their emails");
+    const found = await simoneTool(env, { ...call, tool: "deal_parties", task: JSON.stringify({ company: "Example AI", side: "buy" }) });
+    expect(found).toMatchObject({ ok: true, receipt: "deals_grid", count: 2 });
+    if (!("reply" in found) || !found.reply || !found.receipt) throw new Error("The grid did not return a reply");
+    expect(found.reply).toContain("ana@firm-a.example");
+    expect(found.reply).toContain("ben@firm-b.example");
+    expect(found.reply).not.toContain("ruled.out@example.com");
+    expect(found.reply).not.toContain("cy@firm-c.example");
+    expect(found.reply).toContain("2 buyers");
+    expect(await replySimone(env, { ...call, text: found.reply, work: [found.receipt] })).toBe(true);
+    const recorded = await env.DB.prepare(`SELECT kind, body FROM boss_task_notices WHERE task_id = ?`).bind(call.id).first();
+    expect(recorded).toEqual({ kind: "simone_result", body: found.reply });
   });
 
-  it("sends an ask about a company the grid has never seen to the ordinary triage", async () => {
+  it("gives Simone no completion receipt when the grid has never seen a company", async () => {
     await order("b1b2c3d4e5", "Other Co", "buy", "Ana Broker, Firm A", "ana@firm-a.example", 10);
     const res = await handleBossInboundMail(mail("buyers", "Find any buyers for Unseen Robotics") as never, env as never);
-    expect(res.outcome).not.toBe("COMMAND");
+    expect(res.outcome).toBe("SIMONE_QUEUED");
+    const call = (await claimSimone(env))!;
+    expect(await simoneTool(env, { ...call, tool: "deal_parties", task: JSON.stringify({ company: "Unseen Robotics", side: "buy" }) }))
+      .toEqual({ ok: false, code: "DEAL_COMPANY_NOT_ON_GRID" });
+    expect(await simoneTool(env, { ...call, tool: "deal_parties", task: JSON.stringify({ company: "Other Co", side: "trade" }) }))
+      .toEqual({ ok: false, code: "DEAL_QUERY_REQUIRED" });
+    expect(await env.DB.prepare(`SELECT status, output FROM tasks WHERE id = ?`).bind(call.id).first())
+      .toEqual({ status: "running", output: null });
   });
 });

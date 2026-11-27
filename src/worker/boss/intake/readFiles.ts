@@ -69,6 +69,7 @@ export interface ReadDeps {
   ai?: Ai | null;
   /** Google's endpoints; tests pass a fake. */
   fetchImpl?: typeof fetch;
+  driveAllowed?: boolean;
 }
 
 interface OneFile { filename: string; mediaType: string; base64?: string; bytes?: Uint8Array; size: number }
@@ -101,7 +102,12 @@ export async function readEverything(env: Env, parsed: ParsedMail, words: string
   } catch (err) {
     out.unopened.push({ filename: "the attachments", reason: `they could not be read (${(err instanceof Error ? err.message : String(err)).slice(0, 160)})` });
   }
-  await readDriveLinks(env, ai, words, out, budget, deps.fetchImpl ?? fetch);
+  const driveIds = driveIdsIn(words);
+  if (deps.driveAllowed === false) {
+    for (const id of driveIds) out.unopened.push({ filename: id, reason: "Workspace Drive access is off" });
+  } else {
+    await readDriveLinks(env, ai, driveIds, out, budget, deps.fetchImpl ?? fetch);
+  }
   return out;
 }
 
@@ -110,11 +116,12 @@ async function readOne(ai: Ai | null, f: OneFile, out: FilesRead, budget: { text
   const bytesOf = () => f.bytes ?? bytesOfBase64(f.base64 ?? "");
   try {
     if (kind === "audio") {
+      if (!ai) return void out.unopened.push({ filename: f.filename, reason: "the recording is kept with the original email", audio: true });
       if (f.size > MAX_VOICE_NOTE_BYTES) return void out.unopened.push({ filename: f.filename, reason: `${mb(f.size)} is over the ${mb(MAX_VOICE_NOTE_BYTES)} a recording can be heard at`, audio: true });
       if (budget.recordings <= 0) return void out.unopened.push({ filename: f.filename, reason: `only the first ${MAX_RECORDINGS} recordings of an email are heard`, audio: true });
       budget.recordings -= 1;
       const b64 = f.base64 ?? base64OfBytes(f.bytes!);
-      const text = (await transcribeChunk(ai ?? undefined, b64)).text.trim();
+      const text = (await transcribeChunk(ai, b64)).text.trim();
       if (text) out.heard.push({ filename: f.filename, text });
       else out.unopened.push({ filename: f.filename, reason: "the transcriber heard no words in it", audio: true });
       return;
@@ -175,6 +182,8 @@ const EXPORTS: Record<string, string> = {
   "application/vnd.google-apps.presentation": "text/plain",
 };
 
+const DRIVE_FILES = "https://www.googleapis.com/drive/v3/files";
+
 const b64url = (data: Uint8Array | string): string => {
   const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
   return base64OfBytes(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -192,7 +201,7 @@ export async function driveToken(env: Env, fetchImpl: typeof fetch): Promise<str
   const key = await crypto.subtle.importKey("pkcs8", der as BufferSource, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
   const sig = new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${head}.${claims}`)));
   const res = await fetchImpl("https://oauth2.googleapis.com/token", {
-    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, redirect: "manual",
     body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${head}.${claims}.${b64url(sig)}` }).toString(),
   });
   if (!res.ok) throw new Error(`Google refused the Drive sign-in (${res.status})`);
@@ -201,8 +210,63 @@ export async function driveToken(env: Env, fetchImpl: typeof fetch): Promise<str
   return t;
 }
 
-async function readDriveLinks(env: Env, ai: Ai | null, words: string, out: FilesRead, budget: { text: number; recordings: number }, fetchImpl: typeof fetch): Promise<void> {
-  const ids = driveIdsIn(words);
+export async function searchWorkspaceDrive(env: Env, title: string, pageToken?: string, fetchImpl: typeof fetch = fetch) {
+  const literal = title.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  const params = new URLSearchParams({
+    q: `trashed = false and name contains '${literal}'`,
+    corpora: "user", spaces: "drive",
+    supportsAllDrives: "true", includeItemsFromAllDrives: "true",
+    orderBy: "modifiedTime desc", pageSize: "15",
+    fields: "files(id,name,mimeType,webViewLink),nextPageToken,incompleteSearch",
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+  const token = await driveToken(env, fetchImpl);
+  const response = await fetchImpl(`${DRIVE_FILES}?${params}`, {
+    headers: { authorization: `Bearer ${token}` }, redirect: "manual",
+  });
+  if (!response.ok) throw new Error("Drive could not complete the search");
+  const page = await response.json() as {
+    files?: Array<{ id: string; name: string; mimeType: string; webViewLink?: string }>;
+    nextPageToken?: string;
+    incompleteSearch?: boolean;
+  };
+  if (!page || !Array.isArray(page.files)) throw new Error("Drive did not return a file list");
+  return { rows: page.files.slice(0, 15), nextPageToken: page.nextPageToken ?? null, incompleteSearch: page.incompleteSearch === true };
+}
+
+export async function readWorkspaceDriveFile(env: Env, id: string): Promise<FilesRead> {
+  const out: FilesRead = { heard: [], read: [], unopened: [], zips: [] };
+  await readDriveLinks(env, (env.AI as Ai | undefined) ?? null, [id], out, { text: FILE_TEXT_MAX, recordings: 0 }, fetch);
+  return out;
+}
+
+async function driveBytes(response: Response): Promise<Uint8Array> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Drive returned no file contents");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (let part = await reader.read(); !part.done; part = await reader.read()) {
+      size += part.value.byteLength;
+      if (size > DRIVE_FILE_MAX_BYTES) {
+        await reader.cancel();
+        throw new Error(`Drive returned more than ${mb(DRIVE_FILE_MAX_BYTES)}`);
+      }
+      chunks.push(part.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function readDriveLinks(env: Env, ai: Ai | null, ids: string[], out: FilesRead, budget: { text: number; recordings: number }, fetchImpl: typeof fetch): Promise<void> {
   if (!ids.length) return;
   for (const id of ids.slice(MAX_DRIVE_LINKS)) out.unopened.push({ filename: `a Drive link (${id.slice(0, 8)}…)`, reason: `only the first ${MAX_DRIVE_LINKS} Drive links of an email are read` });
   let token: string;
@@ -212,28 +276,29 @@ async function readDriveLinks(env: Env, ai: Ai | null, words: string, out: Files
     for (const id of ids.slice(0, MAX_DRIVE_LINKS)) out.unopened.push({ filename: `a Drive link (${id.slice(0, 8)}…)`, reason: `Drive could not be reached (${(err instanceof Error ? err.message : String(err)).slice(0, 120)})` });
     return;
   }
-  const auth = { headers: { authorization: `Bearer ${token}` } };
+  const auth = { headers: { authorization: `Bearer ${token}` }, redirect: "manual" as const };
   for (const id of ids.slice(0, MAX_DRIVE_LINKS)) {
     let name = `a Drive link (${id.slice(0, 8)}…)`;
     try {
-      const meta = await fetchImpl(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,name,mimeType,size&supportsAllDrives=true`, auth);
+      const url = `${DRIVE_FILES}/${encodeURIComponent(id)}`;
+      const meta = await fetchImpl(`${url}?fields=id,name,mimeType,size&supportsAllDrives=true`, auth);
       if (!meta.ok) throw new Error(meta.status === 404 || meta.status === 403 ? "it is not shared with Boss OS (share it with your West Peek address, or attach it)" : `Google answered ${meta.status}`);
       const m = (await meta.json()) as { name?: string; mimeType?: string; size?: string };
       name = m.name || name;
       const mime = m.mimeType ?? "";
       const exportAs = EXPORTS[mime];
       if (exportAs) {
-        const res = await fetchImpl(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}/export?mimeType=${encodeURIComponent(exportAs)}`, auth);
+        const res = await fetchImpl(`${url}/export?mimeType=${encodeURIComponent(exportAs)}`, auth);
         if (!res.ok) throw new Error(`Google would not export it (${res.status})`);
-        keepWords(out, budget, name, await res.text());
+        keepWords(out, budget, name, new TextDecoder().decode(await driveBytes(res)));
         continue;
       }
       if (mime.startsWith("application/vnd.google-apps.")) throw new Error("a kind of Google file that has no text to read");
       const size = Number(m.size ?? 0);
       if (!size || size > DRIVE_FILE_MAX_BYTES) throw new Error(size ? `${mb(size)} is over the ${mb(DRIVE_FILE_MAX_BYTES)} a linked file is read at` : "Drive did not say how big it is");
-      const res = await fetchImpl(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, auth);
+      const res = await fetchImpl(`${url}?alt=media&supportsAllDrives=true`, auth);
       if (!res.ok) throw new Error(`Google would not hand over the file (${res.status})`);
-      const bytes = new Uint8Array(await res.arrayBuffer());
+      const bytes = await driveBytes(res);
       await readOne(ai, { filename: name, mediaType: mime || typeOfName(name), bytes, size: bytes.byteLength }, out, budget, 0);
     } catch (err) {
       out.unopened.push({ filename: name, reason: (err instanceof Error ? err.message : String(err)).slice(0, 200) });

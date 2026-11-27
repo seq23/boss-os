@@ -113,7 +113,7 @@ const CHARTER_REPO =
 
 /** The roster the routing probe is given. Seat names are this system's, the work in the probe is not. */
 const ROSTER = [
-  "emp_chief (Simone, Chief of Staff) — classify, route, write the envelope",
+  "emp_chief (Simone, Chief of Staff) — runs the owner’s day and is in charge of everything Boss OS runs",
   "emp_relationship (Monique, Relationships) — who matters, what was promised, counterparties and blocks",
   "emp_research (Camille, Research) — the Executive Intelligence Report, sourced figures",
   "emp_knowledge (Zora, Knowledge) — candidate memory",

@@ -162,13 +162,14 @@ describe("meeting-prep research: Google, then Brave, then their pages", () => {
     expect(r.why).toMatch(/Brave Search has no key on this Worker/);
   });
 
-  it("a committed LP is never searched on Brave", async () => {
+  it("Brave can research the public meeting guest when a commitment exists in Boss OS", async () => {
     await env.DB.prepare(`INSERT INTO prospects (id, email, name, firm, source, created_at, updated_at, committed_at) VALUES ('prs_b1', 'pat@familyoffice.example', 'Pat Example', 'Example Family Office', 'test', 0, 0, ?)`).bind(Date.now()).run();
-    groundingDown("never asked");
-    let searched = false;
-    const r = await researchPerson(keys(), who, async () => ({ ok: false, text: null, finalUrl: null }), async () => { searched = true; return { ok: true, results }; });
-    expect(r).toMatchObject({ ok: false, private: true });
-    expect(searched).toBe(false);
+    groundingDown('{"found":false,"why":"no pages"}');
+    const queries: string[] = [];
+    const r = await researchPerson(keys(), who, async () => ({ ok: false, text: null, finalUrl: null }),
+      async (_env, query) => { queries.push(query); return { ok: true, results: [] }; });
+    expect(queries).toEqual(['"Pat Example" Example Family Office']);
+    expect(r).toMatchObject({ ok: false, stop: "RESEARCH_NO_SOURCES" });
   });
 });
 

@@ -6,8 +6,6 @@ export function zoneLabel(tz: string): string;
 export const DEFAULT_MAILBOX: string;
 export const BRAND_MAILBOXES: ReadonlyArray<{ re: RegExp; mailbox: string; brand: string }>;
 export const WORKSPACE_MAILBOXES: ReadonlyArray<string>;
-export function mailboxFor(text: string): string;
-export const PERSONAL_CALENDAR_RE: RegExp;
 export const PRODUCT_REPOS: ReadonlyArray<{ re: RegExp; product: string; github_repo: string }>;
 export function addressesIn(text: string): string[];
 export function minutesIn(text: string): number;
@@ -17,14 +15,6 @@ export function slotText(start: number, minutes: number, tz: string, o?: { withD
 export function dayText(ts: number, tz: string): string;
 export function confirmLine(i: { guestName?: string | null; guestEmail: string; start: number; minutes: number; tz?: string | null; meet?: string | null; calendar?: string | null }): string;
 export function renderUrl(i: { title: string; start: number; minutes: number; guests?: string[]; details?: string }): string;
-export function inviteIn(text: string, now?: number): Record<string, any> | null;
-export function lookupIn(text: string): { name: string; relation: string | null; hints: string[]; drive: boolean; gmail: boolean } | null;
-export function repoAskIn(clause: string): { github_repo: string; product: string; instruction: string; code: string | null } | null;
-export function emailAskIn(clause: string): { to: string | null; pronoun: string | null; name: string | null; purpose: string } | null;
-export const CANT_YET: ReadonlyArray<{ re: RegExp; what: string }>;
-export function clausesIn(text: string): string[];
-export interface Command { ref: number; waits_on: number[]; kind: "invite" | "lookup" | "email" | "repo" | "access_code" | "cant_yet" | "errand"; spec: Record<string, any> }
-export function commandsIn(i?: { subject?: string; text?: string; now?: number; sender?: string }): Command[];
 export function ownWords(text: string): string;
 export function commandReplyIn(text: string, now?: number): Record<string, any> | null;
 export const ACCESS_CODE_SHAPE: Readonly<{ table: string; columns: readonly string[]; view: string; view_columns: readonly string[]; max_days: number }>;
@@ -35,7 +25,9 @@ export const ERRAND_SENDERS: readonly string[];
 export const ERRAND_MONEY_RE: RegExp;
 export function errandRefusal(i?: { sender?: string; subject?: string; text?: string }): string | null;
 export function errandIn(i?: { sender?: string; subject?: string; text?: string }): { to: string; ask: string } | null;
-export function errandText(request: string): string;
+export function freeErrandRecipient(sender: string, quote: string, verifiedRecipient?: string | null): string | null;
+export function refreshErrandSignature(text: string): string;
+export function errandText(request: string, options?: { freeOnly?: boolean }): string;
 export function errandProblems(i?: { subject?: string; request?: string }): string[];
 export interface ErrandOption { key: string; time: string; label: string | null; fee: string | null }
 export interface ErrandOffer { text: string; greet: string | null; needs: string[]; rules: string[]; cancel_rule: string[]; asks: boolean; confirms: boolean; options: ErrandOption[]; fees: string[]; unavailable: boolean; policy: boolean }

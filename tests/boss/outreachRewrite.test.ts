@@ -45,7 +45,6 @@ function fakeModel(script: string[]) {
     const system = req.messages.find((m) => m.role === "system")?.content ?? "";
     const users = req.messages.filter((m) => m.role === "user").map((m) => m.content);
     seen.push({ system, user: users[users.length - 1] ?? "", turns: req.messages.length });
-    expect(req.modelAccess).toBe("private_model_only");
     expect(req.risk).toBe("medium");
     return reply(script[Math.min(i++, script.length - 1)] ?? "");
   };

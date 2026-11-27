@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * NOTHING IN THIS REPOSITORY MAY ASK GMAIL FOR MORE THAN HEADERS.
+ * Gmail callers ask for headers unless a named and checked content reader requires more.
  *
  * ─── What this used to be, and why that was not enough ──────────────────────
  *
@@ -104,6 +104,21 @@ const MUST_NOT = [
  * fails on the specific thing that changed.
  */
 const CONTENT_EXCEPTIONS = new Map([
+  ["lib/simone-tools.mjs", {
+    why: "Simone can read the owner’s brokerage inbox on the Mac during the owner’s verified temporary grant.",
+    invariants: [
+      [(src) => /const BROKERAGE = INVITE_INBOXES\.find\(\(\{ writable \}\) => !writable\)\.address/.test(src)
+        && /googleAccess\([^\n]+gmail\.readonly", BROKERAGE\)/.test(src),
+      "the delegated token is read-only and pinned to the read-only brokerage mailbox"],
+      [(src) => /if \(!await recheck\(\)\) return refused\("GOOGLE_ACCOUNT_OFF"\);\s*const response = await boundedFetch/.test(src)
+        && /return current\.ok && current\.brokerageRead === path/.test(src),
+      "the live account gate by the leased Worker tool must reauthorize before the Mac reads mail"],
+      [(src) => /url\.origin !== GMAIL_API/.test(src) && /redirect: "manual"/.test(src) && /size > 240_000/.test(src)
+        && !/messages\/send|drafts\/send|batchDelete/.test(src),
+      "the Mac call stays on Gmail, bounds responses and supports reads only"],
+    ],
+  }],
+
   [
     /*
      * ── lp-outcomes.mjs · WHAT ACTUALLY HAPPENED TO EVERY EMAIL TWIN SENT ────

@@ -56,6 +56,7 @@ export const MORNING_SECTION_SPECS = Object.freeze([
   { name: "tail", label: "Your email jobs", expect: null },
   { name: "bounces", label: "Bounces", expect: null },
   { name: "notices", label: "Notices", expect: null },
+  { name: "operations", label: "Simone’s operating check", expect: null },
   // Mondays 06:00: the weekly Search Readiness check of the grid repo sites (scripts/ops/search-readiness-audit.mjs).
   {
     name: "grid_repos", label: "your sites' search check", expect: Object.freeze(["Monday"]),

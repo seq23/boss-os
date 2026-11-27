@@ -23,6 +23,7 @@ import { oneBrain, saveBrain } from "../brains/store";
 import { markPublic } from "../capital/publicCompanies";
 import { dropItems } from "../routes/morning";
 import { logEvent } from "../lib/log";
+import { AppError } from "../lib/http";
 import { closeMorningGate } from "../routes/today";
 import { morningDayOf } from "../lp/decideReply";
 
@@ -74,8 +75,13 @@ export async function morningReplyFromMail(env: Env, a: { text: string; refs: st
       await dropItems(env, items, "reply", now);
       said.push(`Dropped for good: ${items.map((i: any) => i.label).slice(0, 3).join("; ")}${items.length > 3 ? ` and ${items.length - 3} more` : ""}.`);
     } else if (c.kind === "gate") {
-      await closeMorningGate(env, { via: "email" });
-      said.push("Morning gate ticked for today. Good. Now the first decision.");
+      try {
+        await closeMorningGate(env, { via: "email", day_id: today });
+        said.push("Morning gate recorded.");
+      } catch (error) {
+        if (!(error instanceof AppError) || error.status !== 409) throw error;
+        said.push("Your morning gate was already recorded.");
+      }
     } else if (c.kind === "grateful") {
       brainLines.push(brainLine.grateful(today, c.what));
       said.push(`Kept: grateful for ${c.what}. It joins your gratitude lines.`);

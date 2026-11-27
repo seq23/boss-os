@@ -8,7 +8,7 @@
  * sender are NOT errands. Fixtures only (example.test); no real business or address appears here.
  */
 import { describe, expect, it, vi } from "vitest";
-import { ERRAND_SENDERS, errandIn, errandRefusal, errandText, errandProblems, readErrandReply, commandsIn } from "../src/shared/boss/commands/parse.mjs";
+import { ERRAND_SENDERS, errandIn, errandRefusal, errandText, errandProblems, readErrandReply } from "../src/shared/boss/commands/parse.mjs";
 import { errandMail, errandPayloadProblems, postErrandMail, ERRAND_FROM, ERRAND_REPLY_TO } from "../scripts/ops/notify.mjs";
 import { buildErrand, errandPrompt } from "../scripts/ops/simone-commands.mjs";
 
@@ -19,8 +19,6 @@ describe("which emails are errands", () => {
   it("her own booking request to a business address she gave is an errand, and the whole email", () => {
     expect(errandIn({ sender: HER, text: ASK })).toEqual({ to: "reservations@club.example.test", ask: ASK });
     expect(errandIn({ sender: `Sequoia <${HER}>`, subject: "Dinner", text: "Book me a table for two Thursday after 8pm: hello@bistro.example.test" })?.to).toBe("hello@bistro.example.test");
-    const found = commandsIn({ sender: HER, text: ASK, now: Date.parse("2026-10-26T15:00:00Z") });
-    expect(found.map((c) => c.kind)).toEqual(["errand"]);
   });
 
   it("NEGATIVE: a guessed address (none in her words), two addresses, or her own address is not an errand", () => {
@@ -44,8 +42,6 @@ describe("which emails are errands", () => {
   it("NEGATIVE: the same words from any other sender, even another of her own addresses, are not an errand", () => {
     expect(errandRefusal({ sender: "someone@example.test", text: ASK })).toBe("not from her own address");
     expect(errandRefusal({ sender: "", text: ASK })).toBe("not from her own address");
-    expect(commandsIn({ sender: "someone@example.test", text: ASK }).map((c) => c.kind)).not.toContain("errand");
-    expect(commandsIn({ text: ASK }).map((c) => c.kind)).not.toContain("errand");
   });
 
   it("NEGATIVE: an email that asks for no booking is not an errand", () => {
@@ -56,10 +52,17 @@ describe("which emails are errands", () => {
 describe("the letter that goes", () => {
   it("is the short fixed letter, signed Simone as her assistant, with no AI, no money, no address", () => {
     const text = errandText("a table for two at The Example Jazz Club on Thursday, October 29, any time after 8:00 pm");
-    expect(text).toBe("Hello,\n\nI'm writing on behalf of Sequoia Taylor to request a table for two at The Example Jazz Club on Thursday, October 29, any time after 8:00 pm. Please let me know what's available and anything you need to confirm.\n\nThank you,\nSimone\nAssistant to Sequoia Taylor");
+    expect(text).toBe("Hello,\n\nI'm writing on behalf of Sequoia Taylor to request a table for two at The Example Jazz Club on Thursday, October 29, any time after 8:00 pm. Please let me know what's available and anything you need to confirm.\n\nThank you,\nSimone\nChief of Staff to Sequoia Taylor");
     expect(text).not.toMatch(/copied|\bAI\b|card|deposit/i);
     const good = buildErrand({ subject: "Reservation request: Thursday, October 29, party of 2", request: "a table for two on Thursday, October 29, any time after 8:00 pm" });
     expect(good.problems).toEqual([]);
+  });
+
+  it("requests confirmation of the agent's chosen slot only on free, cardless terms", () => {
+    const chosen = { subject: "Saturday at noon", request: "the noon slot on Saturday for two" };
+    const result = buildErrand(chosen, { freeOnly: true });
+    expect(result.problems).toEqual([]);
+    expect(result.text).toContain("the noon slot on Saturday for two. Please confirm only if there’s no charge, deposit, card requirement, or cancellation fee.");
   });
 
   it("NEGATIVE: a phrase that mentions AI, money, a card number, a link or an address is refused before sending", () => {

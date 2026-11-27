@@ -31,7 +31,7 @@ the work; the job is the only thing that can do it.
 | **Danielle** | Technical Program Manager | Execution | The shipping heartbeat |
 | **Imani** | Director of Practice | Body + Spirit | The week's practice, rituals, technique research |
 | **Kendra** | Systems Manager | — | Tool scouting |
-| **Simone** | Chief of Staff | Execution | Getting your books published, and chasing Amazon until they are |
+| **Simone** | Chief of Staff | Execution | Runs your day and is in charge of everything Boss OS runs |
 | **Toni** | Chief Risk Officer | — | The credentials this whole system runs on, and the West Peek reply path |
 | Zora | Archivist | — | No standing duty |
 
@@ -278,12 +278,17 @@ email" and "i should not have to put an employee name, my main assistant should 
 for me."_ The whole page, with examples: [HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md](../HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md).
 
 - **Write to `boss@sequoiataylor.com`** from one of your addresses, in your own words. No tag needed.
-- **Simone triages it** (`src/shared/boss/intake/triage.mjs`): splits the email into its asks and gives
-  each to the seat that can execute it — Danielle builds and repo changes (any repo you name; one not
-  yet registered is registered as a step of the job), Camille research pages, Monique outreach, Simone
-  scheduling, Zora records, Toni risk, Imani practice, Kendra tools. No clear fit goes to the closest
-  seat and the reply says so; nothing bounces back to you. The reply is one line per job.
-- **name@sequoiataylor.com** (all eight) and `#name` still reach that person directly.
+- **Simone reads the request.** For new mail to a Boss OS address, her Mac claims the stored message
+  and runs her Claude Code session. She can reply with a result or hand parts to colleagues from
+  the active team. The Tell Simone box and Simone’s page show the reply on the same surface.
+  The authenticated intake console queues new requests the same way and exposes the result at
+  `GET /api/boss/simone/message/<task ID>`.
+- When Claude cannot start, Codex can use Simone’s tools. The Worker checks for the Mac heartbeat
+  before trying Workers AI and then Gemini for mail routing. Both receive the Boss OS request text
+  as written. When every reader is unavailable, the message stays queued.
+- **name@sequoiataylor.com** tells Simone whom you are writing to. Approval and errand replies
+  that identify an existing record still go to that record. Direct list edits to Monique keep
+  their existing reply handler.
 - **Replies are permission:** `approved` / `changes: …` / `stop` on the thread; `your call` in the
   first email pre-approves. A reply goes back to the job it answers (`jobThisAnswers`), never a new pile.
 - **Secrets:** `SECRET VENDOR_API_KEY=value` on its own line; stored encrypted, scrubbed from the mail.
@@ -293,38 +298,21 @@ for me."_ The whole page, with examples: [HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md](
 
 ## How to give an employee a duty
 
-_21 September 2026. "is there a lane for me to ask for a new duty to my Boss OS agents? i still dont
-know how to create a job for them."_ There is now, and it is three steps.
+Open **Team → Duties → Add a duty**. Preview shows the owner, schedule, executor, delivery route,
+estimated cost and any reason the duty cannot run. Approve the draft on its Inbox card to put it
+on the schedule.
 
-**1 · Email it.** To `boss@sequoiataylor.com`, from one of your addresses, subject or first line
-`#<seat> new duty`, then the duty in your words:
-
-```
-To:      boss@sequoiataylor.com
-Subject: #monique new duty
-Body:    every friday, check the LP replies sheet and tell me who went quiet
-```
-
-`#simone new duty monique …` lets the Chief of Staff route it. The same box is on **Team → Duties**
-("Add a duty"), with a Preview that shows the draft before anything exists.
-
-**2 · Read the draft.** The employee (or Simone) replies with the whole thing — name, owner, cadence
-with the concrete slot and why that hour (it avoids the briefing and the Mac's other jobs), executor
-and why (an agent, or a job on your Mac — anything touching your accounts has to be the Mac), model
-tier, delivery route, cost against the $25 ceiling, the prompt she will run from, and **every
-refusal verbatim**. A duty that cannot run — a script your Mac does not have, a delivery route that
-does not exist — comes back as a `NAMED STOP` and is not created. The same draft is a card in your
-Inbox.
-
-**3 · Reply `approved`.** One word on the thread creates it and the reply names the first run.
-`changes: make it daily at 3pm` redrafts with your text as overrides. `no` withdraws it. Put
-**`your call`** in the ORIGINAL request and it is created without waiting, recorded as pre-approved
-with that phrase. Approve on the Inbox card does exactly what `approved` by mail does.
+You can still act on an existing emailed duty draft. Reply `approved` on its thread to create it,
+`changes: make it daily at 3pm` to revise it, or `no` to withdraw it.
 
 Every duty appears on **Team → Duties** with its cadence, executor, last run, next run and last
 outcome. Guards: `validate:duty-birth` (one writer, reached only through the approval loop or a
 recorded pre-approval, the owner ↔ executor ↔ script check above the write, the mail door below the
 sender refusal, the installed-script list pinned to the installer) and `tests/boss/dutiesByEmail.test.ts`.
+
+**Change an existing duty** by telling Simone which duty and what should change. She adds a written
+instruction to the duty from its next run. Its employee page shows the change and offers Undo.
+When the steps live in code, she hands the change to Danielle and reports the handoff.
 
 ## When you hand someone something to own
 
@@ -971,6 +959,53 @@ initiative, add a row to `src/shared/boss/scorecard/manifest.json` in the same P
 from `READER_IDS`, a D1 query returning one number `n`, floors, version B). A source needing a key the
 vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dry run:
 `npm run scorecard:monday -- --dry`. Restart links are `/tap/sc…` (routes/scorecard.ts).
+
+## Simone, the Chief of Staff
+
+Simone runs your day and is in charge of everything Boss OS runs. [Her persona](../../scripts/ops/simone/persona.md)
+sets her mandate. `scripts/ops/simone-permissions.json` sets the Mac runner’s tool and sandbox
+permissions. The sections below describe the runtime and the tools it currently provides.
+
+The existing Simone Mac poll runs
+`scripts/ops/simone.mjs`, which claims one task and opens one session for it. The task includes the
+owner’s words and separate context from the original mail. A fresh run reads `owner-notes.md`,
+`HANDOFF.md`, the latest daily note, and task sheets under `~/Work/simone`.
+The claim includes the owner’s saved standing instructions. A run can read the current brain
+documents, apply a requested edit in the existing brain format, save a standing instruction,
+or dismiss a match from the owner’s exact instruction and card code. Fresh mail can report
+morning gate completion or mark a company public. Simone can route an explicit Time2Read
+partner request to Monique’s existing campaign workflow.
+When a meeting prep is waiting for its purpose, Simone can record the owner’s direction on
+the existing prep. The current Mac tick picks up any queued prep.
+Time2Read trial-code requests use the existing Mac runner. The tool reports a queued request,
+and the runner records the result after it checks the code table.
+Fresh mail keeps its original attachment bytes and copies locally readable text into the task
+context. During her run, Simone can open the archived attachments and the Drive links in the
+owner’s message. The material reader uses the arrival linked to that run. It returns file text,
+transcripts and any unread files as context.
+
+The Simone tool socket gives the session access to the current morning, invitation, errand,
+meeting prep, Kindle, mail and team records. Simone can search and read the connected Workspace inbox. She can look up buyers or sellers on the existing
+deal grid, update Monique’s versioned book from authenticated owner mail, and close one of her
+own commitments on the owner’s instruction. She can queue a free errand to a venue named in
+verified owner mail, or create a calendar invitation for a guest whose address the owner supplied.
+The calendar tool checks availability and reuses the same event ID when it retries. Personal
+calendar requests return an Add link. The team retry tool covers failed low-risk internal work
+with an existing permission envelope.
+Kindle status uses separate records for support checks, publishing attempts and title states.
+Simone can report when a run could not start and whether an attempt left a title in review or live.
+
+Simone's handoffs use the employee’s existing work lane, including Danielle’s repo plan and
+Camille’s research page. If Claude cannot start or exits before doing work, Codex can use the same
+scoped tools through the local broker. When the Mac is down, the existing free intake router tries Workers AI
+then Gemini with the message text intact. It can complete team handoffs and answer questions from recent
+Boss OS records. A missing record source, failed model, or request the fallback cannot complete leaves
+the task queued. Page replies appear in place. Email replies use the original headers and wait for the
+existing Mac sender. An owner follow-up opens its own run with the prior
+exchange as context. Simone can hold, resume or amend the work on that thread. When the owner
+has taken a task over, a reply stays on that task. Replies linked to an existing command can still act on that record, and the old runner
+still drains pending records. The Simone fixture workflow captures both message surfaces and
+renders a reply using a stubbed mail transport.
 
 ## Noelle, the Growth Director
 

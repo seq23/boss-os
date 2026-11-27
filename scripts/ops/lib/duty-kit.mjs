@@ -196,10 +196,12 @@ export function fromDomain(from) {
  * event stream at `~/.boss-os/seat-runs/<slug>.jsonl` (overwritten each time), so the next failure is
  * diagnosable from disk. Only such a run is kept: having never reached the tool, it holds nothing the
  * tool returned. A failure after a successful call keeps no file.
+ * Ephemeral reads pass the request on stdin and disable CLI session persistence.
  */
 export function askClaudeJson(prompt, {
   model = "claude-haiku-4-5-20251001", maxTurns = 12, timeoutMs = 300_000, requireTool = null, toolSearch = null,
-  toolSearchFallback = null, attempts = 1, evidence = null, evidenceDir = join(homedir(), ".boss-os", "seat-runs"), run = spawnSync,
+  toolSearchFallback = null, attempts = 1, evidence = null, evidenceDir = join(homedir(), ".boss-os", "seat-runs"),
+  ephemeral = false, env = process.env, run = spawnSync,
 } = {}) {
   const bin = process.env.CLAUDE_BIN ?? "claude";
   const full = toolSearch
@@ -212,8 +214,10 @@ export function askClaudeJson(prompt, {
   for (let n = 1; n <= tries; n++) {
     // Locked to connector-reads-permissions.json (24 Nov 2026): her own settings default to
     // bypassPermissions, so an unlocked run here had every tool. lib/claude-lock.mjs says why.
-    const r = run(bin, ["-p", full, "--model", model, "--max-turns", String(maxTurns), ...lockedArgs("connector-reads"), "--output-format", "stream-json", "--verbose"], {
-      encoding: "utf8", timeout: timeoutMs, env: seatEnv(process.env), cwd: homedir(), maxBuffer: 32 * 1024 * 1024,
+    const promptArgs = ephemeral ? ["--no-session-persistence"] : [full];
+    const r = run(bin, ["-p", ...promptArgs, "--model", model, "--max-turns", String(maxTurns), ...lockedArgs("connector-reads"), "--output-format", "stream-json", "--verbose"], {
+      ...(ephemeral ? { input: full } : {}),
+      encoding: "utf8", timeout: timeoutMs, env: seatEnv(env), cwd: homedir(), maxBuffer: 32 * 1024 * 1024,
     });
     if (r.error) return { ok: false, why: `the claude CLI could not start (${r.error.code ?? r.error.message})${tries > 1 ? ` (attempt ${n} of ${tries})` : ""}` };
     const stdout = String(r.stdout ?? "");

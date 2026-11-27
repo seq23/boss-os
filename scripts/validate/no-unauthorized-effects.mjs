@@ -37,6 +37,7 @@ const OUTBOUND_FETCH = /fetch\s*\(\s*["'`]https?:\/\/(?!localhost\b|127\.0\.0\.1
  * Adding a file here should be a conscious act. Egress from anywhere else stays a violation.
  */
 const EGRESS_ALLOWED = new Map([
+  ["src/worker/boss/agents/simoneAccounts.ts", "Owner-session Google OAuth token, identity and revoke endpoints. Leased Simone tools use fixed Google Workspace origins, read methods and an account gate. Tokens stay in the encrypted vault and Authorization headers."],
   ["src/worker/boss/research/grounded.ts", "Reads where a Google grounding link lands (GET vertexaisearch.cloud.google.com/grounding-api-redirect/… with redirect: manual, the Location header only, 6 s cap); one fixed host, nothing sent but the GET, so a research page cites the real page (6 Nov 2026)"],
 
   // ── Inbox overhaul, 19 Sep 2026. ──

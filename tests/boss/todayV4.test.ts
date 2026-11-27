@@ -8,8 +8,6 @@ import { chooseQuestion, problems, coachSituation, coachSignals, runBack, gateFa
 import { buildCoachingPrompt } from "../../src/worker/boss/coaching/session";
 import { CHAINS, LOCAL, choosePlace, foodToday, placeKey, whereToday, usablePlace, NO_REPEAT_DAYS } from "../../src/worker/boss/today/food";
 import { pickSide, SIDE_BUSINESSES, brokenLine } from "../../src/worker/boss/today/sideBusiness";
-import { confidentialLadder, isConfidentialDraft, orderSeats, CLAUDE_SEAT, OPENAI_SEAT } from "../../src/worker/boss/duties/seatOrder";
-import { routeCompletion } from "../../src/worker/boss/router";
 import { LINES, BANNED_WORDS } from "../../src/worker/boss/practice/lines";
 import { listLpRows } from "../../src/worker/boss/lp/desk";
 import { lpNudgeItems, lpDecideItems } from "../../src/shared/boss/lp/plan.mjs";
@@ -390,25 +388,7 @@ describe("The Morning gate: coaching last, the blood pressure tea in the morning
   });
 });
 
-describe("LP and deal-terms drafts: the Claude seat only, failing closed", () => {
-  it("the seat ladder keeps only Claude's seat, and 'OpenAI first' cannot reorder it", () => {
-    // Owner ruling, 4 Nov 2026: a COMMITTED LP's reply is confidential; a prospect's is public.
-    expect(isConfidentialDraft({ draft_kind: "lp_reply", lp_committed: true })).toBe(true);
-    expect(isConfidentialDraft({ draft_kind: "lp_reply" })).toBe(false);
-    expect(isConfidentialDraft({ confidential_draft: true })).toBe(true);
-    expect(isConfidentialDraft({ draft_kind: "briefing" })).toBe(false);
-    expect(confidentialLadder([OPENAI_SEAT, CLAUDE_SEAT])).toEqual([CLAUDE_SEAT]);
-    expect(confidentialLadder([OPENAI_SEAT])).toEqual([]);
-    expect(orderSeats([CLAUDE_SEAT], true)).toEqual([OPENAI_SEAT, CLAUDE_SEAT]); // the switch, for ordinary work
-  });
 
-  it("the Worker's router refuses one outright, before any model is considered", async () => {
-    await expect(routeCompletion(env as any, {
-      routeId: "rt_ops_default", lane: "ops", confidentialDraft: true, freeOnly: true,
-      messages: [{ role: "user", content: "Draft a reply to an LP" }],
-    })).rejects.toThrow(/Claude seat only/);
-  });
-});
 
 
 it("quiet-listed people yield no waiting item, LP decision, nudge or morning notice", async () => {

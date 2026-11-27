@@ -13,9 +13,11 @@ import { plainProblems, fromLegacy } from "../../src/shared/boss/mail/plain.mjs"
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { apiJson, row } from "./helpers";
-import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
+import { activeRoster, handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
+import { claimSimone, finishSimoneHandoff } from "../../src/worker/boss/agents/simone";
 import { dutyRequestIn, readDutyReply, pickSlot, overridesFrom, dutyProblems, INSTALLED_LOCAL_JOBS, draftTokenIn } from "../../src/shared/boss/duties/lane.mjs";
 import { DELIVERABLE_KEYS } from "../../src/worker/boss/duties/author";
+import { fileDraft } from "../../src/worker/boss/duties/mailLane";
 
 function mail(opts: { from?: string; subject?: string; body?: string; dmarc?: string; messageId?: string; inReplyTo?: string; references?: string }) {
   const body = opts.body ?? "";
@@ -40,11 +42,28 @@ const LOCAL_PHRASE = "every friday, read my inbox and tell me which LPs went qui
 
 const dutyCount = async () => (await row<any>(`SELECT COUNT(*) AS n FROM standing_duties WHERE json_extract(task_input, '$.provenance') IS NOT NULL`)).n as number;
 
-/** Her request, then the thread her client would build on the reply. */
-async function request(subject: string, body: string) {
-  const messageId = `<req-${Math.random().toString(36).slice(2)}@mail.gmail.com>`;
-  const res = await handleBossInboundMail(mail({ subject, body, messageId }), env as never);
-  return { res, messageId, thread: { inReplyTo: `<reply-${messageId.slice(1)}`, references: `${messageId} <reply-${messageId.slice(1)}` } };
+/** Seed a pre-cutover request so the live mailbox can replay replies to it. */
+async function request(subject: string, text: string) {
+  const key = Math.random().toString(36).slice(2);
+  const messageId = `<req-${key}@example.test>`;
+  const mailId = `iml_fixture_${key}`;
+  const owner = mail({ subject });
+  const now = Date.now();
+  await env.DB.prepare(`INSERT INTO boss_inbound_mail
+    (id, received_at, to_addr, from_addr, subject, message_id, authorised, outcome, why)
+    VALUES (?, ?, ?, ?, ?, ?, 1, 'RECEIVED', 'Fixture request')`)
+    .bind(mailId, now, owner.to, owner.from, subject, messageId).run();
+  const req = dutyRequestIn(subject, text, await activeRoster(env));
+  if (!req || "error" in req) throw new Error("Invalid saved duty fixture");
+  const filed = await fileDraft(env, {
+    employeeId: req.seat.id, phrase: req.phrase, door: "mail", mailId, messageId,
+    tag: req.tag, routedBy: req.routedBy, preApproved: req.preApproved, sender: owner.from, now,
+    signer: req.routedBy ?? req.seat,
+  });
+  const outcome = filed.state === "created" ? "DUTY_CREATED" : filed.state === "refused" ? "DUTY_REFUSED" : "DUTY_DRAFTED";
+  await env.DB.prepare("UPDATE boss_inbound_mail SET outcome = ? WHERE id = ?").bind(outcome, mailId).run();
+  const res = { outcome, employeeId: req.seat.id, mailId, reply: filed.letter, taskId: null };
+  return { res, messageId, thread: { inReplyTo: `<reply-${key}@example.test>`, references: `${messageId} <reply-${key}@example.test>` } };
 }
 
 beforeEach(async () => {
@@ -368,22 +387,26 @@ describe("the mail door", () => {
     expect((await row<any>(`SELECT employee_id, routed_by FROM duty_drafts`)).routed_by).toBe("emp_chief");
   });
 
-  it("the verb with no seat, or no words, is answered and nothing is drafted or admitted", async () => {
-    const nobody = await handleBossInboundMail(mail({ subject: "#nobody new duty", body: AGENT_PHRASE }), env as never);
-    expect(nobody.outcome).toBe("DUTY_NOT_UNDERSTOOD");
-    expect(nobody.reply).toMatch(/no employee with the tag #nobody/);
-    expect(nobody.taskId).toBeNull();
-    const empty = await handleBossInboundMail(mail({ subject: "#camille new duty", body: "" }), env as never);
-    expect(empty.outcome).toBe("DUTY_NOT_UNDERSTOOD");
-    expect(empty.reply).toMatch(/did not say what it is/);
-    expect(empty.taskId).toBeNull();
-    expect((await row<any>(`SELECT COUNT(*) AS n FROM duty_drafts`)).n).toBe(0);
+  it("a new duty request reaches Simone without filing a draft or deciding an approval", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#camille new duty", body: AGENT_PHRASE }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call).toMatchObject({ id: res.taskId, message: { body: `#camille new duty\n\n${AGENT_PHRASE}` } });
+    expect((await row<any>("SELECT COUNT(*) AS n FROM duty_drafts")).n).toBe(0);
+    expect(await dutyCount()).toBe(0);
   });
 
-  it("an ordinary #camille instruction is ordinary work, exactly as before", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#camille question", body: "Which of my properties grew fastest this month?" }), env as never);
-    expect(res.outcome).toBe("ROUTED");
-    expect(res.taskId).toBeTruthy();
+  it("an ordinary #camille instruction reaches Camille through Simone without opening a duty draft", async () => {
+    const words = "Which of my properties grew fastest this month?";
+    const res = await handleBossInboundMail(mail({ subject: "#camille question", body: words }), env);
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(res.taskId);
+    expect(await finishSimoneHandoff(env, { ...call, assignments: [{ employee: "emp_research", words, delivery: "research_page" }] }))
+      .toEqual({ replied: true, refused: false });
+    expect(await row(`SELECT employee_id, json_extract(input, '$.body') AS body FROM tasks
+      WHERE json_extract(input, '$.simone_handoff') = ?`, call.id))
+      .toEqual({ employee_id: "emp_research", body: words });
     expect((await row<any>(`SELECT COUNT(*) AS n FROM duty_drafts`)).n).toBe(0);
   });
 });

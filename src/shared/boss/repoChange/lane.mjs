@@ -29,6 +29,7 @@
 
 import { READ_MODES } from "../intake/intents.mjs";
 import { propertyForRepo, isExcluded, whyExcluded, GRID, GRID_OWNER } from "../grid.mjs";
+import { PRODUCT_REPOS } from "../commands/parse.mjs";
 
 /** The task-kind token. The Mac lane and `validate:duty-delivery` cross-check it against the script. */
 import { sentencesOf, vetoOf } from "../text/wholeSentence.mjs";
@@ -331,11 +332,13 @@ export function parseRepoChange(text, opts = {}) {
   }
   // R24 (docs/SERVICE_RULES.md): a repo she names by its GitHub address registers at the door.
   const registered = gridRepo ? null : (registeredRepoIn(t) ?? registeredByNameIn(t) ?? repoNamedIn(t));
-  const repo = gridRepo ?? registered?.repo ?? null;
+  // Once a build was selected, resolve the product name with the same aliases as the old mail door.
+  const productRepo = opts?.buildAsk && !gridRepo && !registered ? PRODUCT_REPOS.find((product) => product.re.test(t)) : null;
+  const repo = gridRepo ?? registered?.repo ?? productRepo?.github_repo.split("/")[1] ?? null;
   if (!repo && !folder && !opts?.buildAsk) return null;
   return {
     repo,
-    github_repo: gridRepo ? `${GRID_OWNER}/${gridRepo}` : registered?.github_repo ?? null,
+    github_repo: gridRepo ? `${GRID_OWNER}/${gridRepo}` : registered?.github_repo ?? productRepo?.github_repo ?? null,
     registered: Boolean(registered),
     property: gridRepo ? propertyForRepo(gridRepo)?.key ?? null : null,
     drive_folder: folder ? folder.id : null,

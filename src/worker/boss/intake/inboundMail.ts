@@ -1,14 +1,19 @@
+import { fileSimoneMessage, SIMONE, type SimoneMessage } from "../agents/simone";
 import { replyAllRecipients } from "../../../shared/boss/mail/replyNeed.mjs";
+import { refsIn } from "../../../shared/boss/mail/plain.mjs";
 import type { Env } from "../env";
 import { refsForChain, refsForCode, chainIds, refTail } from "./mailRefs";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
+import { enableSickDay } from "../agents/simoneAccounts";
+import { readSickDayAsk } from "../agents/simoneSickDay";
+import { operatingStopCommand, setOperatingStop, STOP_CONFIRM_WORDS } from "../lib/operatingStop";
 import { admitTask } from "../tasks/admit";
 import {
   BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
   dmarcPassed, extractAddress, isOwner,
-  replyBody, routeToSeat, seatTag, strippedSubject,
+  replyBody, routeToSeat, seatByAddress, seatTag, strippedSubject,
   type BossRoute, type BossSeat,
 } from "../../../shared/boss/intake/mail.mjs";
 import { parseLiveBook, readBookDirective } from "../../../shared/boss/intake/liveBook.mjs";
@@ -18,7 +23,7 @@ import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/bos
 import { campaignFromMail } from "../outreach/campaign";
 import { steerRound } from "../service/round";
 import { unheardLines, withVoiceNotes } from "./voiceNotes";
-import { readEverything, EMPTY_FILES, type FilesRead } from "./readFiles";
+import { driveIdsIn, readEverything, EMPTY_FILES, type FilesRead } from "./readFiles";
 import { asksIn, gotItLines, filesForTask } from "./gotIt";
 import { firstRead, briefForTask, unclearLines, type FirstRead } from "./firstRead";
 import { takenOverJob, addToTakenOver, takenOverReply } from "../service/takeover";
@@ -33,13 +38,13 @@ import { listEditsFromMail, listChangeWords } from "../capital/grid"; // boss fi
 import { brainEditsFromMail } from "../brains/store";
 import { parseBrainEdits } from "../../../shared/boss/brains/brain.mjs";
 import { stopDeliverable } from "../today/deliverables";
-import { answerFromMail } from "../repoChange/answer";
-import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
+import { answerFromMail, changeFromReplyChain } from "../repoChange/answer";
+import { answerDutyFromMail } from "../duties/mailLane";
 import { editDutyFromMail } from "../duties/editByMail";
 import { answerCommentWatchFromMail } from "../commentWatch/answer";
 import { answerKdpFromMail } from "../kdp/answer";
 import { dismissFromMail, DISMISS_REPLY_RE } from "../capital/dismiss";
-import { prospectTemplateFromMail } from "../lp/templateReply";
+import { prospectTemplateFromMail, templateIdIn } from "../lp/templateReply";
 import { decideAnswerFromMail, morningDayOf } from "../lp/decideReply";
 import { morningReplyFromMail } from "./morningReply";
 import { morningCommands } from "../../../shared/boss/mail/morningReply.mjs";
@@ -190,6 +195,7 @@ export async function activeRoster(env: Env): Promise<BossSeat[]> {
 }
 
 export interface BossMailMessage {
+  console?: boolean;
   from: string;
   to: string;
   headers: Headers;
@@ -339,6 +345,29 @@ async function applyBookDirective(
   return removeFromLiveBook(env, input);
 }
 
+/**
+ * The first PARAGRAPH of a refusal, as one line — not its first line.
+ *
+ * THE BUG THIS FIXES. `why` used to take `bookFailure.split("\n")[0]`, and the refusals it reads
+ * are written as wrapped prose for a mail client. On 2026-09-11 that left three arrival rows saying
+ *
+ *     "You wrote `add`, and I could not read a single lot out of what followed it — so your book is"
+ *
+ * and stopping there. The next line was "UNCHANGED and I have not opened any work for this." — the
+ * half that says what actually happened to her book. The reply she received was complete; it was
+ * the AUDIT ROW, whose entire job is saying what was proven, that ended mid-sentence and dropped
+ * the word UNCHANGED. A `why` that reads like a truncation bug cannot be used to tell a refusal
+ * from a crash.
+ *
+ * A blank line is the author's own mark for "the summary ends here", so that is the boundary.
+ */
+export function headline(text: string): string {
+  return String(text ?? "")
+    .split(/\r?\n\s*\r?\n/)[0]!          // up to the first blank line
+    .split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(" ")
+    .trim();
+}
+
 /** The Message-ID a console-typed message carries, so a reply to it has something to name. */
 export function consoleMessageId(mailId: string): string {
   return `<${mailId}@boss-os-console>`;
@@ -361,8 +390,13 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
   const to = String(message.to ?? "").toLowerCase();
   let subject = decodeHeader(message.headers.get("subject") ?? "");
   const sender = senderOf(message);
-  const dmarc = dmarcPassed(message.headers.get("authentication-results"));
-  const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
+  // Email Routing prepends its own result. A sender can add later results in the same header bag.
+  const authentication = message.headers.get("authentication-results")?.split(",", 1)[0] ?? "";
+  const cloudflareChecked = /^mx\.cloudflare\.net\s*;/i.test(authentication.trim());
+  const dmarc = dmarcPassed(authentication) && (message.console === true || cloudflareChecked) &&
+    !(/;\s*spf=(?:softfail|fail)\b/i.test(authentication) && /;\s*dkim=fail\b/i.test(authentication));
+  const headerFrom = extractAddress(message.headers.get("from"));
+  const authorised = headerFrom !== null && isOwner(headerFrom, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
 
   /*
    * ─── THE ARRIVAL IS RECORDED FIRST, AND THE OUTCOME IS FILLED IN AFTER ────
@@ -385,7 +419,7 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * for why a replay door exists at all — and a row that claimed Cloudflare had DMARC-verified a
    * message nobody posted would be a lie in the one table whose whole job is saying what was proven.
    */
-  const viaConsole = (message.headers.get("x-boss-intake-origin") ?? "").toLowerCase() === "console";
+  const viaConsole = message.console === true;
   /*
    * ─── A QUESTION SHE CANNOT ANSWER IS A QUESTION THAT NAGS FOR EVER ────────
    *
@@ -436,12 +470,16 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    *     is answered, and a NAMED STOP goes in her notices.
    */
   let attempt = 1;
-  if (messageId && !viaConsole) {
-    const earlier = (await env.DB.prepare(`SELECT id, outcome, reply_state, reply_text, received_at, employee_id FROM boss_inbound_mail WHERE message_id = ? ORDER BY received_at`)
-      .bind(messageId).all<{ id: string; outcome: string; reply_state: string | null; reply_text: string | null; received_at: number; employee_id: string | null }>()).results ?? [];
+  if (messageId && !viaConsole && dmarc) {
+    // A Message-ID can be chosen by the sender. An unrelated or unverified message cannot
+    // claim it on the owner's behalf or recover a reply that was addressed to the owner.
+    const earlier = (await env.DB.prepare(`SELECT id, outcome, reply_state, reply_text, received_at, employee_id
+      FROM boss_inbound_mail WHERE message_id = ? AND from_addr = ? AND dmarc_pass = 1 AND authorised = ?
+      ORDER BY received_at`)
+      .bind(messageId, sender, Number(authorised)).all<{ id: string; outcome: string; reply_state: string | null; reply_text: string | null; received_at: number; employee_id: string | null }>()).results ?? [];
     const seen = earlier.find((r) => r.outcome !== "RECEIVED" && r.outcome !== "DUPLICATE");
     if (seen) {
-      const unsent = seen.reply_state === "due" && Boolean(seen.reply_text) && now - seen.received_at > STALE_ARRIVAL_MS;
+      const unsent = authorised && seen.reply_state === "due" && Boolean(seen.reply_text) && now - seen.received_at > STALE_ARRIVAL_MS;
       await env.DB.prepare(
         `INSERT INTO boss_inbound_mail (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state, reply_text)
          VALUES (?,?,?,?,?,?,?,'DUPLICATE',?,?,?,?,?)`,
@@ -507,10 +545,20 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * and only HER reply sends anything back, in their thread (src/worker/boss/commands/run.ts
    * errandReplied, answerErrand).
    */
-  const externalBytes = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && message.rawSize <= MAX_BODY_BYTES ? await new Response(message.raw).arrayBuffer() : null;
+  const externalSender = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "");
+  const externalBytes = externalSender && message.rawSize <= MAX_BODY_BYTES ? await new Response(message.raw).arrayBuffer() : null;
   const externalRaw = externalBytes === null ? null : new TextDecoder().decode(externalBytes);
   const externalText = externalRaw === null ? "" : (await readableText(externalRaw, { full: true })).text;
-  const errand = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") ? await openErrandFor(env, sender, now, { subject, text: externalText }) : null;
+  const errand = externalSender ? await openErrandFor(env, sender, now, {
+    subject, text: externalText, references: chain,
+  }) : null;
+  const verifiedVenue = externalSender && dmarc && headerFrom && !viaConsole;
+  const copied = verifiedVenue && (errand || chain.length) ? (() => {
+    const all = replyAllRecipients({ from: message.headers.get("from"), to: message.headers.get("to"), cc: message.headers.get("cc"), "reply-to": message.headers.get("reply-to") });
+    return [...all.to, ...all.cc].filter((x) => !isOwner(extractAddress(x) ?? x, env.BOSS_EXTRA_OWNER_SENDERS ?? ""));
+  })() : [];
+  const errandReply = verifiedVenue && externalRaw !== null && chain.length
+    ? JSON.stringify({ references: chain.filter((id) => id.length <= 400), copied: copied.slice(0, 11) }) : null;
   const externalKey = `boss-inbound-mail/${new Date(now).toISOString().slice(0, 10)}/${mailId}.eml`;
   const keepExternal = async () => {
     if (externalRaw !== null) await env.VAULT.put(externalKey, externalBytes!, { httpMetadata: { contentType: "message/rfc822" } });
@@ -520,24 +568,26 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
       await env.VAULT.put(externalKey, sized.readable, { httpMetadata: { contentType: "message/rfc822" } });
       await pumped;
     }
-    await env.DB.prepare(`UPDATE boss_inbound_mail SET object_key = ? WHERE id = ?`).bind(externalKey, mailId).run();
+    await env.DB.prepare(`UPDATE boss_inbound_mail SET object_key = ?, errand_reply = ? WHERE id = ?`).bind(externalKey, errandReply, mailId).run();
   };
   const admitted = !authorised && !errand ? await env.DB.prepare(`SELECT address FROM boss_mail_senders WHERE address = ?`).bind(sender).first() : null;
   if (errand || admitted) {
     const text = externalText || "This email is too large to show here. Tap View the original email to read it.";
-    await recordArrival("ERRAND_REPLY", `From ${sender}, answering a request Simone sent for you. Read and told to you; nothing was run or sent back.`);
+    await recordArrival(errand ? "ERRAND_REPLY_PENDING" : "ADMITTED_MAIL", errand
+      ? "The message is being kept and checked against the errand's thread."
+      : "Owner let this sender in for reading; nothing was run or sent.");
     await keepExternal();
     if (!errand) {
-      await finish({ outcome: "ADMITTED_MAIL", why: "Owner let this sender in for reading; nothing was run or sent.", objectKey: externalKey, reply: null });
       return { mailId, outcome: "ADMITTED_MAIL", employeeId: null, taskId: null, reply: null };
     }
-    await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(errand.id, errand.id, mailId).run();
-    // Everyone on their message stays on Simone's answer, minus us and her (owner, 2 Nov 2026).
-    const all = replyAllRecipients({ from: message.headers.get("from"), to: message.headers.get("to"), cc: message.headers.get("cc"), "reply-to": message.headers.get("reply-to") });
-    const copied = [...all.to, ...all.cc].filter((x) => !isOwner(extractAddress(x) ?? x, env.BOSS_EXTRA_OWNER_SENDERS ?? ""));
-    await errandReplied(env, errand, { from: sender, subject, text, dmarc, messageId, mailId, copied }, now);
-    await finish({ outcome: "ERRAND_REPLY", why: `Their answer to Simone's request ${errand.id}, told to you plainly.`, employeeId: "emp_chief", objectKey: externalKey, reply: null });
-    return { mailId, outcome: "ERRAND_REPLY", employeeId: "emp_chief", taskId: null, reply: null };
+    if (!verifiedVenue) {
+      await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(errand.id, errand.id, mailId).run();
+      await finish({ outcome: "ERRAND_UNVERIFIED", why: "The venue address could not be verified. The message is available in the mail history.",
+        employeeId: SIMONE, objectKey: externalKey });
+      return { mailId, outcome: "ERRAND_UNVERIFIED", employeeId: SIMONE, taskId: null, reply: null };
+    }
+    const recorded = await errandReplied(env, errand, { from: sender, subject, text, dmarc, messageId, mailId, copied }, now);
+    return { mailId, outcome: recorded ? "ERRAND_REPLY" : "ERRAND_REPLY_PENDING", employeeId: SIMONE, taskId: null, reply: null };
   }
 
   if (!authorised) {
@@ -665,35 +715,6 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * missed. The subject is still in the haystack, because that is where she usually puts it.
    */
   const read = parsed ? await taskBodyFrom(parsed) : null;
-  /*
-   * HER VOICE NOTES ARE HER WORDS (intake/voiceNotes.ts). A recording is transcribed and joins what she
-   * typed, everywhere below; one that cannot be heard is a named stop in the reply and on the job.
-   */
-  /*
-   * AND EVERY FILE AND DRIVE LINK SHE SENT (15 Nov 2026, readFiles.ts): read before anything is decided
-   * or answered, so the Got it can say what was read and name what could not be opened.
-   */
-  const files: FilesRead = parsed ? await readEverything(env, parsed, read?.readable ?? "") : EMPTY_FILES;
-  // The parse (every file, as bytes) is let go here: what is needed below has been read out of it.
-  parsed = null;
-  const voice = { heard: files.heard, failed: files.unopened.filter((u) => u.audio) };
-  const unheard = unheardLines(voice.failed);
-  const readable = withVoiceNotes(read?.readable ?? "", voice.heard);
-  const filesBlock = filesForTask(files);
-  // The files that could not be opened, said on EVERY reply, including a lane's own answer.
-  const filesNote = gotItLines({ asks: [], files: { ...files, heard: [], read: [], zips: [] } });
-  const taskBody = [withVoiceNotes(read?.body ?? "", voice.heard), filesBlock, ...unheard].filter(Boolean).join("\n\n");
-  /*
-   * HER WORDS, NOT THE EMAIL SHE IS ANSWERING (27 Oct 2026). Every keyword reader below (routing,
-   * handoff, the hunt, triage, list edits, a close, a book guess, a deadline, "your call") reads
-   * `own`. Her "2: …" on the morning email was handed to Monique "Matched on: seller, shares" and
-   * queued a $200M seller hunt from the QUOTED deals grid. `readable` still feeds the lanes that
-   * read a whole thread on purpose and the card's stored text.
-   */
-  const own = withVoiceNotes(ownWords(read?.readable ?? ""), voice.heard);
-  // What she herself wrote: above any quote and any forward. Every door that changes something of hers reads this.
-  const her = withVoiceNotes(herWords(read?.readable ?? ""), voice.heard);
-
   if (secrets?.line && secrets.onlySecrets) {
     await finish({ outcome: "SECRET_STORED", why: secrets.line, objectKey, reply: secrets.line });
     await logEvent(env.DB, { level: "info", scope: "intake", event: "boss_mail_secret", lane: "ops", entityId: mailId, detail: { stored: secrets.stored.map((x) => x.name), refused: secrets.refused.map((x) => x.name), resumed: secrets.resumed.length } });
@@ -713,21 +734,143 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
    * it is read here and handed to every lane below as the bracketed tail their readers already
    * accept. A code she typed or kept in the subject still wins: it is already in the text.
    */
-  const chainRefs = await refsForChain(env.DB, chainIds(message.headers.get("references"), message.headers.get("in-reply-to")));
+  const chainRefs = await refsForChain(env.DB, chain);
   // No thread we know: the REF code she kept in the subject (or typed) finds the job (owner, 7 Nov 2026).
-  const threadRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, `${subject}\n${readable}`);
-  const laneTail = refTail(threadRefs.refs.filter((r) => !`${subject}\n${readable}`.toLowerCase().includes(r)));
-  /*
-   * ─── boss fix D: HER RAINMAKER AND DO-NOT-SUGGEST LISTS, IN HER OWN WORDS (23 Oct 2026) ───
-   *
-   * "X at Y is Rainmaker" / "take X off the Rainmaker list" / "stop suggesting X", replying to any
-   * Monique email. Applied to D1 at once; Monique confirms in one line. When the edits are all the
-   * reply said, nothing else opens; otherwise the rest of the message goes on as ordinary work.
-   */
-  const origin = readable ? forwardedOrigin(readable) : null;
+  const origin = read?.readable ? forwardedOrigin(read.readable) : null;
+  const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
+  const writtenByOwner = herWords(read?.readable ?? "");
+  const directVerified = !origin && !/^(?:fw|fwd)\s*:/i.test(subject) && !viaConsole && cloudflareChecked &&
+    /;\s*dkim\s*=\s*pass\b/i.test(authentication) && /;\s*spf\s*=\s*pass\b/i.test(authentication);
+  const operatingStop = directVerified ? operatingStopCommand(writtenByOwner) : null;
+  if (operatingStop !== null) {
+    const stopped = operatingStop === "confirm" ? null : await setOperatingStop(env.DB, operatingStop, now);
+    const acknowledgement = stopped === null
+      ? `Nothing is paused yet. Reply “${STOP_CONFIRM_WORDS}” to pause every agent and job in Boss OS, your morning email included, until you say resume.`
+      : stopped ? "Boss OS operations are paused." : "Boss OS operations can resume.";
+    await finish({ outcome: "OWNER_OPERATING_STOP", why: acknowledgement, objectKey, reply: acknowledgement });
+    return { mailId, outcome: "OWNER_OPERATING_STOP", employeeId: null, taskId: null, reply: acknowledgement, messageId, signer: "Simone" };
+  }
+  // A model reads whether her own direct words ask Simone to cover spry.vc or West Peek mail, and until
+  // when; code keeps the fixed inbox list, the seven-day cap and the checks in `directVerified`.
+  const sickDay = directVerified ? await readSickDayAsk(env, writtenByOwner, now) : { kind: "none" as const };
+  if (sickDay.kind === "grant") await enableSickDay(env, { address: sickDay.address, until: sickDay.until }, now);
+  // An email that is only the cover ask is answered here; one that asks for more goes on to Simone,
+  // who now has the inbox for what it asks (her ruling, 25 Nov 2026).
+  if (sickDay.kind !== "none" && !sickDay.alsoAsks) {
+    const acknowledgement = sickDay.reply;
+    await finish({ outcome: "OWNER_GOOGLE_ACCESS", why: acknowledgement, objectKey, reply: acknowledgement });
+    return { mailId, outcome: "OWNER_GOOGLE_ACCESS", employeeId: null, taskId: null, reply: acknowledgement, messageId, signer: "Simone" };
+  }
+  const ownerText = `${herSubject}\n${writtenByOwner}`;
+  const recordedRefs = chainRefs.refs.length ? chainRefs : await refsForCode(env.DB, ownerText);
+  const typedRefs = refsIn(ownerText);
+  // A code in a new request can be something she wants Simone to look up. Only a
+  // recorded code can route an answer around Simone to an existing reply handler.
+  const knownRefs = typedRefs.length
+    ? (await env.DB.prepare(`WITH requested(id) AS (SELECT value FROM json_each(?))
+        SELECT id FROM requested r WHERE
+           EXISTS (SELECT 1 FROM tasks WHERE id = r.id)
+        OR EXISTS (SELECT 1 FROM repo_changes WHERE id = r.id)
+        OR EXISTS (SELECT 1 FROM duty_drafts WHERE id = r.id)
+        OR EXISTS (SELECT 1 FROM boss_commands WHERE id = r.id)
+        OR EXISTS (SELECT 1 FROM comment_watch_digests WHERE id = r.id)
+        OR EXISTS (SELECT 1 FROM kdp_mail_log WHERE id = r.id)`)
+      .bind(JSON.stringify(typedRefs)).all<{ id: string }>()).results.map(({ id }) => id)
+    : typedRefs;
+  const explicitRefs = [...recordedRefs.refs, ...knownRefs];
+  // An older prospect draft can be addressed by its exact reference after thread headers are lost.
+  if (!explicitRefs.length) {
+    const templateId = templateIdIn(writtenByOwner);
+    const existing = templateId && await env.DB.prepare(`SELECT id FROM prospect_templates WHERE id = ?`).bind(templateId).first();
+    if (existing) explicitRefs.push(templateId);
+  }
+  // Older duty replies can carry only the original request's Message-ID, with no visible draft code.
+  const linkedArrival = !explicitRefs.length && chain.length
+    ? await env.DB.prepare(`SELECT command_id FROM boss_inbound_mail
+       WHERE message_id IN (${chain.map(() => "?").join(",")}) AND authorised = 1
+       AND (command_id IS NOT NULL
+         OR (outcome NOT IN ('SIMONE_QUEUED', 'DUPLICATE', 'RECEIVED') AND (task_id IS NOT NULL OR outcome = 'NEEDS_CLARITY'))
+         OR EXISTS (SELECT 1 FROM duty_drafts d WHERE d.mail_id = boss_inbound_mail.id
+           AND d.request_message_id = boss_inbound_mail.message_id))
+       ORDER BY received_at DESC LIMIT 1`)
+      .bind(...chain).first<{ command_id: string | null }>()
+    : null;
+  if (linkedArrival?.command_id) explicitRefs.push(linkedArrival.command_id);
+  // The author’s original mail can be the only reference her client keeps. An existing repo
+  // thread still reaches its own approval/redo door after Simone hands the work to Danielle.
+  if (!explicitRefs.length && chain.length) {
+    const change = await changeFromReplyChain(env, chain, sender);
+    if (change) explicitRefs.push(change.id);
+  }
+  const threadRefs = { ...recordedRefs, refs: [...new Set(explicitRefs)] };
+  const laneTail = refTail(threadRefs.refs.filter((r) => !ownerText.toLowerCase().includes(r)));
+  // A thread explicitly held by the owner is still her work. Keep the reply with that task
+  // before opening a new Simone run. Only the authenticated words above the quote are appended.
+  if (writtenByOwner) {
+    const held = await takenOverJob(env, chain, sender);
+    if (held) {
+      await addToTakenOver(env, held, { own: writtenByOwner, mailId, now });
+      const reply = takenOverReply(held);
+      await finish({ outcome: "TAKEN_OVER_NOTED", why: reply, taskId: held.id, employeeId: SIMONE, objectKey, reply });
+      return { mailId, outcome: "TAKEN_OVER_NOTED", employeeId: SIMONE, taskId: held.id, reply, messageId, signer: "Simone" };
+    }
+  }
+  const simoneThread = !linkedArrival && (chain.length || threadRefs.refs.length)
+    ? await env.DB.prepare(`SELECT t.id, json_extract(t.input, '$.body') AS request,
+         json_extract(t.output, '$.text') AS reply
+       FROM tasks t
+       JOIN boss_inbound_mail m ON m.task_id = t.id AND m.authorised = 1 AND m.outcome = 'SIMONE_QUEUED'
+       WHERE m.from_addr = ? AND (
+         m.message_id IN (SELECT value FROM json_each(?))
+         OR t.id IN (SELECT value FROM json_each(?))
+       ) AND (SELECT COUNT(*) FROM json_each(?) WHERE value <> t.id) = 0
+       ORDER BY m.received_at DESC LIMIT 1`)
+      .bind(sender, JSON.stringify(chain), JSON.stringify(threadRefs.refs), JSON.stringify(threadRefs.refs))
+      .first<{ id: string; request: string; reply: string | null }>()
+    : null;
+  // Direct list edits still use the same list writer and first-read check as replies
+  // to an existing record. Other direct messages carry their delivery address to Simone.
+  const directListEdit = seatByAddress(to, roster)?.id === "emp_relationship" && parseListEdits(writtenByOwner).length > 0;
+  if ((!threadRefs.refs.length || simoneThread) && !linkedArrival && !directListEdit) {
+    // The worker can decode local text and archive the original. Simone's seat reads the
+    // message first, and any offline routing uses the same text-only context.
+    const localFiles = parsed ? await readEverything(env, parsed, "", { ai: null }) : EMPTY_FILES;
+    const hasMailMaterial = Boolean(parsed?.mail?.attachments.length || driveIdsIn(writtenByOwner));
+    const threadJobs = simoneThread ? (await env.DB.prepare(`SELECT id, employee_id AS employee, title, status FROM tasks
+      WHERE json_extract(input, '$.simone_handoff') = ? ORDER BY created_at, id LIMIT 12`)
+      .bind(simoneThread.id).all<NonNullable<SimoneMessage["thread_jobs"]>[number]>()).results : [];
+    const context = [
+      read?.body, filesForTask(localFiles),
+      simoneThread ? `Previous exchange on this thread: ${JSON.stringify(simoneThread)}` : null,
+      ...localFiles.unopened.filter((file) => file.audio).map(({ filename }) => `Recording attached: ${filename}.`),
+      ...(oversize ? [objectKey ? "The original message was archived without decoding." : "This message was too large to decode and the archive was unavailable."] : []),
+    ].filter(Boolean).join("\n\n");
+    const identity = messageId ? JSON.stringify([sender, messageId]) : mailId;
+    const taskId = await fileSimoneMessage(env, {
+      source: "boss_inbound_mail", subject: subject || "Message to Simone",
+      ...(viaConsole ? { console: true } : {}),
+      body: [simoneThread ? "" : herSubject, writtenByOwner].filter(Boolean).join("\n\n"),
+      context, has_mail_material: hasMailMaterial,
+      ...(threadJobs.length ? { thread_jobs: threadJobs } : {}),
+      mail_id: mailId, from: sender, to, message_id: messageId ?? undefined, reply_chain: chain,
+    }, identity, now, { objectKey });
+    if (!taskId) return { mailId, outcome: "DUPLICATE", employeeId: null, taskId: null, reply: null, messageId };
+    return { mailId, outcome: "SIMONE_QUEUED", employeeId: SIMONE, taskId, reply: null, messageId };
+  }
+
+  const files: FilesRead = parsed ? await readEverything(env, parsed, read?.readable ?? "") : EMPTY_FILES;
+  parsed = null;
+  const voice = { heard: files.heard, failed: files.unopened.filter((u) => u.audio) };
+  const unheard = unheardLines(voice.failed);
+  const readable = withVoiceNotes(read?.readable ?? "", voice.heard);
+  const filesBlock = filesForTask(files);
+  const filesNote = gotItLines({ asks: [], files: { ...files, heard: [], read: [], zips: [] } });
+  const taskBody = [withVoiceNotes(read?.body ?? "", voice.heard), filesBlock, ...unheard].filter(Boolean).join("\n\n");
+  const own = withVoiceNotes(ownWords(read?.readable ?? ""), voice.heard);
+  const her = withVoiceNotes(writtenByOwner, voice.heard);
+
   const trueSubject = origin?.subject ? decodeHeader(origin.subject) : subject;
   const fileNames = [...files.heard.map((h) => h.filename), ...files.read.map((r) => r.filename), ...files.unopened.map((u) => u.filename)];
-  const herSubject = herSubjectOf(subject, origin ? (origin.subject ? decodeHeader(origin.subject) : "") : null);
   const isReply = isReplyMessage({
     subject, inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
   });
@@ -833,23 +976,15 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     return { mailId, outcome: campaign.outcome, employeeId: "emp_relationship", taskId: null, reply: campaignReply, messageId, signer: "Monique" };
   }
 
-  // R19 — a line she marks `Always:` / `Never:` / `Standing rule:` / `Constraint:` is registered once and rides on every run.
-  /*
-   * SIMONE DOES IT (owner, 25 Oct 2026). An invite, a contact lookup, an email to a person on her
-   * word, repo work for Danielle, or a reply on one of those threads: done here, before the lanes
-   * and the triage, and answered in plain lines. Null when the email asks for none of these, and
-   * the email goes on exactly as before. src/worker/boss/commands/run.ts.
-   */
-  const command = readable || subject
-    ? await commandFromMail(env, { subject: trueSubjectOf(readable, subject), text: own || readable, mailId, sender, refs: threadRefs.refs, now, to, ownerName: (message.headers.get("from") ?? "").replace(/<[^>]*>/g, "").replace(/^"|"$/g, "").trim() })
-    : null;
+  const command = await commandFromMail(env, { text: writtenByOwner, refs: threadRefs.refs, now });
   if (command) {
     if (command.commandIds.length === 1) await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(command.commandIds[0], command.commandIds[0], mailId).run();
     const commandReply = [command.reply, ...(filesNote.length ? ["", ...filesNote] : []), ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
-    await finish({ outcome: command.outcome, why: command.why ?? `Simone did it: ${command.commandIds.join(", ")}`, taskId: command.taskId, employeeId: "emp_chief", objectKey, reply: commandReply });
-    return { mailId, outcome: command.outcome, employeeId: "emp_chief", taskId: command.taskId, reply: commandReply, messageId, signer: "Simone", jobs: command.jobs ?? [] };
+    await finish({ outcome: "COMMAND_REPLY", why: command.reply, employeeId: SIMONE, objectKey, reply: commandReply });
+    return { mailId, outcome: "COMMAND_REPLY", employeeId: SIMONE, taskId: null, reply: commandReply, messageId, signer: "Simone" };
   }
 
+  // R19 — a standing instruction rides on every run.
   const constraints = standingConstraintsIn(own);
   const constraintsAdded = constraints.length ? await recordConstraints(env, constraints, "email", mailId) : 0;
   const constraintNote = constraints.length
@@ -1074,39 +1209,21 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     ? (await dismissFromMail(env, herOwn, now, replyDecision, mailId)) ?? (await prospectTemplateFromMail(env, herOwn, now, morningDayOf(threadRefs.refs), mailId, replyDecision))
     : null;
 
-  /*
-   * ─── "#<SEAT> NEW DUTY …" IS A DRAFT, AND HER REPLY TO IT IS THE APPROVAL ──
-   *
-   * 21 Sep 2026: "is there a lane for me to ask for a new duty to my Boss OS agents?" There was a
-   * drafter and an Inbox card and nothing invoked either. Now the verb drafts through `author.ts`,
-   * files the SAME `duty_created` judgement call the Inbox shows, and the reply she gets IS the
-   * draft — every field with its reason, every refusal verbatim, and one line to answer with.
-   * `approved` on the thread decides that judgement call through `approvals/decide.ts`, the Inbox
-   * button's exact path; `changes: …` redrafts; `your call` in the original request creates it
-   * at once with the phrase on the record. A request that cannot run comes back as a NAMED STOP
-   * and creates nothing.
-   *
-   * BELOW THE REFUSAL, DELIBERATELY, like the plan answer above it: a draft a stranger could
-   * approve by knowing a token would make the schedule a door anyone could open.
-   * `validate:duty-birth` pins that both calls sit after the `!authorised` return.
-   */
+  // Replies can still decide a saved duty draft through the Inbox approval record.
   const dutyAnswer = planAnswer || commentAnswer || kdpAnswer || dismissAnswer ? null : await answerDutyFromMail(env, {
     roster, subject: trueSubject + laneTail, text: readable, mailId, now, sender, read: replyDecision?.reply ?? null,
     inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
-  });
-  const dutyRequest = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer ? null : await newDutyFromMail(env, {
-    roster, subject: trueSubject, text: readable, mailId, messageId, now, sender,
   });
   /*
    * HER RULING ON A DUTY SHE ALREADY HAS (1 Nov 2026): "change Camille's Marketplace listings duty …"
    * changes THAT duty (its instructions, or the code that runs it), never a research page that says
    * "done" over nothing. Below the refusal for the same reason as the two doors above.
    */
-  const dutyEdit = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer || dutyRequest ? null : reading.duty ? await editDutyFromMail(env, {
+  const dutyEdit = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer ? null : reading.duty ? await editDutyFromMail(env, {
     // Her own words only: a pure forward's text is someone else's (#514 review).
     roster, subject: herSubject, text: her, mailId, now, sender, found: reading.duty, shared: reading.dutyAt ? await reading.dutyAt() : undefined,
   }) : null;
-  const dutyNote = dutyAnswer ?? dutyRequest ?? dutyEdit;
+  const dutyNote = dutyAnswer ?? dutyEdit;
 
   let question = bookFailure || closedNote || planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyNote ? null : clarificationFor({
     subject: trueSubject, body: readable, department: route.seat.department ?? "",
@@ -1338,28 +1455,6 @@ async function handleMail(message: BossMailMessage, env: Env, said: Said): Promi
     }
   }
 
-/**
- * The first PARAGRAPH of a refusal, as one line — not its first line.
- *
- * THE BUG THIS FIXES. `why` used to take `bookFailure.split("\n")[0]`, and the refusals it reads
- * are written as wrapped prose for a mail client. On 2026-09-11 that left three arrival rows saying
- *
- *     "You wrote `add`, and I could not read a single lot out of what followed it — so your book is"
- *
- * and stopping there. The next line was "UNCHANGED and I have not opened any work for this." — the
- * half that says what actually happened to her book. The reply she received was complete; it was
- * the AUDIT ROW, whose entire job is saying what was proven, that ended mid-sentence and dropped
- * the word UNCHANGED. A `why` that reads like a truncation bug cannot be used to tell a refusal
- * from a crash.
- *
- * A blank line is the author's own mark for "the summary ends here", so that is the boundary.
- */
-function headline(text: string): string {
-  return String(text ?? "")
-    .split(/\r?\n\s*\r?\n/)[0]!          // up to the first blank line
-    .split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(" ")
-    .trim();
-}
 
   // BOOK_NOT_READ is a fourth outcome beside ROUTED / DEFAULTED / AMBIGUOUS: the message arrived,
   // was hers, named a book verb, and could not be carried out. Recorded as its own fact so it is
@@ -1484,10 +1579,8 @@ function headline(text: string): string {
   const nameOf = (id: string | null) => roster.find((s) => s.id === id)?.name ?? route.seat.name ?? "Simone";
   const jobs: HandoffJob[] = triageTasks.length
     ? triageTasks.map((t) => ({ title: shortTitle(t.job.ask), employeeId: t.job.seat.id, employee: t.job.seat.name, taskId: t.taskId, duty: false, failure: t.failure }))
-    : dutyNote && (dutyNote.outcome === "DUTY_CREATED" || dutyNote.outcome === "DUTY_DRAFTED")
-      ? [{ title: shortTitle(readable || trueSubject), employeeId: dutyNote.employeeId, employee: nameOf(dutyNote.employeeId), taskId: null, duty: true, failure: null }]
-      : dutyEdit?.outcome === "DUTY_CHANGE_ROUTED"
-        ? [{ title: shortTitle(readable || trueSubject), employeeId: dutyEdit.employeeId, employee: nameOf(dutyEdit.employeeId), taskId: dutyEdit.taskId, duty: false, failure: null }]
+    : dutyEdit?.outcome === "DUTY_CHANGE_ROUTED"
+      ? [{ title: shortTitle(readable || trueSubject), employeeId: dutyEdit.employeeId, employee: nameOf(dutyEdit.employeeId), taskId: dutyEdit.taskId, duty: false, failure: null }]
       : taskId || (admitFailure && !question && !filedByVerb)
         ? [{ title: shortTitle(strippedSubject(trueSubject) || readable), employeeId: route.seat.id, employee: route.seat.name, taskId, duty: false, failure: taskId ? null : admitFailure }]
         : [];

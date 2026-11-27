@@ -17,8 +17,9 @@
 import type { Context } from "hono";
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
-import { answerInvite, putOnCalendar, sendOne, mailboxAllowed } from "../commands/google";
+import { answerInvite, putOnCalendar, sendOne, mailboxAllowed, type CalendarBlockPeriod } from "../commands/google";
 import { HER_CALENDAR, GO_CARD_NOTE, centralDay, unsureAskDay, dayWords, gmailLink } from "../../../shared/boss/invitations/invitations.mjs";
+import { dayOf } from "../../../shared/boss/schedule/clock.mjs";
 
 export const isInviteToken = (t: string) => /^iv[A-Za-z0-9]{30}$/.test(t);
 
@@ -64,7 +65,10 @@ export async function claimTap(db: D1Database, token: string, answer: "yes" | "n
 async function act(env: Env, row: any, answer: "yes" | "no"): Promise<{ line: string; link?: { label: string; url: string } }> {
   const writable = mailboxAllowed(row.inbox);
   const note = GO_CARD_NOTE;
-  const onHerCalendar = () => putOnCalendar(env, { mailbox: HER_CALENDAR, title: row.title, start: row.starts_at, end: row.ends_at, allDay: row.all_day === 1, where: row.location, note });
+  const period: CalendarBlockPeriod = row.all_day === 1
+    ? { allDay: true, start: centralDay(row.starts_at), end: dayOf(row.starts_at, undefined, 1) }
+    : { allDay: false, start: row.starts_at, end: row.ends_at };
+  const onHerCalendar = () => putOnCalendar(env, { mailbox: HER_CALENDAR, title: row.title, ...period, where: row.location, note });
   const reply = (text: string) => sendOne(env, {
     from: row.inbox, to: row.from_address, subject: /^re:/i.test(row.subject ?? "") ? row.subject : `Re: ${row.subject ?? row.title}`,
     text, inReplyTo: row.rfc_message_id, threadId: row.gmail_thread_id,

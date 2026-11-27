@@ -4,8 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { BOSS_INTAKE_MAILBOX, BOSS_INTAKE_SENDERS, SIMONE_MAILBOX, routeToSeat } from "../src/shared/boss/intake/mail.mjs";
-import { triage } from "../src/shared/boss/intake/triage.mjs";
-import { dutyRequestIn } from "../src/shared/boss/duties/lane.mjs";
+import { readAssignments } from "../src/shared/boss/intake/simoneRouting.mjs";
 import { readReply } from "../src/shared/boss/repoChange/lane.mjs";
 import { blockReplyDoor } from "../src/shared/boss/service/waits.mjs";
 import { readSecretLines, secretNameProblem } from "../src/shared/boss/service/secretLines.mjs";
@@ -38,11 +37,24 @@ function examples() {
   return out;
 }
 
+it("keeps the retired Simone role wording out of the persona and current guides", () => {
+  const persona = readFileSync(path.join(ROOT, "scripts/ops/simone/persona.md"), "utf8");
+  const copies = [persona, DOC, OPS, ...["README.md", "STATUS.md", "CLAUDE.md"].map(
+    (file) => readFileSync(path.join(ROOT, file), "utf8"),
+  )];
+  const retired = /Your one aim is to run Sequoia|You are Simone\. Your portrait|You are the front door|signed as (?:her|your) assistant|Assistant to Sequoia Taylor|absorbed Task Intake/i;
+  for (const copy of copies) {
+    expect(copy).not.toMatch(retired);
+    expect(copy).toMatch(/(?:’m|am|is) in charge of everything Boss OS runs/);
+  }
+});
+
 describe("the email how-to page matches the mailbox", () => {
-  it("names the address, every authorised sender, and every name@ inbox that is routed", () => {
+  it("names the address and the name@ inboxes while keeping the approved sender addresses out of the guide", () => {
     expect(DOC).toMatch(/^# How to give Boss OS work by email$/m);
     expect(DOC).toContain(`**${BOSS_INTAKE_MAILBOX}**`);
-    for (const s of BOSS_INTAKE_SENDERS) expect(DOC).toContain(s);
+    expect(DOC).toContain("Only authenticated owner");
+    for (const s of BOSS_INTAKE_SENDERS) expect(DOC).not.toContain(s);
     const inboxes = (RULES.rules as Array<{ matchers: Array<{ value: string }> }>).map((r) => String(r.matchers[0]?.value ?? "")).filter((a) => a.endsWith("@sequoiataylor.com") && a !== BOSS_INTAKE_MAILBOX);
     // Every employee's routed inbox (one per sender in notify.mjs's ROSTER, boss@ aside), none missed.
     expect(inboxes.length).toBe(EMPLOYEE_LOCAL_PARTS.length);
@@ -51,7 +63,7 @@ describe("the email how-to page matches the mailbox", () => {
     expect(DOC).not.toMatch(/westpeek|joinwestpeek/i);
   });
 
-  it("says simone@ is boss@, and the router agrees: same outcome, same seat, same triage for every example", () => {
+  it("says simone@ and boss@ share an intake, and lists Danielle's direct mailbox", () => {
     expect(DOC).toContain(`**${SIMONE_MAILBOX} does exactly the same thing as boss@.**`);
     expect(DOC).toMatch(/"Tell Simone" box at the top of Today/);
     // simone@ is not listed among the direct-to-one-person addresses any more.
@@ -74,14 +86,18 @@ describe("the email how-to page matches the mailbox", () => {
     expect(routeToSeat("look at this", ROSTER, "danielle@sequoiataylor.com")!.outcome).toBe("ROUTED");
   });
 
-  it("has three examples, and each reaches the seat the page says", () => {
+  it("shows a repo handoff, a research handoff, and an instruction Simone can apply", () => {
     const ex = examples();
-    expect(ex.length).toBe(3);
-    for (const e of ex) {
-      const duty = dutyRequestIn(e.subject, e.body, ROSTER);
-      const seat = duty && !("error" in duty) ? duty.seat.name : triage({ subject: e.subject, text: e.body, roster: ROSTER }).map((j) => j.seat.name).join(",");
-      expect(seat, e.subject).toBe(e.seat);
+    expect(ex.map(({ subject, seat }) => ({ subject, seat }))).toEqual([
+      { subject: "studio landing page", seat: "Danielle" },
+      { subject: "hosting", seat: "Camille" },
+      { subject: "studio recount", seat: "Simone" },
+    ]);
+    for (const [e, employee, delivery] of [[ex[0]!, "emp_repo", "repository"], [ex[1]!, "emp_research", "research_page"]] as const) {
+      const call = { message: { body: `${e.subject}\n\n${e.body}` }, roster: ROSTER };
+      expect(readAssignments([{ employee, words: e.body, delivery }], call)).toEqual([{ employee, words: e.body, delivery }]);
     }
+    expect(OPS).toContain("**Change an existing duty** by telling Simone");
     // The examples carry no names of people (her rule for test mail and docs alike).
     for (const e of ex) for (const s of ROSTER) expect(`${e.subject} ${e.body}`).not.toContain(s.name);
   });

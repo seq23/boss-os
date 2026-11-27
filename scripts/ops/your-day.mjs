@@ -1323,6 +1323,8 @@ export function buildDay(data, now = Date.now()) {
   // switches, pauses and rows with no number only; a quiet week is one line.
   const scLines = (m.scorecard?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
   const scorecardSection = scLines.length ? { title: m.scorecard.title ?? "📊 Scorecard", tone: "done", items: scLines, empty: null } : null;
+  const operatingLines = (m.operations?.lines ?? []).map((text) => ({ text }));
+  const operatingSection = operatingLines.length ? { title: "Simone’s operating check", items: operatingLines, link: m.operations.link, empty: null } : null;
   // Noelle's growth section (24 Nov 2026): her report, Sunday's "This week's schedule" and the results against floors
   // were written to it but never read here, so Monday's promised schedule could not reach her.
   const grLines = (m.growth?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
@@ -1419,6 +1421,7 @@ export function buildDay(data, now = Date.now()) {
       ...(openLoopsSection ? [openLoopsSection] : []),
       ...(growthSection ? [growthSection] : []),
       ...(scorecardSection ? [scorecardSection] : []),
+      ...(operatingSection ? [operatingSection] : []),
       ...(scoreSection ? [scoreSection] : []),
       ...(brainsSection ? [brainsSection] : []),
       ...(t2rGroupsSection ? [t2rGroupsSection] : []),

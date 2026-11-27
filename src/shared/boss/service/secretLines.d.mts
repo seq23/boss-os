@@ -7,6 +7,7 @@ export interface SecretLinesRead {
 }
 export declare const SECRET_REDACTED: string;
 export declare const SECRET_HANDOFF_KEY_NAME: string;
+export declare function containsCredential(text: string, env: object): boolean;
 export declare const RESERVED_SECRET_NAMES: ReadonlySet<string>;
 export declare const RESERVED_SECRET_PREFIXES: readonly string[];
 export declare function secretNameProblem(name: string): string | null;
