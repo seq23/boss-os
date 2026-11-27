@@ -53,7 +53,7 @@ describe("the change decides which screens are opened (review of #509, F1)", () 
     expect(one.everyRoute).toBe(false);
     const shared = changedScreens({ changed: ["components/Card.tsx"], files });
     expect(shared.everyRoute).toBe(true);
-    expect(shared.allRoutes.map((r: { route: string }) => r.route).sort()).toEqual(["/", "/help", "/item/[id]", "/plans", "/settings"]);
+    expect(shared.allRoutes.map((r: { route: string }) => r.route).sort()).toEqual(["/", "/help", "/item/[id]", "/plans", "/settings", "/vault"]);
     const mono = changedScreens({ changed: ["apps/mobile/app/(tabs)/more/full-plan.tsx", "apps/web/src/page.tsx"], files: ["apps/mobile/app/_layout.tsx", "apps/mobile/app/(tabs)/more/full-plan.tsx", "apps/web/src/page.tsx"] });
     expect(mono.changedRoutes.map((r: { route: string }) => r.route)).toEqual(["/more/full-plan"]);
     expect(mono.shared).toEqual([]);

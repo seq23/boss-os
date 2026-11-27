@@ -13,8 +13,10 @@ const screens = {
   "/plans": () => `<h1>Plans</h1><button data-toggle>Pick yearly</button><button data-go="/">Back home</button>`,
   "/settings": () => `<h1>Settings</h1><button>Reset</button><button data-go="/">Back home</button>`,
   "/help": () => `<h1>Help</h1><button>Contact</button><button data-go="/">Back home</button>`,
+  // members only: anyone else is sent home, as a paid or one-door screen redirects (a dead "Unlock all" proves the sweep)
+  "/vault": () => `<h1>Vault</h1><button>Unlock all</button><button data-go="/">Back home</button>`,
 };
-function draw() { const p = location.pathname.replace(/\/+$/, "") || "/"; document.getElementById("app").innerHTML = (screens[p] ?? (() => "<h1>Unmatched Route</h1><p>Page could not be found.</p>"))(); }
+function draw() { let p = location.pathname.replace(/\/+$/, "") || "/"; if (p === "/vault" && localStorage.getItem("fixture-member") !== "yes") { history.replaceState(null, "", "/"); p = "/"; } document.getElementById("app").innerHTML = (screens[p] ?? (() => "<h1>Unmatched Route</h1><p>Page could not be found.</p>"))(); }
 addEventListener("popstate", draw);
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;

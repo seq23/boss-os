@@ -3,6 +3,7 @@ app/index.tsx
 app/plans.tsx
 app/settings/index.tsx
 app/help.tsx
+app/vault.tsx
 app/item/[id].tsx
 app/+not-found.tsx
 components/Card.tsx

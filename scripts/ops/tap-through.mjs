@@ -108,6 +108,10 @@ export function flowProblems(flow) {
   for (const c of flow.console_ok ?? []) if (!c?.text || !c?.why) out.push("each console_ok entry needs `text` and `why`");
   for (const m of flow.mocks ?? []) if (!m?.url || !m?.why) out.push("each mock needs `url` and `why` (test values only)");
   for (const s of flow.sweep_skip ?? []) if (!s?.name || !s?.why) out.push("each sweep_skip entry needs `name` and `why`");
+  for (const [route, st] of Object.entries(flow.route_storage_for ?? {})) {
+    if (!route.startsWith("/")) out.push(`route_storage_for "${route}": the key is a route path starting with "/"`);
+    if (!st || typeof st !== "object" || Array.isArray(st) || !Object.keys(st).length) out.push(`route_storage_for "${route}": the value is the storage map to set before opening it (key → value)`);
+  }
   return out;
 }
 
@@ -628,7 +632,9 @@ async function changedPass({ browser, flow, target, origin, change, ctx, report,
       continue;
     }
     if (budget.left <= 0) { row.result = `NOT opened (budget ${ROUTE_SWEEP_PER_RUN} taps)`; if (ch) ctx.failures.push({ code: "UNMAPPED_SCREEN", where: `changed screen ${r.route}`, what: `${r.file} changed and the run's tap budget ran out before it was opened; split the change` }); continue; }
-    const j = { name: `route ${r.route}`, start: url.replace(/^\//, ""), steps: [], storage: flow.route_storage ?? flow.journeys[0]?.storage };
+    // A screen only one kind of person can open (a paid adult, one door) gets its own storage: one flow-wide
+    // route_storage cannot be two people at once (PBS /own-night is mindset-only, /grief faith-only, 27 Nov 2026).
+    const j = { name: `route ${r.route}`, start: url.replace(/^\//, ""), steps: [], storage: flow.route_storage_for?.[r.route] ?? flow.route_storage ?? flow.journeys[0]?.storage };
     const c = await openContext(browser, { flow, origin, scheme: "light", video: null, notes: ctx.notes });
     try {
       await load(c.page, joinUrl(target, j.start), flow, j.storage);
@@ -637,7 +643,7 @@ async function changedPass({ browser, flow, target, origin, change, ctx, report,
       const where = `changed screen ${r.route}`;
       if (!r.re.test(landed) && !(flow.routes?.[r.route] && landed === local(pathOf(joinUrl(target, j.start))))) {
         row.result = `opening it went to ${landed} (it needs sign-in or data first)`;
-        if (ch) ctx.failures.push({ code: "UNMAPPED_SCREEN", where, what: `${r.file} changed and opening ${url} went to ${landed}: add a journey that reaches it (with test values), or route_storage to the flow` });
+        if (ch) ctx.failures.push({ code: "UNMAPPED_SCREEN", where, what: `${r.file} changed and opening ${url} went to ${landed}: add a journey that reaches it (with test values), or route_storage (route_storage_for { "${r.route}": {…} } for this screen alone) to the flow` });
         continue;
       }
       const err = await errorScreen(c.page, flow);
@@ -702,6 +708,9 @@ export async function selfTest({ chromium = null, log = console.log, keep = null
     { name: "a changed screen the journeys reach and sweep passes", ...routes, changed: ["app/plans.tsx", "tests/plans.test.ts"], exit: 0, routes: ["/plans"] },
     { name: "a changed screen no journey reached is opened and swept", ...routes, changed: ["app/settings/index.tsx"], exit: 1, has: [["DEAD_BUTTON", "Reset"]], lacks: [["DEAD_BUTTON", "Contact"]], routes: ["/settings"] },
     { name: "a changed shared component opens and sweeps every route", ...routes, changed: ["components/Card.tsx"], exit: 1, has: [["DEAD_BUTTON", "Reset"], ["DEAD_BUTTON", "Contact"]] },
+    { name: "a changed screen only a member can open, with no storage for it, fails by name", ...routes, changed: ["app/vault.tsx"], exit: 1, has: [["UNMAPPED_SCREEN", "went to /"]] },
+    { name: "a changed member-only screen with its own route_storage_for is opened and swept", ...routes, flow: "routes/routes-member.flow.json", changed: ["app/vault.tsx"], exit: 1, has: [["DEAD_BUTTON", "Unlock all"]], lacks: [["UNMAPPED_SCREEN", "vault"]], routes: ["/vault"] },
+    { name: "route_storage_for with a key that is no route is an invalid flow", flow: "routes/routes-bad-storage.flow.json", target: srv.url, exit: 9, stop: "FLOW_INVALID", says: "route_storage_for" },
     { name: "a changed screen whose path takes a value, never reached, fails by name", ...routes, changed: ["app/item/[id].tsx"], exit: 1, has: [["UNMAPPED_SCREEN", "item/[id]"]] },
     { name: "screen files changed with no route that maps them is a named stop", ...routes, files: ["src/Screen.tsx", "package.json"], changed: ["src/Screen.tsx"], exit: 9, stop: "CHANGED_SCREENS_UNMAPPED" },
     { name: "a flow that taps nothing is a named stop", flow: "taps-nothing.flow.json", target: srv.url, exit: 9, stop: "FLOW_TAPS_NOTHING" },
