@@ -16,7 +16,11 @@ type ReaderProvider = "gemini" | "workers-ai";
  * - `CLOUDFLARE_ACCOUNT_ID` is read only to REFUSE it: the main account is Workers Paid and bills past the
  *   allowance, so a CF2 id equal to it turns the Workers AI lane off. The Worker's `AI` binding runs on the
  *   main account too and is never read here.
+ * - The Worker is never given `CLOUDFLARE_ACCOUNT_ID` (toBossEnv does not pass it), so the guard also
+ *   compares against `MAIN_CLOUDFLARE_ACCOUNT_ID`, the main account's public id. Without it the guard had
+ *   nothing to compare on the Worker and passed silently (follow-up 2 of #583).
  */
+export const MAIN_CLOUDFLARE_ACCOUNT_ID = "8d147e242033699dd37c6f5a451f48d2";
 export interface WorkerReadingCredentials {
   GEMINI_API_KEY?: string;
   CF2_ACCOUNT_ID?: string;
@@ -70,8 +74,9 @@ export async function readWorkerSource(
   const googleKey = credentials.GEMINI_API_KEY;
   const account = credentials.CF2_ACCOUNT_ID;
   const cloudflareKey = credentials.CF2_WORKERS_AI_TOKEN;
-  const mainAccount = credentials.CLOUDFLARE_ACCOUNT_ID;
-  const billedAccount = !!account && !!mainAccount && account.trim().toLowerCase() === mainAccount.trim().toLowerCase();
+  const mainAccounts = [MAIN_CLOUDFLARE_ACCOUNT_ID, credentials.CLOUDFLARE_ACCOUNT_ID]
+    .filter((id): id is string => !!id).map((id) => id.trim().toLowerCase());
+  const billedAccount = !!account && mainAccounts.includes(account.trim().toLowerCase());
   const order: ReaderProvider[] = input.worker === "monique" ? ["gemini", "workers-ai"] : ["workers-ai", "gemini"];
   let exhausted: ReaderProvider | null = null;
   let answered = false;
