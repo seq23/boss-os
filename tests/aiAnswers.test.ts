@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { vi } from "vitest";
 import { strengthenedOf } from "../src/shared/boss/searchLoop/week.mjs";
 import { d1Sql } from "../scripts/ops/lib/scorecard-readers.mjs";
+import { stashFor, stashText } from "./helpers/openseoStash";
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 
 const DAY = 86_400_000;
@@ -203,7 +204,7 @@ describe("the session's log, read by code", () => {
   it("bad JSON for one site makes only that site not read", () => {
     const log = [blockText(HOST, JSON.stringify(block())), blockText("approvalprep.com", "{not json"), "CREDITS-BEFORE: 9", "CREDITS-AFTER: 9"].join("\n");
     const run = parseRun(log);
-    const out = entriesFrom(run, STATE, NOW);
+    const out = entriesFrom(run, STATE, NOW, stashFor(block()));
     expect(out.find((e: any) => e.host === HOST)).toMatchObject({ host: HOST, block: expect.any(Object) });
     expect(out.find((e: any) => e.host === "approvalprep.com")).toEqual({ host: "approvalprep.com", stop: "OPENSEO_BAD_REPLY" });
     expect(out.find((e: any) => e.host === "aplayermode.com")).toEqual({ host: "aplayermode.com", stop: "SITE_MISSING" });
@@ -228,12 +229,12 @@ describe("the session's log, read by code", () => {
   });
   it("a site whose sitemap was not read is not read, never served with page_url null", () => {
     const run = parseRun(blockText(HOST, JSON.stringify(block())));
-    const out = entriesFrom(run, { ...STATE, [HOST]: { ...STATE[HOST], stop: "SITEMAP_UNREAD" } }, NOW);
+    const out = entriesFrom(run, { ...STATE, [HOST]: { ...STATE[HOST], stop: "SITEMAP_UNREAD" } }, NOW, stashFor(block()));
     expect(out.find((e: any) => e.host === HOST)).toEqual({ host: HOST, stop: "SITEMAP_UNREAD" });
   });
   it("a lane naming an off-site page is cut before the post", () => {
     const b = block(); b.lanes = [{ prompt_id: "p2", lane: "own", page_url: "https://evil.com/questions/x/" }];
-    const out: any = entriesFrom(parseRun(blockText(HOST, JSON.stringify(b))), STATE, NOW).find((e: any) => e.host === HOST);
+    const out: any = entriesFrom(parseRun(blockText(HOST, JSON.stringify(b))), STATE, NOW, stashFor(b)).find((e: any) => e.host === HOST);
     expect(out.block.lanes[0].page_url).toBeNull();
     expect(JSON.stringify(out.block.lanes)).not.toMatch(/evil\.com/);
   });
@@ -245,17 +246,22 @@ describe("the post step: exit codes, the OUTPUT line and the over-plan row (Rule
   async function runPost(log: string, readCount: number) {
     const dir = mkdtempSync(join(tmpdir(), "aiv-"));
     writeFileSync(join(dir, "run.log"), log); writeFileSync(join(dir, "state.json"), JSON.stringify(STATE));
+    writeFileSync(join(dir, "openseo.jsonl"), stashText(stashFor(block())));
     const calls: Array<[string, any]> = [];
     const api = { post: async (path: string, body: any) => { calls.push([path, body]); return path === "/growth/ai-week" ? { read: readCount, sites: [] } : { ok: true }; } };
     const lines: string[] = [];
     const spy = vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { lines.push(a.join(" ")); });
-    try { return { rc: await post(join(dir, "run.log"), join(dir, "state.json"), { api }), calls, lines }; } finally { spy.mockRestore(); }
+    try { return { rc: await post(join(dir, "run.log"), join(dir, "state.json"), { api, stashFile: join(dir, "openseo.jsonl") }), calls, lines }; } finally { spy.mockRestore(); }
   }
   const good = (extra = "") => `CREDITS-BEFORE: 900\n${est(70)}\nSITE-BEGIN ${HOST}\n${JSON.stringify(block())}\nSITE-END ${HOST}\nCREDITS-AFTER: 900\n${extra}`;
   it("a week read within plan exits 0, prints OUTPUT and clears the over-plan row", async () => {
     const r = await runPost(good(), 1);
     expect(r.rc).toBe(0);
     expect(r.lines).toContain("OUTPUT 1 sites_read");
+    // The week posted is the one code built from the stash: every observation, the session's lane.
+    const site = r.calls.find(([p]) => p === "/growth/ai-week")?.[1].sites.find((x: any) => x.host === HOST);
+    expect(site.block.observations).toHaveLength(6);
+    expect(site.block.lanes).toEqual([expect.objectContaining({ prompt_id: "p2", lane: "own" })]);
     expect(r.calls.find(([p]) => p === "/open-loops/intake")?.[1]).toMatchObject({ stop: "OPENSEO_OVER_PLAN", cleared: true });
   });
   it("nothing read exits 9, never 0", async () => {
@@ -313,7 +319,7 @@ describe("the session's own lines, read from its event stream (24 Nov 2026: 0 si
     expect(Object.keys(run.blocks).sort()).toEqual(["approvalprep.com", HOST].sort());
     expect(run).toMatchObject({ before: 4373, after: 4373, claimed: 2, notReached: false });
     expect(Object.keys(run.estimates)).toHaveLength(Object.keys(AI_SITES).length);
-    expect(entriesFrom(run, STATE, NOW).find((e: any) => e.host === HOST)).toMatchObject({ host: HOST, block: expect.any(Object) });
+    expect(entriesFrom(run, STATE, NOW, stashFor(block())).find((e: any) => e.host === HOST)).toMatchObject({ host: HOST, block: expect.any(Object) });
     expect(text).toMatch(/AI-VISIBILITY-COMPLETE: sites=2$/m);
   });
   it("the real 24 Nov log (last message only) reads nothing and names SESSION_BLOCKS_LOST", async () => {

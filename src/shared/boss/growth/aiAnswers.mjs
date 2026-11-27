@@ -47,6 +47,7 @@ export const STOPS = Object.freeze({
   OPENSEO_SHORT_READ: "the reading session did not read every answer",
   OPENSEO_BAD_REPLY: "the reading session's reply for this site was not usable",
   SITE_MISSING: "the reading session did not report this site",
+  OPENSEO_STASH_UNREAD: "the run's own copy of OpenSEO's results could not be read, so code could not build the week",
   LOOP_CONFIG_UNREAD: "the site's search-loop settings could not be read, so its own pages cannot be checked",
   SITEMAP_UNREAD: "the site's sitemap could not be read, so its own pages cannot be checked",
 });
