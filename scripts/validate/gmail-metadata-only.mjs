@@ -104,6 +104,24 @@ const MUST_NOT = [
  * fails on the specific thing that changed.
  */
 const CONTENT_EXCEPTIONS = new Map([
+  ["lib/toni-mail.mjs", {
+    why: "Toni's failed-payment and account-restriction notices can only be recognized reliably from their full threads.",
+    invariants: [
+      [(src) => /const READONLY = "https:\/\/www\.googleapis\.com\/auth\/gmail\.readonly"/.test(src)
+        && /const BROKERAGE = INVITE_INBOXES\.find\(.*!writable && address\.endsWith\("@spry\.vc"\)/.test(src)
+        && /googleToken\(READONLY, BROKERAGE,/.test(src)
+        && /grant\.scope !== READONLY/.test(src),
+      "the business mailbox is pinned and both token paths require Gmail read-only access"],
+      [(src) => /endpoint\.origin !== "https:\/\/gmail\.googleapis\.com" \|\| !GMAIL_READ_PATH\.test\(endpoint\.pathname\)/.test(src)
+        && /fetch\(endpoint, \{\s*method: "GET",[\s\S]+?redirect: "error"/.test(src)
+        && !/messages\/send|drafts\/send|gmail\.(?:modify|compose|send)/.test(src),
+      "Gmail access is GET only, checks the exact host and read paths and refuses redirects"],
+      [(src) => /listLpTargets\(access, query, readGmailJson\)/.test(src)
+        && /lpReplyThread\(id, access, readGmailJson\)/.test(src)
+        && /read = readWorkerSource/.test(src) && !/writeFileSync|console\.log/.test(src),
+      "use the existing paginated Gmail and full-thread readers, use the shared model route and do not log or write raw messages"],
+    ],
+  }],
   ["lib/simone-tools.mjs", {
     why: "Simone can read the owner’s brokerage inbox on the Mac during the owner’s verified temporary grant.",
     invariants: [
@@ -351,19 +369,14 @@ const installer = existsSync(join(ROOT, "scripts/ops/install-agent-launchd.sh"))
   ? read("scripts/ops/install-agent-launchd.sh")
   : "";
 
-/**
- * HEADER READERS THAT NEED THE SUBJECT (22 Oct 2026). Toni's risk watch and outside-locks check read
- * for charge notices and account-lock notices; whether a message is "Your account has been
- * restricted" lives in its Subject and nowhere in From/To/Date. They read HEADERS ONLY — never a body,
- * never a snippet — through the shared kit, read-only.
- */
+/** Metadata readers with their own exact header allowlists. */
 const HEADER_READERS = new Map([
   ["rainmaker-repliers.mjs", {
     why: "RR repliers require message references as well as From; reads only those four metadata headers through the existing read-only token tooling.",
     invariants: [[rainmakerHeaderOnly, "RR reads must remain metadata-only with exactly From, Message-ID, In-Reply-To and References, and never send or reach a model"]],
   }],
   ["lib/duty-kit.mjs", {
-    why: "Toni's charge and lock notices are recognised by sender domain and Subject; no body is read.",
+    why: "The shared duty kit has a metadata-only reader for operational evidence probes.",
     invariants: [
       [(src) => /format=metadata/.test(src) && /metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date/.test(src), "it must request format=metadata with exactly From, Subject and Date"],
       [(src) => !/format=full|"format", "full"|format=raw|"format", "raw"|\.snippet/.test(src), "it must never request a body, a raw message or a snippet"],
@@ -596,6 +609,6 @@ console.log(
   `GMAIL SCAN PASSED: ${callers.length} Gmail caller(s) in scripts/ops. ` +
   `${metadataOnly.length} request headers only (${metadataOnly.join(", ")}); ` +
   `${callers.length - metadataOnly.length} named content exception(s) still narrow; ` +
-  "and the two local jobs that read mail contents — Simone's KDP case watch and Monique's mailbox " +
+  "and the two connector-based jobs — Simone's KDP case watch and Monique's mailbox " +
   "sweep — do so only inside the local run, never through this repository.",
 );

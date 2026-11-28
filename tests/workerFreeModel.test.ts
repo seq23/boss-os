@@ -142,14 +142,18 @@ describe("the worker reading router", () => {
       // Both down: unavailable, which never counts toward holding an item for a person.
       .mockImplementationOnce(unavailable).mockImplementationOnce(unavailable);
     vi.stubGlobal("fetch", fetch);
+    const recordRead = vi.fn();
 
-    await expect(readWorkerSource(input, credentials)).resolves.toMatchObject({ status: "ok", provider: "workers-ai" });
-    await expect(readWorkerSource({ ...input, worker: "kendra" }, credentials)).resolves.toMatchObject({ status: "ok", provider: "gemini" });
-    await expect(readWorkerSource(input, credentials)).resolves.toEqual({ status: "allowance-exhausted", provider: "workers-ai" });
-    await expect(readWorkerSource(input, credentials)).resolves.toEqual({ status: "allowance-exhausted", provider: "gemini" });
-    await expect(readWorkerSource(input, credentials)).resolves.toEqual({ status: "uncertain" });
-    await expect(readWorkerSource(input, credentials)).resolves.toEqual({ status: "unavailable" });
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toMatchObject({ status: "ok", provider: "workers-ai" });
+    await expect(readWorkerSource({ ...input, worker: "kendra" }, credentials, recordRead)).resolves.toMatchObject({ status: "ok", provider: "gemini" });
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toEqual({ status: "allowance-exhausted", provider: "workers-ai" });
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toEqual({ status: "allowance-exhausted", provider: "gemini" });
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toEqual({ status: "uncertain" });
+    await expect(readWorkerSource(input, credentials, recordRead)).resolves.toEqual({ status: "unavailable" });
     expect(fetch).toHaveBeenCalledTimes(12);
+    expect(recordRead.mock.calls.map(([result]) => [result.status, result.provider])).toEqual([
+      ["ok", "workers-ai"], ["ok", "gemini"],
+    ]);
   });
 
   it("waits out a named per-minute limit once, and never a long or unnamed one", async () => {

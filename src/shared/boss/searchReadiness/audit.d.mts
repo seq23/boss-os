@@ -37,7 +37,7 @@ export function jsonLd(html: string): { nodes: any[]; errors: string[] };
 export function typesOf(n: any): string[];
 export function deepNodes(nodes: any, re: RegExp): any[];
 export function links(html: string, base: string): { url: string; host: string; rel: string; raw: string }[];
-export const CHECKS: Record<string, (ctx: any, params?: any) => any> & { [K in "sitemap_valid" | "robots_ok" | "hyperlocal_coverage" | "canonical_self"]: (ctx: any, params?: any) => any };
+export const CHECKS: Record<string, (ctx: any, params?: any) => any> & { [K in "sitemap_valid" | "robots_ok" | "hyperlocal_coverage" | "canonical_self" | "steps_and_tables"]: (ctx: any, params?: any) => any };
 export function runChecks(checklist: any, ctx: any): any[];
 export function fixBriefs(checklist: any, siteResults: any[], opts?: { now?: number }): any[];
 export function morningLines(checklist: any, siteResults: any[], opts?: { previous?: any; history?: any[] | null; now?: number; queued?: number; lastRepair?: { fixed?: number } | null; categories?: any; max?: number; redLines?: { domain: string | null; kind: string; line: string }[]; goldLines?: { domain: string | null; kind: string; line: string }[] }): string[];

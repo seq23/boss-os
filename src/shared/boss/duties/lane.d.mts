@@ -43,3 +43,5 @@ export function overridesFrom(text: string): {
   cadence?: "daily" | "weekly"; weekday?: number; local_hour?: number; local_minute?: number;
   model?: string; executor?: "agent" | "local_job"; local_job?: string;
 };
+
+export function usesFixedFreeReader(dutyId: string): boolean;

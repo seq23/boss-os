@@ -1,5 +1,6 @@
 /** Types for risk-watch.mjs. See that file. */
 import type { Reading } from "./lib/duty-kit.mjs";
+import type { MailRule } from "./lib/toni-mail.mjs";
 export const THRESHOLDS: Readonly<Record<string, number>>;
 export function openrouterReading(credits: unknown, prevUsage: number): Reading & { usage?: number };
 export function rdapExpiry(rdap: unknown): number | null;
@@ -8,9 +9,9 @@ export function senderPauseReason(b: unknown): string | null;
 export function hasDkim(txts: string[]): boolean;
 export function rdapUrl(domain: string): string;
 import type { DecideItem, Button } from "../../src/shared/boss/mail/plain.mjs";
-export type Notice = { id: string; from_domain?: string; subject?: string; date?: string; kind?: string; vendor?: string; detail?: string | null };
+export type Notice = { id: string; at?: number; from_domain?: string; subject?: string; date?: string; kind?: string; vendor?: string; detail?: string | null };
 export type BillingReading = Reading & { domain?: string; vendor?: string; subject?: string; needsHer?: boolean; gross?: number; net?: number };
-export const CHARGE_QUERY: string;
+export const BILLING_MAIL: MailRule;
 export const GITHUB_SCOPE_COMMAND: string;
 export const CLOUDFLARE_INCLUDED: Readonly<Record<string, { label: string; included: number }>>;
 export const NEAR_CAP: number;
@@ -22,7 +23,7 @@ export const WORKERS_AI_MONTH_LIMIT_USD: number;
 export function workersAiReading(byDay: Record<string, number> | null): Reading;
 export function stripeReading(label: string, x: { payouts: Array<{ status?: string; amount?: number; failure_message?: string }> | null; account: { payouts_enabled?: boolean; requirements?: { disabled_reason?: string } } | null }): Reading;
 export function billingProblemReadings(notices: Notice[]): BillingReading[];
-export function noticeReadings(notices: Notice[], where: string, sourceKey: string, now?: number): BillingReading[];
+export function noticeReadings(notices: Notice[], where: string, sourceKey: string, now?: number, lastCompleteAt?: number): BillingReading[];
 export function chargeReading(m: Notice, where: string): Reading;
 export function dayWords(day: string | undefined): string;
 export function vendorName(domain: string): string;
@@ -34,3 +35,5 @@ export function planRisk(moved: Array<{ key: string; state: string; line: string
   lines: Array<string | { text: string; links: Button[] }>;
   fixes: Array<{ title: string; prompt: string }>;
 };
+export function unreadKeys(states?: Record<string, string>, owners?: Record<string, string>, unreadBoxes?: Set<string>): string[];
+export function keepOwners(states?: Record<string, string>, previous?: Record<string, string>, now?: Record<string, string>): Record<string, string>;

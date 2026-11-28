@@ -12,7 +12,9 @@ import { INSTALLED_LOCAL_JOBS } from "../src/shared/boss/duties/lane.mjs";
 import { askClaudeJson, movedReadings, PERSONAL_GMAIL, readClaudeStream, readNothingStop, stateMap } from "../scripts/ops/lib/duty-kit.mjs";
 import { existsSync, readFileSync as readAbs } from "node:fs";
 import { hasDkim, openrouterReading, rdapExpiry, rdapUrl, renewalReading, senderPauseReason } from "../scripts/ops/risk-watch.mjs";
-import { lockReading } from "../scripts/ops/outside-locks.mjs";
+import { LOCK_MAIL, lockReading } from "../scripts/ops/outside-locks.mjs";
+import { scanToniMailbox, scanToniConnector, reconcileToniReadings, personalToken, personalGrantPresent, nameToniHeld } from "../scripts/ops/lib/toni-mail.mjs";
+import { BILLING_MAIL, unreadKeys } from "../scripts/ops/risk-watch.mjs";
 import { citedBossFiles, dateIn, handoffTodayDate, kindOf, NOT_OURS_RE, readGalleryExport, sideBusinessReading } from "../scripts/ops/archive-audit.mjs";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -92,11 +94,99 @@ describe("Toni's judgements", () => {
     expect(hasDkim(['"v=DKIM1; k=rsa; p="'])).toBe(false);
     expect(hasDkim([])).toBe(false);
   });
-  it("a lock is a lock-sender with lock words; anything else is not", () => {
-    expect(lockReading({ from: "LinkedIn <security@linkedin.com>", subject: "Your account has been restricted", date: "2026-10-20" }, "spry.vc")?.state).toBe("alert");
-    expect(lockReading({ from_domain: "kdp.amazon.com", subject: "Your book is under review", date: "2026-10-20" }, "personal Gmail")).not.toBeNull();
-    expect(lockReading({ from: "x@linkedin.com", subject: "You appeared in 9 searches" }, "spry.vc")).toBeNull();
-    expect(lockReading({ from: "x@randomshop.com", subject: "Account suspended" }, "spry.vc")).toBeNull();
+  it("a model-read lock from an unlisted sender reaches Toni even with an opaque subject", async () => {
+    const message = { id: "m1", internalDate: Date.parse("2026-11-20T13:00:00Z"), headers: { from: "notices@small-platform.example", subject: "Your access changed" }, body: "Until you appeal, you cannot use your account." };
+    const scan = await scanToniMailbox({ token: async () => "fixture", rule: LOCK_MAIL, now: message.internalDate + 1000,
+      list: async () => [["t1", new Set(["m1"])]], load: async () => [message], read: async (input) => {
+        expect(JSON.parse(input.source).thread).toEqual([message]);
+        return { status: "ok", provider: "workers-ai", text: JSON.stringify({ notices: [{ id: "m1", kind: "lock", vendor: "", detail: "" }] }), inTokens: 1, outTokens: 1 };
+      } });
+    expect(scan.why).toBeNull();
+    expect(lockReading(scan.notices[0]!, "fixture", "spry")).toMatchObject({ state: "alert", domain: "small-platform.example" });
+  });
+  it("Toni's personal mailbox requires an explicit read-only grant", async () => {
+    const fetchImpl = async () => new Response(JSON.stringify({ access_token: "fixture", scope: "https://www.googleapis.com/auth/gmail.modify" }), { status: 200 });
+    await expect(personalToken({ env: {}, fetchImpl })).rejects.toThrow("TONI_PERSONAL_GMAIL_GRANT");
+    await expect(personalToken({ env: { TONI_GMAIL_CLIENT_ID: "fixture", TONI_GMAIL_CLIENT_SECRET: "fixture", TONI_GMAIL_REFRESH_TOKEN: "fixture" }, fetchImpl })).rejects.toThrow("requires a Gmail read-only grant");
+  });
+  it("an uncertain old thread never stalls the mailbox: the new failed payment alerts on run 1, the old one is held and named by run 3 (#584 review F1)", async () => {
+    const now = Date.parse("2026-11-27T18:00:00Z");
+    const old = { id: "m-old", internalDate: now - 5 * 86_400_000, headers: { from: "x@vendor.example", subject: "Re: account" }, body: "?" };
+    const fresh = { id: "m-new", internalDate: now - 3_600_000, headers: { from: "billing@host.example", subject: "Payment failed" }, body: "We could not charge your card." };
+    const threads: Record<string, typeof old> = { "t-old": old, "t-new": fresh };
+    const run = (previous = {}) => scanToniMailbox({ token: async () => "fixture", rule: BILLING_MAIL, now, previous, mailbox: "staylor@spry.vc",
+      // Gmail lists newest first.
+      list: async () => [["t-new", new Set(["m-new"])], ["t-old", new Set(["m-old"])]], load: async (id: string) => [threads[id]!],
+      read: async (input: { source: string }) => {
+        const id = JSON.parse(input.source).targets[0];
+        const kind = id === "m-old" ? "uncertain" : "payment_failed";
+        return { status: "ok", provider: "workers-ai", text: JSON.stringify({ notices: [{ id, kind, vendor: id === "m-new" ? "Host" : "", detail: "" }] }), inTokens: 1, outTokens: 1 };
+      } });
+    const r1 = await run();
+    expect(r1.notices.map((n) => n.id)).toEqual(["m-new"]);
+    expect(r1.why).toMatch(/could not decide/);
+    expect(r1.held).toEqual([]);
+    const r2 = await run(r1.checkpoint);
+    expect(r2.held).toEqual([]);
+    const r3 = await run(r2.checkpoint);
+    expect(r3.held).toEqual([{ id: "m-old", link: "https://mail.google.com/mail/u/staylor%40spry.vc/#all/m-old" }]);
+    expect(r3.why).toBeNull();
+    expect(r3.notices.map((n) => n.id)).not.toContain("m-old");
+    const r4 = await run(r3.checkpoint);
+    expect(r4.held).toEqual([]);
+    expect(r4.why).toBeNull();
+    const lines: unknown[] = [];
+    expect(await nameToniHeld([{ held: r3.held }], "charge or billing emails", { add: (_s: string, x: { lines: unknown[] }) => lines.push(...x.lines) })).toBe(1);
+    expect(JSON.stringify(lines)).toContain("held for you");
+  });
+  it("a reader answer in the wrong shape counts as uncertain and is held by run 3, never a stall (#584 recheck R2)", async () => {
+    const now = Date.parse("2026-11-27T18:00:00Z");
+    const msg = { id: "m9", internalDate: now - 86_400_000, headers: { from: "x@y.example", subject: "Notice" }, body: "?" };
+    const run = (previous = {}) => scanToniMailbox({ token: async () => "fixture", rule: BILLING_MAIL, now, previous, mailbox: "staylor@spry.vc",
+      list: async () => [["t9", new Set(["m9"])]], load: async () => [msg],
+      read: async () => ({ status: "uncertain", provider: "workers-ai", text: "", inTokens: 1, outTokens: 1 }) });
+    const r1 = await run(); const r2 = await run(r1.checkpoint); const r3 = await run(r2.checkpoint);
+    expect(r1.why).toMatch(/could not decide/);
+    expect(r3.held.map((h) => h.id)).toEqual(["m9"]);
+    expect(r3.why).toBeNull();
+  });
+  it("one thread that fails to load never hides the threads after it", async () => {
+    const now = Date.parse("2026-11-27T18:00:00Z");
+    const fresh = { id: "m2", internalDate: now - 1000, headers: { from: "a@b.example", subject: "Account suspended" }, body: "Suspended." };
+    const scan = await scanToniMailbox({ token: async () => "fixture", rule: LOCK_MAIL, now,
+      list: async () => [["t1", new Set(["m1"])], ["t2", new Set(["m2"])]],
+      load: async (id: string) => { if (id === "t1") throw new Error("Gmail API read failed (500)"); return [fresh]; },
+      read: async () => ({ status: "ok", provider: "workers-ai", text: JSON.stringify({ notices: [{ id: "m2", kind: "lock", vendor: "", detail: "" }] }), inTokens: 1, outTokens: 1 }) });
+    expect(scan.notices.map((n) => n.id)).toEqual(["m2"]);
+    expect(scan.why).toMatch(/500/);
+  });
+  it("her personal Gmail stays on the connector until the read-only grant exists, so the check never goes dark (#584 review F2)", () => {
+    expect(personalGrantPresent({})).toBe(false);
+    expect(personalGrantPresent({ TONI_GMAIL_CLIENT_ID: "x", TONI_GMAIL_CLIENT_SECRET: "x", TONI_GMAIL_REFRESH_TOKEN: "x" })).toBe(true);
+    let asked = "";
+    const scan = scanToniConnector({ rule: BILLING_MAIL, now: Date.parse("2026-11-27T18:00:00Z"), ask: (prompt: string) => { asked = prompt; return { ok: true, json: [
+      { id: "p1", from_domain: "stripe.com", subject: "Payment failed", date: "2026-11-27", kind: "payment_failed", vendor: "Acme", detail: "Card declined." },
+      { id: "p2", from_domain: "att.com", subject: "Your bill", date: "2026-11-27", kind: "personal", vendor: "", detail: "" },
+    ] }; } });
+    expect(asked).toContain("Use the Gmail tool");
+    expect(asked).toContain("payment failed");
+    expect(scan.why).toBeNull();
+    expect(scan.notices.find((n) => n.id === "p1")).toMatchObject({ kind: "payment_failed", vendor: "Acme" });
+    const down = scanToniConnector({ rule: BILLING_MAIL, ask: () => ({ ok: false, why: "connector offline" }) });
+    expect(down.why).toMatch(/connector offline/);
+    expect(down.notices).toEqual([]);
+  });
+  it("only the unread mailbox holds its saved charge alerts; spry.vc still clears when it was read", () => {
+    const states = { "billing-problem:host.example:m1": "alert", "charge:p9": "notice", "billing-problem:old.example:m0": "alert", "renewal:x.com": "ok" };
+    const owners = { "billing-problem:host.example:m1": "spry", "charge:p9": "personal" };
+    expect(unreadKeys(states, owners, new Set(["personal"]))).toEqual(["charge:p9", "billing-problem:old.example:m0"]);
+    expect(unreadKeys(states, owners, new Set())).toEqual([]);
+  });
+  it("an unread lock window does not clear a previous lock", async () => {
+    const scan = await scanToniMailbox({ token: async () => { throw new Error("fixture outage"); }, rule: LOCK_MAIL });
+    expect(scan.why).toBe("fixture outage");
+    const previous = { "lock:spry:small-platform.example:m1": "alert" };
+    expect(reconcileToniReadings([], previous, ["lock:spry:"])).toEqual({ states: previous, moved: [] });
   });
 });
 
@@ -152,16 +242,15 @@ describe("after the first live run (22 Oct 2026)", () => {
     expect(good).toEqual({ ok: true, json: [] });
   });
 
-  it("both Toni scripts require the Gmail tool to have answered, named exactly, through the one shared read", () => {
+  it("the legacy personal Gmail connector still requires the named Gmail tool", () => {
     expect(PERSONAL_GMAIL.requireTool.test("mcp__claude_ai_Gmail__search_threads")).toBe(true);
     expect(PERSONAL_GMAIL.requireTool.test("ToolSearch")).toBe(false);
     expect(PERSONAL_GMAIL.toolSearch).toBe("select:mcp__claude_ai_Gmail__search_threads");
     expect(PERSONAL_GMAIL.toolSearchFallback).toBe("gmail");
     expect(PERSONAL_GMAIL.attempts).toBeGreaterThanOrEqual(2);
-    for (const f of ["scripts/ops/risk-watch.mjs", "scripts/ops/outside-locks.mjs"]) expect(read(f)).toMatch(/askClaudeJson\([\s\S]*?\.\.\.PERSONAL_GMAIL, evidence: "[a-z-]+"/);
   });
 
-  describe("one bad attempt is not a lost week (13 Nov 2026: Toni's locks check never reached Gmail once)", () => {
+  describe("the legacy connector retries when a seat never reaches Gmail", () => {
   const ev = (o: unknown) => JSON.stringify(o);
   const reached = (result = "```json\n[]\n```") => [
     ev({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "ToolSearch", input: {} }] } }),

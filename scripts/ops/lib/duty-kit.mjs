@@ -15,11 +15,11 @@
  * RULE 0. `assertReadSomething` fails the run when every source was a stop: a watch that read nothing
  * is not a quiet day.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { createSign } from "node:crypto";
+import { createSign, randomUUID } from "node:crypto";
 import { seatEnv } from "./seat-env.mjs";
 import { repairMojibake } from "../../../src/shared/boss/mail/subject.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, ownerTo } from "../notify.mjs";
@@ -42,7 +42,13 @@ export function loadState(name) {
 export function saveState(name, state) {
   const p = statePath(name);
   mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, JSON.stringify(state, null, 2), "utf8");
+  const temporary = `${p}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, JSON.stringify(state, null, 2), { mode: 0o600, flag: "wx" });
+    renameSync(temporary, p);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 /**

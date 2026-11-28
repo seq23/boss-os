@@ -28,7 +28,9 @@ type Options = {
   limit?: number;
 };
 export const LP_READS_PER_RUN: number;
-export function listLpTargets(token: string, query: string): Promise<Array<[string, Set<string>]>>;
+type GmailGet = (url: string, token: string) => Promise<any>;
+export function lpReplyThread(id: string, token: string, get?: GmailGet): Promise<Message[]>;
+export function listLpTargets(token: string, query: string, get?: GmailGet): Promise<Array<[string, Set<string>]>>;
 export function nameLpHeld(ids: string[], options?: { add?: (section: string, body: { lines: unknown[] }) => unknown }): Promise<void>;
 export function readLpReply(target: Message, thread: Message[], options?: { read?: Reading; mailbox?: string; knownSender?: boolean }): Promise<{ status: string; disposition?: string; excerpt?: string; side?: string; resumeOn?: string | null }>;
 export function scanLpReplies(options: Options): Promise<LpReplyScan>;
