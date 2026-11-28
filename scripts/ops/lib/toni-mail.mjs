@@ -54,7 +54,7 @@ export async function personalToken({ env = process.env, fetchImpl = fetch } = {
 
 const GMAIL_READ_PATH = /^\/gmail\/v1\/users\/me\/(?:messages(?:\/[A-Za-z0-9_-]+\/attachments\/[A-Za-z0-9_-]+)?|threads\/[A-Za-z0-9_-]+)$/;
 
-async function readGmailJson(url, access) {
+export async function readGmailJson(url, access) {
   const endpoint = new URL(url);
   if (endpoint.origin !== "https://gmail.googleapis.com" || !GMAIL_READ_PATH.test(endpoint.pathname)) {
     throw new Error("Gmail API read endpoint refused");
@@ -219,4 +219,28 @@ export function reconcileToniReadings(readings, previous = {}, unreadPrefixes = 
     if (held(key) && !Object.hasOwn(states, key)) states[key] = state;
   }
   return { states, moved: movedReadings(readings, previous).filter((row) => row.state !== "cleared" || !held(row.key)) };
+}
+
+/**
+ * TONI'S COUNTS FOR THE DAILY CHECK (27 Nov 2026, #584 Not built). Each run's listed and handled message
+ * counts, summed over both mailboxes, are kept by day in the job's OWN state file (no new store), eight days
+ * back. The generic "did I miss anything?" check reads them on the Mac (worker-checks.mjs `readMailCounts`).
+ * A mailbox that went unread is named in `unread`, so that day's coverage reads "couldn't check", never a pass.
+ * The latest run of a day wins. Pure.
+ */
+export function mailCounts(mail, previous = {}, now = Date.now()) {
+  const floor = dayOf(now, undefined, -8);
+  const kept = Object.fromEntries(Object.entries(previous && typeof previous === "object" ? previous : {}).filter(([day]) => day >= floor));
+  kept[dayOf(now)] = {
+    source: mail.reduce((n, box) => n + box.count, 0),
+    handled: mail.reduce((n, box) => n + box.handled, 0),
+    unread: mail.filter((box) => box.why).map((box) => box.id),
+  };
+  return kept;
+}
+
+/** The run-log line that says what the daily check will read (the PR's live outcome check greps it). Pure. */
+export function countsLine(job, counts, now = Date.now()) {
+  const day = counts[dayOf(now)];
+  return `TONI-COUNTS ${job} ${dayOf(now)}: listed ${day.source}, handled ${day.handled}${day.unread.length ? `, unread: ${day.unread.join(", ")}` : ""}`;
 }

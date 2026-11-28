@@ -45,7 +45,7 @@ import {
 import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
-import { nameToniHeld, readToniMail, reconcileToniReadings } from "./lib/toni-mail.mjs";
+import { countsLine, mailCounts, nameToniHeld, readToniMail, reconcileToniReadings } from "./lib/toni-mail.mjs";
 
 const DRY = process.argv.includes("--dry");
 const DAY = 86_400_000;
@@ -641,7 +641,9 @@ async function main() {
   }
   // Nothing moved: an empty "all clear", so the morning email can tell a quiet day from a run that never reported in.
   if (!reported && !unreadBoxes.size && !toMorning("risk", {})) { console.error("state not saved."); process.exit(8); }
-  saveState("risk-watch", { at: new Date(now).toISOString(), states, owners: keepOwners(states, prev.owners, owners), mail: Object.fromEntries(mail.map((box) => [box.id, box.checkpoint])), openrouter_usage: or.usage ?? prev.openrouter_usage ?? null });
+  const counts = mailCounts(mail, prev.counts, now);
+  saveState("risk-watch", { at: new Date(now).toISOString(), states, owners: keepOwners(states, prev.owners, owners), mail: Object.fromEntries(mail.map((box) => [box.id, box.checkpoint])), counts, openrouter_usage: or.usage ?? prev.openrouter_usage ?? null });
+  console.log(countsLine("risk-watch", counts, now));
   if (mail.some((box) => box.why)) {
     console.error("NAMED STOP [BILLING_MAIL_UNREAD] At least one source will be retried");
     process.exitCode = 3;

@@ -16,3 +16,7 @@ export function scanToniConnector(opts: { rule: MailRule; previous?: Checkpoint;
 export function nameToniHeld(mail: { held?: Held[] }[], what: string, opts?: { add?: (section: string, x: { lines: unknown[] }) => void }): Promise<number>;
 export function readToniMail(rule: MailRule, previous?: Record<string, Checkpoint>, now?: number): Promise<(Scan & { id: string; label: string })[]>;
 export function reconcileToniReadings(readings: Reading[], previous?: Record<string, string>, unreadPrefixes?: string[]): { states: Record<string, string>; moved: (Reading & { was: string | null })[] };
+export type DayCounts = { source: number; handled: number; unread: string[] };
+export function mailCounts(mail: { count: number; handled: number; why: string | null; id: string }[], previous?: Record<string, DayCounts>, now?: number): Record<string, DayCounts>;
+export function readGmailJson(url: string, access: string): Promise<Record<string, unknown>>;
+export function countsLine(job: string, counts: Record<string, DayCounts>, now?: number): string;

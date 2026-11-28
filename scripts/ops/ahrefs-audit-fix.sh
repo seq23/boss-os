@@ -144,6 +144,8 @@ gh_ready; GH_RC=$?
 #   site_audit.repair      the pass itself (crawl, edit, validate, PRs)            → worker (Codex)
 #   site_audit.mail_digest reading the week's Ahrefs mail (claude.ai Gmail connector,
 #                          which Codex cannot reach), read-only, writing a digest  → brain (Claude)
+#                          ONLY while personal Gmail has no read-only grant: with one, the free reader
+#                          writes the digest (scripts/ops/ahrefs-digest.mjs) and this role is not used.
 # A Codex limit ends the pass as NAMED STOP [CODEX_LIMIT] (exit 13, retried by the next run). It is
 # never handed to Claude.
 role_of() { node "$REPO/scripts/ops/lib/ai-run.mjs" role "$1"; }
@@ -256,13 +258,34 @@ fi
 if [ -z "${SR_SCOPE_REPO:-}" ] && { [ -z "${AHREFS_DIGEST:-}" ] || [ ! -s "$AHREFS_DIGEST" ]; }; then
   AHREFS_DIGEST="$OUT_DIR/ahrefs-digest.md"
   rm -f "$AHREFS_DIGEST"
-  AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$DIGEST_ROLE" --out "$AHREFS_DIGEST" -- "Read seq.taylor@gmail.com through the Gmail connector for every Ahrefs Site Audit email of the last 8 days. Run these searches and record each one: from:sa@ahrefs.com newer_than:8d in:anywhere, and from:ahrefs.com newer_than:8d in:anywhere. Ahrefs sends two kinds and both count: the weekly report, and one alert email per issue whose subject is '(Project) Issue name: N URLs' (for example '(Spry) 3XX redirect: 2 URLs'), which never contains the words Site Audit. Change nothing and fix nothing. Reply with ONLY a markdown digest. Its first line is always, even in a week with no mail, SEARCHED: mailbox=<the address you read> since=<YYYY-MM-DD> until=<YYYY-MM-DD> messages=<total emails read> queries=<each search, separated by | >. Then, for each project, the site, the crawl date, the health score if given, and every issue named with its count and severity, exactly as the mail says. If there were none, keep the SEARCHED line first and then reply with the line NO AHREFS SITE AUDIT MAIL THIS WEEK followed by every search you ran and how many emails each returned." >> "$RUN_LOG" 2>&1
-  DIGEST_RC=$?
-  if [ ! -s "$AHREFS_DIGEST" ]; then
-    say "NAMED STOP [NO_DIGEST] the brain step (rc=$DIGEST_RC) wrote no Ahrefs digest; the next run retries."
-    exit 13
+  # THE FREE READER FIRST (27 Nov 2026, #584 Not built). scripts/ops/ahrefs-digest.mjs reads personal Gmail
+  # through the direct read-only grant and each email through readWorkerSource. Exit 10 is NAMED STOP
+  # [HER_ACCOUNT] (the grant is not in the vault yet), and ONLY then does the connector step below run.
+  # Any other failure (the free reader down, its allowance spent, Gmail unread) stops the pass with no digest:
+  # once the grant exists, the connector is never the fallback.
+  # AHREFS_FREE_DIGEST_BIN replaces the vault run in tests (tests/ahrefsFreeDigest.test.ts).
+  if [ -n "${AHREFS_FREE_DIGEST_BIN:-}" ]; then
+    "$AHREFS_FREE_DIGEST_BIN" --out "$AHREFS_DIGEST" >> "$RUN_LOG" 2>&1
+  else
+    ( cd "$REPO" && npm run --silent vault:run -- node scripts/ops/ahrefs-digest.mjs --out "$AHREFS_DIGEST" ) >> "$RUN_LOG" 2>&1
   fi
-  say "digest written by ai-run --role $DIGEST_ROLE: $AHREFS_DIGEST"
+  FREE_DIGEST_RC=$?
+  if [ "$FREE_DIGEST_RC" -eq 0 ] && [ -s "$AHREFS_DIGEST" ]; then
+    say "digest written by the free reader: $AHREFS_DIGEST"
+  elif [ "$FREE_DIGEST_RC" -ne 10 ]; then
+    rm -f "$AHREFS_DIGEST"
+    say "NAMED STOP [NO_DIGEST] the free reader (rc=$FREE_DIGEST_RC) wrote no Ahrefs digest; the next run retries."
+    exit 13
+  else
+    say "NAMED STOP [HER_ACCOUNT] no personal Gmail read-only grant yet; the Ahrefs mail is read through the connector this pass."
+    AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$DIGEST_ROLE" --out "$AHREFS_DIGEST" -- "Read seq.taylor@gmail.com through the Gmail connector for every Ahrefs Site Audit email of the last 8 days. Run these searches and record each one: from:sa@ahrefs.com newer_than:8d in:anywhere, and from:ahrefs.com newer_than:8d in:anywhere. Ahrefs sends two kinds and both count: the weekly report, and one alert email per issue whose subject is '(Project) Issue name: N URLs' (for example '(Spry) 3XX redirect: 2 URLs'), which never contains the words Site Audit. Change nothing and fix nothing. Reply with ONLY a markdown digest. Its first line is always, even in a week with no mail, SEARCHED: mailbox=<the address you read> since=<YYYY-MM-DD> until=<YYYY-MM-DD> messages=<total emails read> queries=<each search, separated by | >. Then, for each project, the site, the crawl date, the health score if given, and every issue named with its count and severity, exactly as the mail says. If there were none, keep the SEARCHED line first and then reply with the line NO AHREFS SITE AUDIT MAIL THIS WEEK followed by every search you ran and how many emails each returned." >> "$RUN_LOG" 2>&1
+    DIGEST_RC=$?
+    if [ ! -s "$AHREFS_DIGEST" ]; then
+      say "NAMED STOP [NO_DIGEST] the brain step (rc=$DIGEST_RC) wrote no Ahrefs digest; the next run retries."
+      exit 13
+    fi
+    say "digest written by ai-run --role $DIGEST_ROLE: $AHREFS_DIGEST"
+  fi
 fi
 if [ -n "${AHREFS_DIGEST:-}" ] && [ -s "$AHREFS_DIGEST" ] && [ -z "${SR_SCOPE_REPO:-}" ]; then
   PROMPT_TEXT="$PROMPT_TEXT

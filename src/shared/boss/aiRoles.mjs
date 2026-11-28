@@ -36,7 +36,7 @@ export const AI_ROLES = Object.freeze({
   "repo_change.land": { role: BRAIN, why: "Final-diff review before ~/bin/land; Codex's sandbox also cannot write the git metadata land needs." },
 
   // ── Danielle's weekly Ahrefs repairs (duty_site_audit_repair) and the Search Readiness passes ──
-  "site_audit.mail_digest": { role: BRAIN, why: "Reads the week's Ahrefs mail through the claude.ai Gmail connector, which Codex cannot reach; read-only, it writes the digest the repair works from." },
+  "site_audit.mail_digest": { role: BRAIN, why: "Only while personal Gmail has no read-only grant: reads the week's Ahrefs mail through the claude.ai Gmail connector, which Codex cannot reach; read-only, it writes the digest the repair works from. With the grant, the free reader writes the digest (scripts/ops/ahrefs-digest.mjs)." },
   "site_audit.repair": { role: WORKER, why: "Crawls, edits her repos, runs validators and opens PRs: hands-on work." },
 
   // ── Mail readers on her Mac (claude.ai Gmail connector; Codex cannot reach it) ────────────────

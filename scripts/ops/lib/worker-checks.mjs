@@ -24,12 +24,40 @@ function readCount(spec, duty, evidence) {
   if (spec.count === "sites") return evidence.siteAudit?.source ?? null;
   if (spec.count === "site-audit") return evidence.siteAudit?.handled ?? null;
   if (spec.count === "properties") return evidence.propertyCount ?? null;
+  if (spec.count === "mail-listed" || spec.count === "mail-handled") {
+    const day = evidence.mailCounts?.[spec.state];
+    if (!day) return null;
+    // A mailbox that went unread that day cannot vouch for its handled count.
+    if (spec.count === "mail-handled") return day.unread?.length ? null : day.handled;
+    return day.source;
+  }
   if (spec.count === "property-read") {
     if (!evidence.properties) return null;
     const result = evidence.properties[spec.reader];
     return result && result.handled < result.source ? null : result?.handled ?? 0;
   }
   return null;
+}
+
+/**
+ * Toni's listed and handled message counts for `day`, read from each job's own state file (toni-mail.mjs
+ * `mailCounts`), keyed by the state name the manifest gives (`"count": "mail-listed", "state": "risk-watch"`).
+ * A state file that is missing, unreadable or has no entry for that day gives no counts, so the row reads
+ * "couldn't check", never 0.
+ */
+export async function readMailCounts(day, schedule, env = process.env) {
+  if (!day) return null;
+  const states = [...new Set(Object.values(schedule?.workerJobs ?? {}).flatMap((job) => [job.source, job.handled])
+    .filter((spec) => /^mail-(?:listed|handled)$/.test(spec?.count ?? "") && /^[a-z-]+$/.test(spec.state ?? "")).map((spec) => spec.state))];
+  const dir = env.BOSS_OS_STATE_DIR ?? join(homedir(), ".boss-os", "duties");
+  const read = await Promise.all(states.map(async (state) => {
+    try {
+      const counts = JSON.parse(await readFile(join(dir, `${state}.json`), "utf8"))?.counts?.[day];
+      return Number.isSafeInteger(counts?.source) && Number.isSafeInteger(counts?.handled) && Array.isArray(counts.unread ?? [])
+        ? [state, { source: counts.source, handled: counts.handled, unread: counts.unread ?? [] }] : null;
+    } catch { return null; }
+  }));
+  return Object.fromEntries(read.filter(Boolean));
 }
 
 /** Compare the current audit's target list with the saved sites that reached a verdict. */
@@ -83,7 +111,8 @@ function check(job, schedule, id, evidence, launchd) {
     return { state: "unknown", evidence: `${day}: couldn't check ${absent.join(" or ") || "the source and handled counts"}.` };
   }
   if (handled < source) return { state: "missing", evidence: `${day}: handled ${handled} of ${source} source items.` };
-  if (source === 0 && due) return { state: "unknown", evidence: `${day}: couldn't check coverage; a duty was due, but no input task was filed.` };
+  // A mail count of zero is a reading (the mailboxes were listed and held nothing); a duty input of zero is not.
+  if (source === 0 && due && job.source.count !== "mail-listed") return { state: "unknown", evidence: `${day}: couldn't check coverage; a duty was due, but no input task was filed.` };
   return source === 0
     ? { state: "nothing_due", evidence: `${day}: the source had no items to handle.` }
     : { state: "verified", evidence: `${day}: handled ${handled} of ${source} source items.` };

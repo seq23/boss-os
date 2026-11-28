@@ -24,6 +24,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP, ownerTo } from "./notify.mjs";
 import {
   LOCAL_JOB, shouldEmail, digestEmail, confirmationEmail,
@@ -85,10 +86,15 @@ async function email(subject, text, owner = null) {
 
 // ─── how-we-know ──────────────────────────────────────────────────────────────
 
+const FREE_READ = fileURLToPath(new URL("./free-read.mjs", import.meta.url));
+
 function hwk(args) {
   if (!existsSync(PY)) stop(2, "NO_HOW_WE_KNOW", `${PY} is missing; the channel's repo must be at ${HWK} with its .venv.`);
   if (!existsSync(join(HWK, "loop", "comments.py"))) stop(2, "NO_COMMENTS_LANE", `${HWK}/loop/comments.py is missing; pull main in that repo.`);
-  const r = spawnSync(PY, ["loop/comments.py", ...args], { cwd: HWK, encoding: "utf8", env: { ...process.env, LOOP_DRY_RUN: DRY ? "1" : "" } });
+  // The classifier reads through this checkout's shared free reader (27 Nov 2026): how-we-know runs it as
+  // `node $BOSS_OS_FREE_READ`, inheriting this vault run's free-lane credentials. No key lives in that repo.
+  const r = spawnSync(PY, ["loop/comments.py", ...args], { cwd: HWK, encoding: "utf8",
+    env: { ...process.env, LOOP_DRY_RUN: DRY ? "1" : "", BOSS_OS_FREE_READ: FREE_READ } });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
   for (const line of out.trim().split("\n").slice(-25)) say(`  hwk│ ${line}`);
   return { rc: r.status ?? 1, out };

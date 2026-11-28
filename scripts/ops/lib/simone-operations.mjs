@@ -12,7 +12,7 @@ import { citedIn, isScanned, uncovered } from "./email-map.mjs";
 import { gmailHeaders } from "./duty-kit.mjs";
 import { googleAccess, macContext, readMetric } from "./scorecard-readers.mjs";
 import { localConfig, senderClient } from "../pnp-corporate-outreach.mjs";
-import { readSiteAudit, workerChecks } from "./worker-checks.mjs";
+import { readMailCounts, readSiteAudit, workerChecks } from "./worker-checks.mjs";
 import { dayOf } from "../../../src/shared/boss/schedule/clock.mjs";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -304,6 +304,7 @@ export async function runOperationsCheck(api, { env = process.env, fetchImpl = f
   const code = await readBossCode(senders);
   for (const label of code.labels) launchd.configured.add(label);
   if (input.workerEvidence) input.workerEvidence.siteAudit = await readSiteAudit(input.workerEvidence.day, readiness, env);
+  if (input.workerEvidence) input.workerEvidence.mailCounts = await readMailCounts(input.workerEvidence.day, schedule, env);
 
   const timeout = AbortSignal.timeout(45_000);
   const boundedFetch = (url, init) => fetchImpl(url, { ...init, signal: AbortSignal.any([timeout, AbortSignal.timeout(7_000)]) });

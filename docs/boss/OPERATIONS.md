@@ -368,6 +368,36 @@ all, because an empty register renders as "nothing is stuck", which is indisting
 
 The table records the old seat setup. For current worker reading, see [Operating facts](OPERATING_FACTS.md#routing-and-api).
 
+### Seats that stay (27 Nov 2026)
+
+Every worker reads through the shared free client (`readWorkerSource`, [Operating facts](OPERATING_FACTS.md#routing-and-api)).
+Two kinds of work keep their current seat, because the free client reads supplied text and returns text:
+**public web search** (the free Gemini tier has no Search grounding) and **code edit** (a tool loop that
+edits a repository keeps its runtime for the edit). Each boss-os file below carries the same reason in
+`scripts/validate/worker-model-exceptions.json`, the model boundary gate's list (`tests/seatsThatStay.test.ts`
+fails when the two disagree).
+
+| Job | Carried by | Why it stays |
+|---|---|---|
+| Camille's corporate prospect discovery | `scripts/ops/pnp-corporate-outreach.mjs` | public web search |
+| Danielle's repository changes (the `lane.mjs` repo-change prompt) | `scripts/ops/repo-change.mjs` | code edit |
+| Danielle's Ahrefs repair, and the Search Readiness repair `search-readiness-fix.sh` runs scoped | `scripts/ops/ahrefs-audit-fix.sh` | code edit |
+| Agent-claim code duties | `scripts/sync-agent/runner.mjs` | code edit |
+
+Outside this repo, where the gate does not scan:
+
+| Job | Where | Why it stays |
+|---|---|---|
+| Danielle's CI sweep | seq-bin `ci-sweep.sh` | code edit (each round fixes red checks in a worktree) |
+| Danielle's post-land engineering check and form proof | seq-bin `post-land-check` (`run_ai`) | a tool loop: it reads the diff with `gh`, makes a live TEST submission and posts the PR comment |
+| Camille's Marketplace renewal | seq-bin `pnp-listings.sh` | it drives her Chrome through Claude in Chrome; the free client has no browser |
+
+Moved onto the free client from another repo: the post-land check's outcome verdict (`ask_model`, no tools)
+and How We Know's comment classifier, both through `scripts/ops/free-read.mjs` (run through the vault;
+exit 3 with a NAMED STOP is "unknown", never a verdict). Danielle's Ahrefs digest reads personal Gmail
+through the direct read-only grant (`scripts/ops/ahrefs-digest.mjs`); until that grant is in the vault it
+stops with `NAMED STOP [HER_ACCOUNT]` and the connector step in `ahrefs-audit-fix.sh` reads the mail.
+
 **Claude Max is a flat subscription, so these are equivalent-usage figures, not a separate bill.**
 That makes the scarcity worse rather than better: the employees and you draw on the same plan.
 Running out does not produce an invoice — it produces a week where you cannot use Claude Code for
