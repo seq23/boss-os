@@ -11,7 +11,8 @@
    "A Player Mode",
    "How We Know",
    "Whisper Almanac",
-   "Peace Be Still"
+   "Peace Be Still",
+   "We Keep You Spry"
   ],
   "friends": [
    "Horse",
@@ -1469,6 +1470,35 @@
     "kind": "none",
     "action": "a visitor going on to the channel",
     "track_with": "a counted link from the site to the channel (a /go/ hop with Web Analytics)"
+   }
+  },
+  {
+   "domain": "wekeepyouspry.com",
+   "repo": "WKYS",
+   "category": "side_business",
+   "group": "divine_9",
+   "business": "We Keep You Spry",
+   "entity_parent": "spry-labs",
+   "kind": "brand",
+   "roles": [],
+   "label": "We Keep You Spry (WKYS)",
+   "coverage": {
+    "model": "not_local",
+    "why": "A national done-for-you AI implementation service for owner-run businesses; its niche pages are topical, not a service radius."
+   },
+   "search_loop": {
+    "wave": 1
+   },
+   "lead_source": {
+    "kind": "cf_web_analytics",
+    "action": "Assessment and engagement requests through the site form (the thank-you page loads after a request)",
+    "code": "WKYS functions/api/inquiry, then the thanks page",
+    "params": {
+     "host": "wekeepyouspry.com",
+     "paths": [
+      "/thanks"
+     ]
+    }
    }
   }
  ]

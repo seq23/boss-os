@@ -367,6 +367,18 @@
       "status": "live"
     },
     {
+      "id": "wkys",
+      "name": "We Keep You Spry",
+      "url": "https://wekeepyouspry.com",
+      "domain": "wekeepyouspry.com",
+      "business": "spry",
+      "repo": "WKYS",
+      "host": "cloudflare-pages",
+      "project": "wkys",
+      "deploy": "Cloudflare Pages project wkys: Direct Upload today; a GitHub deploy workflow is being added in seq23/WKYS",
+      "status": "live"
+    },
+    {
       "id": "keepmyproof-wordpress",
       "name": "KeepMyProof on WordPress.com",
       "url": "https://keepmyproof.wordpress.com",
