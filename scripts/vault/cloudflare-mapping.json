@@ -32,6 +32,9 @@
     "BOSS_EXTRA_OWNER_SENDERS"
   ],
   "not_synced": {
+    "TONI_GMAIL_CLIENT_ID": "Her personal Gmail's read-only grant (scripts/ops/gmail-grant.mjs, npm run gmail:grant), read on her Mac by Toni's mail checks, the Ahrefs digest and the arrival check (scripts/ops/lib/toni-mail.mjs personalGrant). Mac only: no Boss OS Worker route reads it.",
+    "TONI_GMAIL_CLIENT_SECRET": "Her personal Gmail's read-only grant (scripts/ops/gmail-grant.mjs, npm run gmail:grant), read on her Mac by Toni's mail checks, the Ahrefs digest and the arrival check (scripts/ops/lib/toni-mail.mjs personalGrant). Mac only: no Boss OS Worker route reads it.",
+    "TONI_GMAIL_REFRESH_TOKEN": "Her personal Gmail's read-only grant (scripts/ops/gmail-grant.mjs, npm run gmail:grant), read on her Mac by Toni's mail checks, the Ahrefs digest and the arrival check (scripts/ops/lib/toni-mail.mjs personalGrant). Mac only: no Boss OS Worker route reads it.",
     "BOSS_NOTIFY_TO": "Where the Mac and cloud jobs send her mail (scripts/ops/notify.mjs ownerTo). The repo is public, so the address lives here and in the repo's secrets, never in a file. The Worker sends her nothing by address: it only replies to her own email.",
     "CLOUDFLARE_API_TOKEN": "The credential this sync authenticates WITH. Uploading it to the Worker would put the key that can rewrite every secret inside the thing it rewrites.",
     "CLOUDFLARE_AI_SEARCH_TOKEN": "Cloudflare AI Search token for the seq-bin agent-search tool, run on her Mac through vault:run. No Boss OS Worker route reads it (git grep in src/ finds nothing).",

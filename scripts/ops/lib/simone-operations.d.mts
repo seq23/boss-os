@@ -31,5 +31,5 @@ export function receiptFor(row: Partial<SentRow>, o?: { mailbox?: ((id: string) 
 export function rowAddresses(row: { runs?: string; from?: string }): string[];
 export function readArrivals(o: { arrivals: { sent: SentRow[]; mornings: { day: string; built_at: number; keys: string[]; mail: SentRow | null }[] } | undefined;
   feed: { replies: unknown[] } | null; mailbox?: ((id: string) => Promise<unknown>) | null; resend?: ((row: Partial<SentRow>) => Promise<unknown>) | null; now?: number }): Promise<{ forSender: (row: { runs?: string; from?: string }) => Evidence; replies: Evidence }>;
-export function personalSearch(env: Record<string, string | undefined>, fetchImpl?: typeof fetch): Promise<(id: string) => Promise<boolean>>;
+export function personalSearch(env: Record<string, string | undefined>, fetchImpl?: typeof fetch): Promise<((id: string) => Promise<boolean>) | null>;
 export function resendEvent(row: Partial<SentRow>, env?: Record<string, string | undefined>, fetchImpl?: typeof fetch): Promise<string | null>;

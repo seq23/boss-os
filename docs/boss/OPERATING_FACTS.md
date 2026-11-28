@@ -61,7 +61,14 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   The client calls a supplied `recordRead` only after a usable answer. Toni's billing and lock jobs
   list mail by date and read full threads. Each job holds its window on failure and reuses successful
   verdicts in its existing duty state. Personal mail requires a direct Gmail read-only OAuth grant
-  (`TONI_GMAIL_CLIENT_ID`, `TONI_GMAIL_CLIENT_SECRET`, `TONI_GMAIL_REFRESH_TOKEN` in the Mac vault).
+  (`TONI_GMAIL_CLIENT_ID`, `TONI_GMAIL_CLIENT_SECRET`, `TONI_GMAIL_REFRESH_TOKEN` in the Mac vault),
+  made by ONE sign-in: `cd ~/GitHub/boss-os && npm run gmail:grant` (`scripts/ops/gmail-grant.mjs`:
+  loopback on 127.0.0.1 with PKCE, gmail.readonly only, the account checked against `BOSS_NOTIFY_TO`,
+  the three keys saved in one vault write by `vault.mjs set-many` only after the refresh works; re-run
+  it after a Google password change). Readers take the grant through `personalGrant` (toni-mail.mjs):
+  missing or refused by Google falls back to the Gmail connector (Toni, the Ahrefs digest) or to
+  Resend's receipt (the arrival check), with `NAMED STOP [TONI_PERSONAL_GMAIL_REJECTED]`; the daily
+  credential check reports it as `cred_personal_gmail_grant` (OK / MISSING / REJECTED / UNKNOWN).
   Toni's billing and lock jobs keep each day's listed and handled message counts in their own state
   files (`counts` in `~/.boss-os/duties/risk-watch.json` and `outside-locks.json`), which the daily worker
   check reads (`"count": "mail-listed"` / `"mail-handled"` in the Schedule's `workerJobs`); a mailbox left

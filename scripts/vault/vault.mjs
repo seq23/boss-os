@@ -8,7 +8,7 @@
  * - Fail closed: if Keychain is unavailable, every command exits non-zero with the exact gate.
  * - Values are never printed, logged, or written to the repo/artifacts/receipts.
  *
- * Commands: init | import <path> | set <NAME> | status | run -- <cmd...> | remove <NAME> | doctor | sync:cloudflare
+ * Commands: init | import <path> | set <NAME> | set-many (JSON on stdin) | status | run -- <cmd...> | remove <NAME> | doctor | sync:cloudflare
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
@@ -241,6 +241,22 @@ async function main() {
       console.log(`Set ${name} (${Object.keys(secrets).length} keys total). Value not displayed.`);
       break;
     }
+    case "set-many": {
+      // Several keys in ONE vault write, read as a JSON object from stdin (never argv): either all
+      // are saved or none is (scripts/ops/gmail-grant.mjs saves its three keys this way).
+      if (process.stdin.isTTY) fail("usage: <json-producing process> | vault.mjs set-many (reads a JSON object from stdin)");
+      const { parseSecretMap } = await import("../lib/vault-env.mjs");
+      const chunks = [];
+      for await (const chunk of process.stdin) chunks.push(chunk);
+      let incoming;
+      try { incoming = parseSecretMap(Buffer.concat(chunks).toString("utf8")); } catch (e) { fail(e.message); }
+      const key = loadMasterKey();
+      const secrets = readVault(key);
+      Object.assign(secrets, incoming);
+      writeVault(key, secrets);
+      console.log(`Set ${Object.keys(incoming).sort().join(", ")} (${Object.keys(secrets).length} keys total). Values not displayed.`);
+      break;
+    }
     case "status": {
       const key = loadMasterKey();
       const secrets = readVault(key);
@@ -430,7 +446,7 @@ async function main() {
     }
     default:
       console.error(
-        "usage: vault.mjs init | import <path> | set <NAME> | status | run -- <cmd...> | remove <NAME> | doctor | sync:cloudflare",
+        "usage: vault.mjs init | import <path> | set <NAME> | set-many | status | run -- <cmd...> | remove <NAME> | doctor | sync:cloudflare",
       );
       process.exit(1);
   }

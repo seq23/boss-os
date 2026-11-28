@@ -260,7 +260,8 @@ if [ -z "${SR_SCOPE_REPO:-}" ] && { [ -z "${AHREFS_DIGEST:-}" ] || [ ! -s "$AHRE
   rm -f "$AHREFS_DIGEST"
   # THE FREE READER FIRST (27 Nov 2026, #584 Not built). scripts/ops/ahrefs-digest.mjs reads personal Gmail
   # through the direct read-only grant and each email through readWorkerSource. Exit 10 is NAMED STOP
-  # [HER_ACCOUNT] (the grant is not in the vault yet), and ONLY then does the connector step below run.
+  # [HER_ACCOUNT] (the grant is not in the vault yet) or TONI_PERSONAL_GMAIL_REJECTED (Google refused the saved
+  # grant; re-run npm run gmail:grant), and ONLY then does the connector step below run.
   # Any other failure (the free reader down, its allowance spent, Gmail unread) stops the pass with no digest:
   # once the grant exists, the connector is never the fallback.
   # AHREFS_FREE_DIGEST_BIN replaces the vault run in tests (tests/ahrefsFreeDigest.test.ts).
@@ -277,7 +278,7 @@ if [ -z "${SR_SCOPE_REPO:-}" ] && { [ -z "${AHREFS_DIGEST:-}" ] || [ ! -s "$AHRE
     say "NAMED STOP [NO_DIGEST] the free reader (rc=$FREE_DIGEST_RC) wrote no Ahrefs digest; the next run retries."
     exit 13
   else
-    say "NAMED STOP [HER_ACCOUNT] no personal Gmail read-only grant yet; the Ahrefs mail is read through the connector this pass."
+    say "NAMED STOP [HER_ACCOUNT] no working personal Gmail read-only grant (none yet, or Google refused it: npm run gmail:grant); the Ahrefs mail is read through the connector this pass."
     AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$DIGEST_ROLE" --out "$AHREFS_DIGEST" -- "Read seq.taylor@gmail.com through the Gmail connector for every Ahrefs Site Audit email of the last 8 days. Run these searches and record each one: from:sa@ahrefs.com newer_than:8d in:anywhere, and from:ahrefs.com newer_than:8d in:anywhere. Ahrefs sends two kinds and both count: the weekly report, and one alert email per issue whose subject is '(Project) Issue name: N URLs' (for example '(Spry) 3XX redirect: 2 URLs'), which never contains the words Site Audit. Change nothing and fix nothing. Reply with ONLY a markdown digest. Its first line is always, even in a week with no mail, SEARCHED: mailbox=<the address you read> since=<YYYY-MM-DD> until=<YYYY-MM-DD> messages=<total emails read> queries=<each search, separated by | >. Then, for each project, the site, the crawl date, the health score if given, and every issue named with its count and severity, exactly as the mail says. If there were none, keep the SEARCHED line first and then reply with the line NO AHREFS SITE AUDIT MAIL THIS WEEK followed by every search you ran and how many emails each returned." >> "$RUN_LOG" 2>&1
     DIGEST_RC=$?
     if [ ! -s "$AHREFS_DIGEST" ]; then

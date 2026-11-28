@@ -24,7 +24,7 @@ import { readWorkerSource } from "../../src/worker/boss/router/freeModel.ts";
 import { readJsonObject } from "../../src/worker/boss/router/types.ts";
 import { listLpTargets, lpReplyThread } from "./lp-positive.mjs";
 import { messageLink } from "./lib/held-for-person.mjs";
-import { personalGrantPresent, personalToken, readGmailJson } from "./lib/toni-mail.mjs";
+import { PERSONAL_GRANT_REJECTED, personalGrant, personalToken, readGmailJson } from "./lib/toni-mail.mjs";
 
 const DAY = 86_400_000;
 export const WINDOW_DAYS = 8;
@@ -137,12 +137,22 @@ async function main() {
   const i = process.argv.indexOf("--out");
   const out = i === -1 ? null : process.argv[i + 1];
   if (!out) { console.error("NAMED STOP [AHREFS_DIGEST_ARGS] --out <path> is required"); process.exit(2); }
-  if (!personalGrantPresent()) {
+  // Exit 10 hands this pass to the connector step: no grant yet, or one Google refused (a dead grant is
+  // never worse than none). An unreachable Google stays a stop with no digest, retried next run.
+  const grant = await personalGrant();
+  if (grant.state === "missing") {
     console.error("NAMED STOP [HER_ACCOUNT] personal Gmail has no read-only grant in the vault (TONI_GMAIL_CLIENT_ID, TONI_GMAIL_CLIENT_SECRET, TONI_GMAIL_REFRESH_TOKEN); the connector step reads the Ahrefs mail until it exists.");
     process.exit(10);
   }
+  if (grant.state === "rejected") {
+    console.error(PERSONAL_GRANT_REJECTED);
+    process.exit(10);
+  }
   let digest;
-  try { digest = await buildAhrefsDigest(); } catch (error) {
+  try {
+    if (grant.state !== "ok") throw new Error(`NAMED STOP [AHREFS_MAIL_UNREAD] ${grant.why}`);
+    digest = await buildAhrefsDigest({ token: async () => grant.token });
+  } catch (error) {
     const text = String(error?.message ?? error).slice(0, 300);
     console.error(/NAMED STOP/.test(text) ? text : `NAMED STOP [AHREFS_MAIL_UNREAD] ${text}`);
     process.exit(3);

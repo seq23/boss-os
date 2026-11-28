@@ -15,3 +15,5 @@ export function syncPlan(
   mapping: { secret_names?: string[]; optional_secret_names?: string[] },
   held: Record<string, unknown>,
 ): { upload: string[]; skipped: string[]; missing: string[]; strayOptional: string[] };
+/** set-many's stdin: one JSON object of NAME → non-empty text, all checked before anything is written. */
+export function parseSecretMap(text: string): Record<string, string>;
