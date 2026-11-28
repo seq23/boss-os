@@ -1,4 +1,5 @@
 import type { Env } from "./env";
+import { mapsHealth, type MapsHealth } from "../shared/boss/emailMap/mapsHealth";
 import { handleBossInboundMail, isBossMailbox } from "./boss/intake/inboundMail";
 import { runMailAlarm, MAIL_ALARM_CRON } from "./boss/intake/mailAlarm";
 import { runCloudClock as runBossCloudClock } from "./boss/cron/dispatch";
@@ -60,10 +61,19 @@ async function handleHealth(env: Env): Promise<Response> {
     d1 = { reachable: false, schemaVersion: null, error: err instanceof Error ? err.message : String(err) };
   }
 
+  // What Email Map and Team -> Duties were built from (counts only): the outcome check reads this, not the repo.
+  let maps: MapsHealth | null = null;
+  try {
+    maps = mapsHealth();
+  } catch (err) {
+    console.error("health: maps unreadable", err);
+  }
+
   return json({
     ok: d1.reachable,
     env: env.WP_OS_ENV,
     d1,
+    maps,
     bindings: {
       WP_OS_DB: typeof env.WP_OS_DB !== "undefined",
       WP_OS_DOCUMENTS: typeof env.WP_OS_DOCUMENTS !== "undefined",
