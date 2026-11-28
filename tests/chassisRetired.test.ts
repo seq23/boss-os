@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb, disposeTestDb, latestMigrationName, makeTestEnv, type TestDb } from "./helpers/db";
 import { handleRequest } from "../src/worker/index";
+import { mapsHealth } from "../src/shared/boss/emailMap/mapsHealth";
+import emailManifest from "../src/shared/boss/emailMap/manifest.json";
+import ownersFile from "../docs/outbound_email_owners.json";
 
 /**
  * THE COPIED FUND API IS GONE, AND EVERY OLD DOOR SAYS WHERE IT WENT (chassis retirement, her yes
@@ -57,6 +60,26 @@ describe("what stays open", () => {
     expect(body.ok).toBe(true);
     expect(body.d1.reachable).toBe(true);
     expect(body.d1.schemaVersion).toBe(latestMigrationName());
+  });
+
+  it("/api/health reports what Email Map and Team -> Duties were built from, counts only (#591 outcome)", async () => {
+    const res = await handleRequest(new Request("https://boss.sequoiataylor.com/api/health"), makeTestEnv(t.db));
+    const raw = await res.text();
+    const body = JSON.parse(raw) as { maps: { emailMap: { rows: number; withScheduleAndPause: number }; teamDuties: { paths: number } } };
+    const manifestRows = (emailManifest as { rows: unknown[] }).rows.length;
+    const ownerPaths = Object.keys((ownersFile as { owners: Record<string, unknown> }).owners).length;
+    expect(manifestRows).toBeGreaterThanOrEqual(100);
+    expect(body.maps.emailMap.rows).toBe(manifestRows);
+    expect(body.maps.emailMap.withScheduleAndPause).toBe(manifestRows);
+    expect(body.maps.teamDuties.paths).toBe(ownerPaths);
+    // Public answer: counts, never a sender address, schedule or pause step.
+    expect(raw).not.toMatch(/@|launchctl|\.yml|Central/);
+  });
+
+  it("a map row with no schedule or no pause step is not counted, and an empty map counts 0", () => {
+    expect(mapsHealth({ rows: [{ when: "Daily", pause: "Disable x" }, { when: "", pause: "Disable y" }, { when: "Daily" }] }, { owners: {} }))
+      .toEqual({ emailMap: { rows: 3, withScheduleAndPause: 1 }, teamDuties: { paths: 0 } });
+    expect(mapsHealth({}, {})).toEqual({ emailMap: { rows: 0, withScheduleAndPause: 0 }, teamDuties: { paths: 0 } });
   });
 
   it("an unreachable database reads as not ok, never as healthy", async () => {
