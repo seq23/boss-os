@@ -12,6 +12,7 @@ import { codexSeatUsable } from "../lib/codex-seat.mjs";
 import { writeMorningSection, morningDir } from "../../src/shared/boss/mail/morning.mjs";
 import { DAILY_FIRST_CAP, assertStatus, blocked, chicagoDay, contactRules, parseContract, planSends, renderEmail, stopReason, validProspect, weekday } from "../../src/shared/boss/pnp/outreach.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
+import { SYSTEM_SENDER, orgOf } from "../../src/shared/boss/mail/agentReplies.mjs";
 
 const home = path.join(os.homedir(), ".boss-os");
 const privateDir = path.join(home, "pnp-outreach");
@@ -43,6 +44,8 @@ export function senderClient({ origin, token }, fetchImpl = fetch) {
   let optional = false;
   return {
     status: () => call("/api/outreach/status?since=2026-10-30"),
+    // Every stored reply with its words, read-only (owner, 28 Nov 2026; scripts/ops/lib/agent-replies.mjs).
+    replies: (since) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(String(since))) throw new Error("A since day is required."); return call(`/api/outreach/replies?since=${since}`); },
     // Not in the shared contract: an optional extra source for the do-not-contact list. Absent = null.
     settings: async () => { optional = true; try { return await call("/api/outreach/settings"); } finally { optional = false; } },
     send: (body) => call("/api/outreach/send", body),
@@ -267,20 +270,16 @@ export async function runOutreach({ live = false, now = Date.now(), sender, desk
 /*
  * WHO REALLY WROTE BACK (owner, 18 Nov 2026: "explain '7 forwarded to you' … and '0 booked of 4'").
  * Of the 7 "forwarded", 4 were TikTok's own system mail landing in the same inbox. A reply counts only
- * from a person: never a no-reply, bounce, register or notification address. Pure.
+ * from a person (`SYSTEM_SENDER`, src/shared/boss/mail/agentReplies.mjs). Since 28 Nov 2026 each real
+ * reply is a Decide card with their words (the `agent_replies` section); this line only counts. Pure.
  */
-export const SYSTEM_SENDER = /^(?:no-?reply|do-?not-?reply|register|notifications?|mailer-daemon|postmaster|bounces?\b|bounces\+)|@(?:[a-z0-9-]+\.)*(?:tiktok|facebookmail|google|linkedin|instagram)\.com$/i;
-const orgOf = (email) => {
-  const d = String(email).split("@")[1] ?? "";
-  const base = d.replace(/^(?:mail|www)\./, "").split(".").slice(0, -1).join(" ");
-  return base.replace(/(foundation|security|group|law|company|church|school)$/i, " $1").replace(/\bthe(?=[a-z])/i, "the ").replace(/\b\w/g, (c) => c.toUpperCase()).trim() || d;
-};
+export { SYSTEM_SENDER };
 export function progressLine(status, { stopped = null } = {}) {
   const people = [...new Set((status.taken_over ?? []).map((s) => String(s).toLowerCase()))].filter((e) => !SYSTEM_SENDER.test(e));
   const ooo = new Set((status.replies ?? []).filter((r) => /^(?:ooo|out_of_office|auto_reply|auto-reply)$/i.test(r.kind)).map((r) => String(r.email).toLowerCase())).size;
   const booked = `${status.corporate_booked} of the 4 office bookings Camille is aiming for by 5 Dec (a booking is a paid deposit on a business or lobby request)`;
   const wrote = people.length
-    ? `${people.length} ${people.length === 1 ? "office wrote" : "offices wrote"} back and ${people.length === 1 ? "is" : "are"} yours to answer in your Porch & Party inbox (${people.map(orgOf).join(", ")}); Camille stopped writing to ${people.length === 1 ? "it" : "them"}`
+    ? `${people.length} ${people.length === 1 ? "office wrote" : "offices wrote"} back; ${people.length === 1 ? "its reply is" : "their replies are"} in Decide with their words (${people.map(orgOf).join(", ")}); Camille stopped writing to ${people.length === 1 ? "it" : "them"}`
     : "no office has written back yet";
   if (stopped) return `Camille, office Christmas outreach: finished. ${wrote}${ooo ? `; ${ooo} out-of-office` : ""}. ${booked[0].toUpperCase()}${booked.slice(1)}.`;
   return `Camille, office Christmas outreach: ${status.sent_today + status.followups_today} sent today · ${wrote}${ooo ? ` · ${ooo} out-of-office` : ""} · ${booked}.`;

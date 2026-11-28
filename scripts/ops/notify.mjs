@@ -286,11 +286,22 @@ export function mailStateDir(envName, leaf, env = process.env) {
 const sentMailDir = () => mailStateDir("BOSS_OS_SENT_MAIL_DIR", "sent-mail-pending");
 const isMessageId = (id) => typeof id === "string" && /^<[^<>\s]+@[^<>\s]+>$/.test(id);
 
+/**
+ * Resend's own record of one accepted send (GET, read-only): its RFC Message-ID and its `last_event`,
+ * the provider's delivery receipt the arrival check reads (src/shared/boss/mail/arrival.mjs). Throws
+ * on any failure, so a caller can never mistake an unread receipt for an answer.
+ */
+export async function resendRecord(id, key, fetchImpl = fetch) {
+  if (!key) throw new Error("No mail key for this sender");
+  const got = await fetchImpl(`${RESEND}/${encodeURIComponent(id)}`, { headers: { authorization: `Bearer ${key}` }, redirect: "error" });
+  if (!got.ok) throw new Error(`resend ${got.status}`);
+  return got.json();
+}
+
 async function sentMessageId(fetchImpl, id, key) {
   if (!key) return null;
   try {
-    const got = await fetchImpl(`${RESEND}/${encodeURIComponent(id)}`, { headers: { authorization: `Bearer ${key}` } });
-    const metadata = got.ok ? await got.json() : null;
+    const metadata = await resendRecord(id, key, fetchImpl);
     return isMessageId(metadata?.message_id) ? metadata.message_id : null;
   } catch {
     return null;

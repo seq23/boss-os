@@ -9,6 +9,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { bossMachine, runResult, runVerdict, untrusted } from "./noelle.mjs";
 import { runAs } from "./lib/ai-run.mjs";
 import { runOperationsCheck } from "./lib/simone-operations.mjs";
+import { syncAgentReplies } from "./lib/agent-replies.mjs";
+import { localConfig, senderClient } from "./pnp-corporate-outreach.mjs";
 import { listenForSimoneTools } from "./lib/simone-tools.mjs";
 import { clip, latestNote, memoryFile } from "./lib/noelle-memory.mjs";
 import { readAssignments, routingInstructions } from "../../src/shared/boss/intake/simoneRouting.mjs";
@@ -273,6 +275,14 @@ async function runOnCodex({ home, work, socket, prompt }) {
 async function main() {
   const api = bossMachine(fetch, process.env, "/simone");
   let checkFailed = false;
+  // Every real reply to an agent's email reaches her Decide list and morning email (28 Nov 2026).
+  try {
+    const replies = await syncAgentReplies({ client: senderClient(localConfig()) });
+    console.log(`OUTPUT ${replies.cards} reply cards`);
+  } catch (e) {
+    console.error(String(e?.message ?? e).startsWith("NAMED STOP") ? e.message : "NAMED STOP [AGENT_REPLIES_UNREAD] Simone couldn't read the stored replies");
+    checkFailed = true;
+  }
   try { await runOperationsCheck(api); } catch {
     console.error("NAMED STOP [OPERATIONS_CHECK_UNAVAILABLE] Simone couldn't complete the operating check");
     checkFailed = true;

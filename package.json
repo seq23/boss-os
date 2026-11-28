@@ -266,6 +266,7 @@
     "sites:fix-queue": "node scripts/ops/search-readiness-audit.mjs --queue",
     "sites:page": "node scripts/ops/search-readiness-page.mjs",
     "pnp:outreach": "node scripts/vault/vault.mjs run -- node scripts/ops/pnp-corporate-outreach.mjs",
+    "agent-replies": "node scripts/vault/vault.mjs run -- node scripts/ops/agent-replies.mjs",
     "t2r:groups": "node scripts/vault/vault.mjs run -- node scripts/ops/t2r-groups.mjs",
     "alarm:watch": "node scripts/vault/vault.mjs run -- node scripts/ops/alarm-watch.mjs",
     "ship-review": "node scripts/ops/ship-review.mjs"
