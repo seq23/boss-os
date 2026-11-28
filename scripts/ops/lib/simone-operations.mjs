@@ -10,7 +10,7 @@ import { citedIn, isScanned, uncovered } from "./email-map.mjs";
 import { macContext, readMetric } from "./scorecard-readers.mjs";
 import { arrivalVerdict, mailboxArrival, replyArrivals, resendArrival } from "../../../src/shared/boss/mail/arrival.mjs";
 import { realReplies, replyKey } from "../../../src/shared/boss/mail/agentReplies.mjs";
-import { personalGrantPresent, personalHasMessage, personalToken } from "./toni-mail.mjs";
+import { PERSONAL_GRANT_REJECTED, personalGrant, personalHasMessage } from "./toni-mail.mjs";
 import { resendRecord } from "../notify.mjs";
 import { localConfig, senderClient } from "../pnp-corporate-outreach.mjs";
 import { readMailCounts, readSiteAudit, workerChecks } from "./worker-checks.mjs";
@@ -58,10 +58,15 @@ export async function receiptFor(row, { mailbox = null, resend = null, now = Dat
   return "unknown";
 }
 
-/** Her Gmail, read-only (the personal grant), searched by Message-ID: true found, false absent. */
+/**
+ * Her Gmail, read-only (the personal grant), searched by Message-ID: true found, false absent. Null
+ * when the grant is missing, refused or unreachable, so the receipt falls back to Resend's own event
+ * (a dead grant is never worse than none, 28 Nov 2026).
+ */
 export async function personalSearch(env, fetchImpl = fetch) {
-  const token = await personalToken({ env, fetchImpl });
-  return (id) => personalHasMessage(id, token);
+  const grant = await personalGrant({ env, fetchImpl });
+  if (grant.state === "rejected") console.error(PERSONAL_GRANT_REJECTED);
+  return grant.state === "ok" ? (id) => personalHasMessage(id, grant.token) : null;
 }
 
 /** Resend's own last event for one Boss OS send, with the key of the team that sent it. */
@@ -384,7 +389,7 @@ export async function runOperationsCheck(api, { env = process.env, fetchImpl = f
     let feed = null;
     try { feed = await senderClient(localConfig(env), boundedFetch).replies(dayOf(Date.now(), undefined, -30)); } catch { feed = null; }
     return readArrivals({ arrivals: input.arrivals, feed, now: Date.now(),
-      mailbox: personalGrantPresent(env) ? await personalSearch(env, boundedFetch) : null,
+      mailbox: await personalSearch(env, boundedFetch),
       resend: (row) => resendEvent(row, env, boundedFetch) });
   })();
   receipts.catch(() => {});

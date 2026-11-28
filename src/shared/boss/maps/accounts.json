@@ -33,7 +33,10 @@
         "CAL_ICS_SEQ_TAYLOR",
         "SEQ_TAYLOR_GMAIL_APP_PASSWORD",
         "RCLONE_MAC_BACKUP_OAUTH_CLIENT_ID",
-        "RCLONE_MAC_BACKUP_OAUTH_CLIENT_SECRET"
+        "RCLONE_MAC_BACKUP_OAUTH_CLIENT_SECRET",
+        "TONI_GMAIL_CLIENT_ID",
+        "TONI_GMAIL_CLIENT_SECRET",
+        "TONI_GMAIL_REFRESH_TOKEN"
       ],
       "used_by": "The team's emails to you land here; the nightly Mac backup goes to its Drive; its calendar feeds Simone.",
       "security": "A password change revokes the app password and Gmail sign-ins at once (personal brain).",

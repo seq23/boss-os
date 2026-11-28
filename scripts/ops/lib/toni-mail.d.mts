@@ -14,7 +14,12 @@ export function scanToniMailbox(opts: { token: () => Promise<string>; rule: Mail
 export function personalGrantPresent(env?: NodeJS.ProcessEnv | Record<string, string>): boolean;
 export function scanToniConnector(opts: { rule: MailRule; previous?: Checkpoint; now?: number; ask?: ((prompt: string, options: object) => { ok: boolean; json?: unknown; why?: string }) | null }): Scan;
 export function nameToniHeld(mail: { held?: Held[] }[], what: string, opts?: { add?: (section: string, x: { lines: unknown[] }) => void }): Promise<number>;
-export function readToniMail(rule: MailRule, previous?: Record<string, Checkpoint>, now?: number): Promise<(Scan & { id: string; label: string })[]>;
+export type PersonalGrant = { state: "ok"; token: string } | { state: "missing" } | { state: "rejected" | "unreachable"; why: string };
+export function personalGrant(opts?: { env?: NodeJS.ProcessEnv | Record<string, string>; fetchImpl?: typeof fetch }): Promise<PersonalGrant>;
+export const PERSONAL_GRANT_REJECTED: string;
+export function ownerGmail(env?: NodeJS.ProcessEnv | Record<string, string | undefined>): string | null;
+export function gmailProfile(access: string, fetchImpl?: typeof fetch): Promise<{ status: number; address: string | null; body: unknown }>;
+export function readToniMail(rule: MailRule, previous?: Record<string, Checkpoint>, now?: number, opts?: { grantOf?: () => Promise<PersonalGrant>; connectorScan?: typeof scanToniConnector; only?: "spry" | "personal" | null }): Promise<(Scan & { id: string; label: string })[]>;
 export function reconcileToniReadings(readings: Reading[], previous?: Record<string, string>, unreadPrefixes?: string[]): { states: Record<string, string>; moved: (Reading & { was: string | null })[] };
 export type DayCounts = { source: number; handled: number; unread: string[] };
 export function mailCounts(mail: { count: number; handled: number; why: string | null; id: string }[], previous?: Record<string, DayCounts>, now?: number): Record<string, DayCounts>;

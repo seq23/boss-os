@@ -65,7 +65,7 @@
     ]
   },
   "scripts/ops/lib/toni-mail.mjs": {
-    "reason": "Toni: her personal Gmail has no read-only grant in the vault yet (#584 review F2), so until TONI_GMAIL_* exist it is read through the Claude Gmail connector exactly as before #584; spry.vc uses the free reader.",
+    "reason": "Toni: while her personal Gmail has no working read-only grant (TONI_GMAIL_* missing, or refused by Google; npm run gmail:grant makes it), it is read through the Claude Gmail connector exactly as before #584 (#584 review F2); spry.vc uses the free reader.",
     "edges": [
       "call askClaudeJson"
     ]

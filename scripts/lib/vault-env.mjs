@@ -162,3 +162,22 @@ export function bossOsProcessEnv(env) {
 export function isCloudRun(env = process.env, plat = process.platform) {
   return env.GITHUB_ACTIONS === "true" && env.BOSS_OS_CLOUD_RUN === "1" && plat !== "darwin";
 }
+
+/**
+ * `vault.mjs set-many`'s input: one JSON object of NAME → value, read from stdin so no value is ever
+ * in argv or a file. ALL OR NOTHING: every name and value is checked before the vault is touched,
+ * and the caller writes them in one vault write, so a grant of three keys is never half-saved
+ * (gmail-grant.mjs, 28 Nov 2026). The error names the bad key, never a value.
+ */
+export function parseSecretMap(text) {
+  let parsed;
+  try { parsed = JSON.parse(String(text ?? "")); } catch { throw new Error("set-many reads one JSON object from stdin"); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("set-many reads one JSON object from stdin");
+  const entries = Object.entries(parsed);
+  if (entries.length === 0) throw new Error("set-many was given no keys");
+  for (const [name, value] of entries) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`set-many: ${JSON.stringify(name.slice(0, 64))} is not a valid name`);
+    if (typeof value !== "string" || !value.trim()) throw new Error(`set-many: ${name} has an empty or non-text value`);
+  }
+  return Object.fromEntries(entries.map(([name, value]) => [name, value.trim()]));
+}

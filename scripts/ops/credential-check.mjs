@@ -35,6 +35,7 @@
 import { spawnSync } from "node:child_process";
 import { seatEnv } from "./lib/seat-env.mjs";
 import { lockedArgs, refusals, resultText } from "./lib/claude-lock.mjs";
+import { gmailProfile, ownerGmail, personalGrant } from "./lib/toni-mail.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const SUBJECT = process.env.BROKERAGE_MAILBOX ?? "staylor@spry.vc";
@@ -343,10 +344,35 @@ export function probeConnector() {
   return connectorVerdict(run.stdout ?? "", run.stderr ?? "");
 }
 
+// ─── Probe 4: the read-only grant on her personal Gmail ─────────────────────
+
+/*
+ * `npm run gmail:grant` (28 Nov 2026) saves TONI_GMAIL_*; Toni's mail checks, the Ahrefs digest and the
+ * arrival check read through it. Google ends it silently on a password change (and after 7 days if the
+ * sign-in app were ever put back into Testing), so it is used here daily: refreshed exactly as those
+ * jobs refresh it, then one read of Gmail's own profile, compared to BOSS_NOTIFY_TO. The detail is a
+ * word and a sentence (OK / MISSING / REJECTED / UNKNOWN), never an address.
+ */
+export async function probePersonalGrant({ env = process.env, fetchImpl = fetch } = {}) {
+  const id = "cred_personal_gmail_grant";
+  const grant = await personalGrant({ env, fetchImpl });
+  if (grant.state === "missing") return { id, state: "dead", detail: "MISSING: there is no read-only grant on your personal Gmail yet. Run npm run gmail:grant and sign in once." };
+  if (grant.state === "rejected") return { id, state: "dead", detail: "REJECTED: Google refused the saved grant (a password change ends it). Run npm run gmail:grant again." };
+  if (grant.state !== "ok") return { id, state: "unknown", detail: "UNKNOWN: Google could not be reached to check the grant." };
+  let profile;
+  try { profile = await gmailProfile(grant.token, fetchImpl); } catch { profile = null; }
+  if (!profile?.address) return { id, state: "unknown", detail: "UNKNOWN: Gmail did not answer which account the grant reads." };
+  const owner = ownerGmail(env);
+  if (!owner) return { id, state: "unknown", detail: "UNKNOWN: BOSS_NOTIFY_TO is not in the environment, so the account cannot be compared." };
+  return profile.address === owner
+    ? { id, state: "live", detail: "OK: the grant renews and reads your personal Gmail, read-only." }
+    : { id, state: "dead", detail: "REJECTED: the saved grant reads a different Google account. Run npm run gmail:grant and choose your personal Gmail." };
+}
+
 // ─── Report ─────────────────────────────────────────────────────────────────
 
 async function main() {
-  const probes = [...(await probeGoogle()), ...(await probeCalendars()), probeConnector()];
+  const probes = [...(await probeGoogle()), ...(await probeCalendars()), probeConnector(), await probePersonalGrant()];
 
   /*
    * RULE 0. A prober that examined nothing must not exit 0 looking pleased — it would leave every

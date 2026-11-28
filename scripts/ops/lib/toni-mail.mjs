@@ -12,7 +12,7 @@ const BROKERAGE = INVITE_INBOXES.find(({ address, writable }) => !writable && ad
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const MAILBOXES = [
   { id: "spry", label: "spry.vc mailbox", token: businessToken, address: BROKERAGE },
-  { id: "personal", label: "personal Gmail", token: personalToken, address: "me", connector: true },
+  { id: "personal", label: "personal Gmail", address: "me", connector: true },
 ];
 
 /** Her personal Gmail has no read-only grant in the vault yet (#584 review F2): until all three exist, it is
@@ -46,10 +46,55 @@ export async function personalToken({ env = process.env, fetchImpl = fetch } = {
       refresh_token: TONI_GMAIL_REFRESH_TOKEN, grant_type: "refresh_token",
     }),
   });
-  if (!response.ok) throw new Error(`Personal Gmail authorization failed (${response.status})`);
+  // `rejected` rides on the error so a caller can tell a grant Google refused (revoked by a password
+  // change, expired, a deleted client, the wrong scope) from an outage that may pass by the next run.
+  if (!response.ok) {
+    throw Object.assign(new Error(`Personal Gmail authorization failed (${response.status})`),
+      { status: response.status, rejected: response.status === 400 || response.status === 401 });
+  }
   const grant = await response.json();
-  if (!grant.access_token || grant.scope !== READONLY) throw new Error("Personal Gmail requires a Gmail read-only grant");
+  if (!grant.access_token || grant.scope !== READONLY) throw Object.assign(new Error("Personal Gmail requires a Gmail read-only grant"), { rejected: true });
   return grant.access_token;
+}
+
+/** What every personal-Gmail reader prints when Google refuses the saved grant. No value, no address. */
+export const PERSONAL_GRANT_REJECTED = "NAMED STOP [TONI_PERSONAL_GMAIL_REJECTED] Google refused the saved read-only grant on her personal Gmail "
+  + "(a password change ends it). Fix: cd ~/GitHub/boss-os && npm run gmail:grant. Read through the Gmail connector meanwhile.";
+
+/**
+ * THE GRANT, READ ONCE, IN ONE OF FOUR STATES (28 Nov 2026). A dead grant must never be worse than none:
+ *   missing     no keys yet               → the connector path, as before the grant existed;
+ *   rejected    Google refused the keys   → the connector path too, plus PERSONAL_GRANT_REJECTED;
+ *   unreachable Google did not answer     → that run's read is "couldn't check" and the next run retries;
+ *   ok          a read-only access token.
+ */
+export async function personalGrant({ env = process.env, fetchImpl = fetch } = {}) {
+  if (!personalGrantPresent(env)) return { state: "missing" };
+  try {
+    return { state: "ok", token: await personalToken({ env, fetchImpl }) };
+  } catch (error) {
+    return { state: error?.rejected ? "rejected" : "unreachable", why: String(error?.message ?? error).slice(0, 140) };
+  }
+}
+
+/** Her personal Gmail address, from the vault's BOSS_NOTIFY_TO (where her mail is sent), or null. */
+export function ownerGmail(env = process.env) {
+  const raw = String(env.BOSS_NOTIFY_TO ?? "").trim();
+  const address = (/<([^<>]+)>\s*$/.exec(raw)?.[1] ?? raw).trim().toLowerCase();
+  return /^[^\s@<>,]+@[^\s@<>,]+\.[^\s@<>,]+$/.test(address) ? address : null;
+}
+
+const GMAIL_PROFILE = "https://gmail.googleapis.com/gmail/v1/users/me/profile";
+
+/** Which mailbox an access token reads: Gmail's read-only profile. { status, address|null, body }. */
+export async function gmailProfile(access, fetchImpl = fetch) {
+  const response = await fetchImpl(GMAIL_PROFILE, {
+    method: "GET", headers: { authorization: `Bearer ${access}` }, redirect: "error", signal: AbortSignal.timeout(20_000),
+  });
+  let body = null;
+  try { body = await response.json(); } catch { body = null; }
+  const address = response.ok && typeof body?.emailAddress === "string" ? body.emailAddress.trim().toLowerCase() || null : null;
+  return { status: response.status, address, body };
 }
 
 const GMAIL_READ_PATH = /^\/gmail\/v1\/users\/me\/(?:messages(?:\/[A-Za-z0-9_-]+\/attachments\/[A-Za-z0-9_-]+)?|threads\/[A-Za-z0-9_-]+)$/;
@@ -201,12 +246,23 @@ export function scanToniConnector({ rule, previous = {}, now = Date.now(), ask =
   return { notices, checkpoint: { through: now, receipts: {} }, count: a.json.length, handled: a.json.length, why: null, held: [], via: "connector" };
 }
 
-export async function readToniMail(rule, previous, now) {
+export async function readToniMail(rule, previous, now, { grantOf = () => personalGrant(), connectorScan = scanToniConnector, only = null } = {}) {
   const mailboxes = [];
-  for (const mailbox of MAILBOXES) {
-    const scan = mailbox.connector && !personalGrantPresent()
-      ? scanToniConnector({ rule, previous: previous?.[mailbox.id], now })
-      : await scanToniMailbox({ token: mailbox.token, rule, previous: previous?.[mailbox.id], now, mailbox: mailbox.address ?? "me" });
+  for (const mailbox of MAILBOXES.filter((box) => !only || box.id === only)) {
+    let token = mailbox.token;
+    let connector = false;
+    if (mailbox.connector) {
+      const grant = await grantOf();
+      if (grant.state === "rejected") console.error(PERSONAL_GRANT_REJECTED);
+      connector = grant.state === "missing" || grant.state === "rejected";
+      token = async () => {
+        if (grant.state === "ok") return grant.token;
+        throw new Error(`Personal Gmail authorization failed (${grant.why ?? "no answer"})`);
+      };
+    }
+    const scan = connector
+      ? connectorScan({ rule, previous: previous?.[mailbox.id], now })
+      : await scanToniMailbox({ token, rule, previous: previous?.[mailbox.id], now, mailbox: mailbox.address ?? "me" });
     mailboxes.push({ id: mailbox.id, label: mailbox.label, ...scan });
   }
   return mailboxes;
