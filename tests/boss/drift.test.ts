@@ -95,11 +95,7 @@ describe("the monthly read", () => {
 
   it("is hard work: Claude's seat first, Codex's as the backup, and no free route", () => {
     const cls = jobClassOf({ intakeKind: "review", delivers: "quality_reads" });
-    for (const privateWork of [false, true]) {
-      const routes = routeOrder({ jobClass: cls, privateWork }).routes;
-      expect(routes[0]).toBe("claude");
-      expect(routes.filter((r: string) => r !== "claude" && r !== "codex")).toEqual([]);
-    }
+    expect(routeOrder({ jobClass: cls }).routes).toEqual(["claude", "codex"]);
   });
 
   it("runs for Kendra and never waits on the owner, whatever words the outputs it quotes carry (14 Nov 2026)", async () => {

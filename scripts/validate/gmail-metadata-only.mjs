@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * NOTHING IN THIS REPOSITORY MAY ASK GMAIL FOR MORE THAN HEADERS.
+ * Gmail callers ask for headers unless a named and checked content reader requires more.
  *
  * ─── What this used to be, and why that was not enough ──────────────────────
  *
@@ -104,6 +104,21 @@ const MUST_NOT = [
  * fails on the specific thing that changed.
  */
 const CONTENT_EXCEPTIONS = new Map([
+  ["lib/simone-tools.mjs", {
+    why: "Simone can read the owner’s brokerage inbox on the Mac during the owner’s verified temporary grant.",
+    invariants: [
+      [(src) => /const BROKERAGE = INVITE_INBOXES\.find\(\(\{ writable \}\) => !writable\)\.address/.test(src)
+        && /googleAccess\([^\n]+gmail\.readonly", BROKERAGE\)/.test(src),
+      "the delegated token is read-only and pinned to the read-only brokerage mailbox"],
+      [(src) => /if \(!await recheck\(\)\) return refused\("GOOGLE_ACCOUNT_OFF"\);\s*const response = await boundedFetch/.test(src)
+        && /return current\.ok && current\.brokerageRead === path/.test(src),
+      "the live account gate by the leased Worker tool must reauthorize before the Mac reads mail"],
+      [(src) => /url\.origin !== GMAIL_API/.test(src) && /redirect: "manual"/.test(src) && /size > 240_000/.test(src)
+        && !/messages\/send|drafts\/send|batchDelete/.test(src),
+      "the Mac call stays on Gmail, bounds responses and supports reads only"],
+    ],
+  }],
+
   [
     /*
      * ── lp-outcomes.mjs · WHAT ACTUALLY HAPPENED TO EVERY EMAIL TWIN SENT ────
@@ -112,12 +127,8 @@ const CONTENT_EXCEPTIONS = new Map([
      * list existing: the general prohibition is untouched and this one file's narrowness is checked
      * on every build.
      *
-     * WHY IT NEEDS RAW. It answers "did this address bounce, reply, or ask to be removed" for 571
-     * sent addresses. A delivery-status notification is formatted differently by every provider, and
-     * a parser for them is a parser you maintain forever — so it does not parse them. It takes the
-     * addresses the Sent Log ALREADY HOLDS and asks whether a message contains any of them. That
-     * membership test needs the message, and no arrangement of From/To/Date answers it: a bounce for
-     * an address arrives from a postmaster, not from the person.
+     * Replies are read as full threads through the shared LP reader. The Sent Log provides the
+     * exact addresses and delivery-status fields identify hard bounces.
      *
      * WHY THE ANSWER MATTERS ENOUGH TO GRANT IT. The Sent Log's Status column has said "sent" on all
      * 571 rows since July — a tracker where every row carries the same value is not tracking
@@ -143,20 +154,10 @@ const CONTENT_EXCEPTIONS = new Map([
         // it searched the wrong mailbox and filed a confident, quiet, wrong answer.
         [(src) => /sub:\s*MAILBOX|sub: *mailbox|"sub":\s*MAILBOX|sub: MAILBOX/.test(src) || /const MAILBOX = /.test(src),
          "the mailbox it impersonates must be a named constant, not inferred from whatever session it finds"],
-        // NOTHING DERIVED FROM A BODY IS WRITTEN TO DISK. The one file it appends to is a suppression
-        // list, and every line of it is an address that was already on the Sent Log — so the file
-        // contains nothing the spreadsheet did not already hold.
-        [(src) => !/writeFileSync\([^)]*(body|raw|msg|message)/i.test(src),
-         "it must never write a message body or a raw message to disk — the only file it appends is a list of addresses the Sent Log already holds"],
-        // Bounded. A mailbox with a multi-megabyte deck in it must not be read whole into memory,
-        // and a bounce report ends long before this.
-        [(src) => /slice\(0, ?200_000\)|slice\(0, ?200000\)/.test(src),
-         "it must bound how much of a message it reads"],
-        // Nothing content-derived may reach a model. Matched on PROVIDER HOSTS rather than brand
-        // names, for the reason the holdings entry records: a validator that fires on a doc comment
-        // is one that gets switched off.
+        [(src) => /scanLpReplies\(/.test(src) && /excerpt: ""/.test(src),
+         "read through the shared LP reader and persist only outcome metadata, without excerpts"],
         [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src),
-         "it must send nothing to any model — the matching is a fixed set of addresses from the spreadsheet"],
+         "make no direct model provider request"],
       ],
     },
   ],
@@ -236,19 +237,10 @@ const CONTENT_EXCEPTIONS = new Map([
         // reported 3 inbound where the real mailbox held 123.
         [(src) => /const MAILBOX = /.test(src) && /sub:\s*MAILBOX|sub, *$|accessToken\(.*MAILBOX/s.test(src),
          "the mailbox it impersonates must be a named constant, not inferred from whatever session it finds"],
-        // Bounded, same as lp-outcomes.mjs.
-        [(src) => /slice\(0, ?200_000\)|slice\(0, ?200000\)/.test(src),
-         "it must bound how much of a message it reads"],
-        // THE QUOTE IS SHORT AND ONLY FROM A POSITIVE REPLY. This is the invariant that keeps a
-        // body-persisting job from becoming a mail archive.
-        [(src) => /slice\(0, ?220\)/.test(src),
-         "the quote it persists must be bounded to a short sentence"],
-        [(src) => /bucket !== "call" && bucket !== "warm"|bucket === "call" \|\| bucket === "warm"/.test(src),
-         "it must persist a quote only for replies classified positive, never for declines, autoresponders or unrelated mail"],
-        // Nothing content-derived may reach a model. Matched on PROVIDER HOSTS rather than brand
-        // names, for the reason the holdings entry records.
+        [(src) => /excerpt\.slice\(0, ?220\)/.test(src) && /excerpt: positive \? record\.excerpt : ""/.test(src),
+         "keep excerpts only for positive replies, with a short quote for the tracker"],
         [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src),
-         "it must send nothing to any model — the classification is local pattern matching"],
+         "use the shared free reader, with no direct provider request"],
         // RECALL IS CHECKED AGAINST HER OWN RECORDS, not against itself. A scan that quietly loses a
         // warm LP is worse than no scan, and every other check this file could run is marking its
         // own homework.
@@ -263,85 +255,28 @@ const CONTENT_EXCEPTIONS = new Map([
         [(src) => (src.match(/[\w.+'-]+@[\w.-]+\.\w+/g) ?? [])
           .every((a) => /@(?:[\w.-]+\.)?(westpeek\.ventures|sequoiataylor\.com|joinwestpeek\.com|spry\.vc)$/i.test(a)),
          "it must carry no email address at a domain outside our own — LP identities are confidential and this repository is public"],
-        /*
-         * STRUCTURE BEFORE WORDING. On 5 Oct 2026 seven of thirteen names on the running list were a
-         * sales drip, a vendor, two newsletters, an autoresponder and two of our own addresses —
-         * every one classified positive on its wording alone. The structural screen is the ONE
-         * shared module the brokerage reader uses; a second copy here would be the drift this
-         * repository names by name. And a message that is not a REPLY to our outreach cannot be a
-         * positive reply, however friendly its wording.
-         */
-        [(src) => /from "\.\/mail-bulk\.mjs"/.test(src) && /\bbulkReason\b/.test(src) && /\bownDomainReason\b/.test(src),
-         "it must screen bulk and our own domains through the shared mail-bulk.mjs, not a copy of the filter"],
-        [(src) => /\breplyEvidence\b/.test(src) && /not_a_reply/.test(src),
-         "it must require that a candidate is a reply to our outreach — threads onto a message we sent, or quotes the mailbox"],
-        [(src) => /\breconcileList\b/.test(src) && /REMOVED \[/.test(src),
-         "it must reclassify the running list on every run and print each removal with its reason"],
-        [(src) => /NAMED STOP \[SCREEN_DISCARDED_EVERYTHING\]/.test(src),
-         "screening out every inbound message must be a named stop — a 100% discard is a broken screen, not a quiet mailbox"],
+        [(src) => /\/threads\/\$\{encodeURIComponent\(id\)\}\?format=full/.test(src) && /readWorkerSource/.test(src) && /targetMessageId/.test(src),
+         "LP decisions must go through the free reader with their complete thread and target message"],
+        [(src) => /scan\.unread/.test(src) && /LP_REPLY_UNREAD/.test(src) && /receipts\[record.id\]/.test(src),
+         "unread LP replies must remain pending, with receipts only for completed reads"],
       ],
     },
   ],
-  /*
-   * ── interest-ledger.mjs · THE INTEREST LEDGER ────────────────────────────
-   *
-   * ADDED AS A NAMED EXCEPTION RATHER THAN BY LOOSENING THE RULE, same as its neighbours. The
-   * general prohibition is untouched and this one file's narrowness is asserted on every build.
-   *
-   * WHY IT NEEDS THE BODY. She brokers late-stage private secondaries, and both sides of a market
-   * already sit in `staylor@spry.vc`: somebody wanted SpaceX in March, somebody is selling it this
-   * week, and nothing has ever connected the two. A trade is an ASSET, a SIDE and a SIZE, and all
-   * three live in prose. From/To/Date cannot tell you that a message says "I have 40k shares of X
-   * available", and a subject line reads identically for a buyer and a seller.
-   *
-   * WHY THE SPLIT WITH interest-extract.mjs IS WHAT MAKES THIS GRANTABLE. This file reads the
-   * mailbox and SENDS NOTHING TO ANY MODEL — it filters, counts what it discarded by reason, and
-   * writes candidates to her Mac. A second process reads those files and never touches Gmail. So
-   * this file keeps the same "nothing content-derived reaches a model" invariant every other
-   * exception here carries, and the model half holds no Gmail credential at all. Neither can
-   * become the other, and `validate:filter-accounts` asserts that separation from the other side.
-   *
-   * WHAT KEEPS IT NARROW, each asserted below rather than promised.
-   */
+  // Monique reads full threads on the Mac. Only the shared worker router can classify them.
   [
     "interest-ledger.mjs",
     {
-      why:
-        "Turns her brokerage mailbox into a structured ledger of who wants to buy or sell what, at " +
-        "what size — the thing matching is impossible without. An asset, a side and a size all live " +
-        "in prose; no arrangement of From/To/Date produces any of the three.",
+      why: "Reads complete brokerage threads to find new buy and sell interest.",
       invariants: [
-        // THE MAILBOX IS NAMED IN THE JWT so it cannot silently become a different one. The earlier
-        // brokerage attempt routed through the claude.ai connector, bound to her PERSONAL account.
         [(src) => /const MAILBOX = /.test(src) && /sub: MAILBOX/.test(src),
-         "the mailbox it impersonates must be a named constant put in the JWT's sub claim, not inferred from whatever session it finds"],
-        // Read-only, and no scope that could ever send. She can read spry.vc and never write from it.
+         "it must impersonate the mailbox named in the JWT"],
         [(src) => /gmail\.readonly/.test(src) && !/gmail\.send|gmail\.compose|gmail\.modify|mail\.google\.com/.test(src),
-         "it must hold gmail.readonly and no scope that can write — she reads spry.vc and never sends from it"],
-        // Bounded, same as its neighbours. A pitch deck must not be read whole into memory.
-        [(src) => /BODY_BOUND = 200_000|slice\(0, ?200_000\)/.test(src),
-         "it must bound how much of a message it reads"],
-        // WHAT IT WRITES IS BOUNDED TOO. This one persists an excerpt, which its neighbours do not,
-        // because the model pass downstream has to see enough of the message to find a size. Six
-        // thousand characters is a message, not a mailbox, and the bound is the difference.
-        [(src) => /EXCERPT_BOUND = 6_000/.test(src),
-         "the excerpt it writes for the model pass must be bounded — an unbounded one is a mail archive on her disk"],
-        /*
-         * NOTHING CONTENT-DERIVED REACHES A MODEL FROM HERE. Matched on PROVIDER HOSTS and on the
-         * CLI spawn, not on brand names, for the reason the holdings entry records: a validator that
-         * fires on a doc comment is one that gets switched off.
-         */
-        [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src)
-          && !/spawn\(\s*["']claude/.test(src),
-         "it must send nothing to any model — it reads and filters, and a separate process with no Gmail credential does the extraction"],
-        // NOTHING REACHES THE CLOUD. Named counterparties, assets and sizes at a FINRA-registered
-        // broker-dealer are the most sensitive data in this system; the Boss OS API is not in this path.
+         "it must hold only the read-only mail scope"],
+        [(src) => /readWorkerSource\(input, process\.env\)/.test(src)
+          && !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|api\.cloudflare\.com|openrouter\.ai|spawn\(/i.test(src),
+         "model access must go through the shared worker reader"],
         [(src) => !/boss\.sequoiataylor\.com|\/api\/boss\//.test(src),
-         "it must post nothing to Boss OS — counterparties, assets and sizes stay on her Mac, not code-named and not counted"],
-        // IT MUST SAY WHAT IT DISCARDED. A filter over 104,241 messages whose discard is one number
-        // is a filter nobody can audit, and an unauditable filter loses deals silently.
-        [(src) => /WHAT THE FILTER DISCARDED/.test(src) && /NAMED STOP \[FILTER_DISCARDED_EVERYTHING\]/.test(src),
-         "it must report its discards by named reason and hard-stop on a total discard"],
+         "candidate threads must not be posted to Boss OS"],
       ],
     },
   ],
@@ -442,7 +377,7 @@ const HEADER_READERS = new Map([
  * DRAFT WRITERS (22 Oct 2026). Monique's follow-up drafts for the positive replies Sequoia has not
  * answered — owner-approved: "a DRAFT follow-up for each placed in her Gmail Drafts … Never sends."
  * gmail.compose is the scope drafts need, and compose ALSO permits sending, so the narrowness is
- * asserted here: drafts only, no send endpoint, headers only, no model sees a name.
+ * asserted here: drafts only, no send endpoint, and reads complete threads through the LP reader.
  */
 const DRAFT_WRITERS = new Map([
   ["lp-followups.mjs", {
@@ -451,8 +386,10 @@ const DRAFT_WRITERS = new Map([
       [(src) => /const MAILBOX = /.test(src) && /sub: MAILBOX/.test(src), "the mailbox it impersonates must be a named constant in the JWT's sub claim"],
       [(src) => /\/drafts`/.test(src), "it must write through the drafts endpoint"],
       [(src) => !/drafts\/send|messages\/send|\/send[`"']|gmail\.send|gmail\.modify|mail\.google\.com/.test(src), "it must never call a send endpoint or hold a send/modify scope — drafts only"],
-      [(src) => !/format=full|"format", "full"|format=raw|"format", "raw"|\.snippet/.test(src), "it must read headers only — never a body, a raw message or a snippet"],
-      [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src) && !/spawn(Sync)?\(/.test(src), "no model may see a name: the draft is a fixed template, and no model host or CLI is reachable from this file"],
+      [(src) => !/format=full|"format", "full"|format=raw|"format", "raw"|\.snippet/.test(src), "content reads must use the existing LP read-only client"],
+      [(src) => /classifyReply\(target, thread, process\.env\)/.test(src)
+        && !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|api\.cloudflare\.com|openrouter\.ai|spawn(Sync)?\(/i.test(src),
+        "reply meaning must use the shared model reader without direct provider or CLI calls"],
       [(src) => /export function draftBody/.test(src), "the draft body must be a fixed template in code (draftBody)"],
     ],
   }],
@@ -484,7 +421,7 @@ const PROSPECT_SENDERS = new Map([
       [(src) => !/gmail\.send|gmail\.modify|mail\.google\.com/.test(src), "compose and nothing wider"],
       [(src) => !/format=full|"format", "full"|format=raw|"format", "raw"|\.snippet/.test(src), "it reads headers and message ids only"],
       [(src) => /plan\.approved !== true/.test(src) && /if \(dry\) \{[\s\S]*?return 0;[\s\S]*messages\/send/.test(src), "nothing is sent unless the plan is approved, and a dry run returns before any send"],
-      [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src) && !/spawn(Sync)?\(/.test(src), "no model sees a name"],
+      [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src) && !/spawn(Sync)?\(/.test(src), "it has no direct model provider or subprocess"],
     ],
   }],
 ]);

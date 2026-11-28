@@ -16,7 +16,7 @@ const WED_10AM = Date.parse("2026-10-28T15:00:00Z");
 function mail(body: string) {
   const from = "Sequoia <seq.taylor@gmail.com>";
   const subject = "Re: Sunday: 5 decisions";
-  const headers = new Headers({ from, subject, "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass header.from=gmail.com", "message-id": `<${Math.random().toString(36).slice(2)}@mail.gmail.com>`, "in-reply-to": "<morning@boss>" });
+  const headers = new Headers({ from, subject, "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass header.from=gmail.com", "message-id": `<${Math.random().toString(36).slice(2)}@mail.gmail.com>`, "in-reply-to": "<morning@example.test>" });
   const raw = `From: ${from}\r\nSubject: ${subject}\r\n\r\n${body}`;
   return { from: "seq.taylor@gmail.com", to: "boss@sequoiataylor.com", headers, raw: new Response(raw).body!, rawSize: raw.length };
 }
@@ -24,11 +24,13 @@ function mail(body: string) {
 async function morningWith(keys: string[]) {
   const payload = { day: "2026-10-25", decide: keys.map((key, i) => ({ key, title: `Card ${i + 1}` })) };
   await env.DB.prepare(`INSERT OR REPLACE INTO morning_digests (day, payload, sent_at, created_at, updated_at) VALUES (?,?,?,?,?)`).bind("2026-10-25", JSON.stringify(payload), Date.now(), Date.now(), Date.now()).run();
+  await env.DB.prepare(`INSERT INTO boss_mail_refs (message_id, refs, created_at) VALUES ('<morning@example.test>', 'yd_20261025', ?)`)
+    .bind(Date.now()).run();
 }
 const pendingRows = async () => (await env.DB.prepare(`SELECT * FROM prospect_templates WHERE status = 'pending'`).all<any>()).results ?? [];
 
 beforeEach(async () => {
-  await env.DB.exec("DELETE FROM prospect_templates; DELETE FROM prospects; DELETE FROM morning_digests;");
+  await env.DB.exec("DELETE FROM prospect_templates; DELETE FROM prospects; DELETE FROM morning_digests; DELETE FROM boss_mail_refs;");
 });
 
 describe("a numbered reply to the prospect-email card", () => {

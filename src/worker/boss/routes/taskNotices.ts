@@ -92,10 +92,14 @@ taskNotices.post("/:id/sent", async (c) => {
 
   const body = await c.req.json<{ from?: string }>().catch(() => ({} as { from?: string }));
   const now = Date.now();
-  await c.env.DB
-    .prepare(`UPDATE boss_task_notices SET sent_at = ?, attempts = attempts + 1, error = NULL WHERE id = ?`)
-    .bind(now, id)
-    .run();
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE boss_task_notices SET sent_at = ?, attempts = attempts + 1, error = NULL WHERE id = ? AND sent_at IS NULL`)
+      .bind(now, id),
+    ...(row.kind === "simone_result" ? [c.env.DB.prepare(
+      `UPDATE boss_inbound_mail SET reply_state = 'sent', replied_at = ?, reply_error = NULL
+       WHERE task_id = ? AND outcome = 'SIMONE_QUEUED' AND authorised = 1`,
+    ).bind(now, row.task_id)] : []),
+  ]);
   await logEvent(c.env.DB, {
     level: "info", scope: "queue", event: "task_notice_sent", lane: row.lane, entityId: row.task_id,
     detail: { notice_id: id, kind: row.kind, from: body?.from ?? row.from_name },

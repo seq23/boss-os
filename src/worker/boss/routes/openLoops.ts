@@ -4,8 +4,9 @@
  * the page is ☰ More → Open Loops (/?tab=loops).
  *
  *   GET  /                 { loops, waiting, names, today }  every open row + closed in the last 30 days
- *   POST /                 create { title, finish_line, next_step, owner, next_date, business, section, blocked_by }
- *   PUT  /:id              edit any of those (moving to parked clears the date: parked rows are never chased)
+ *   POST /                 create { title, finish_line, next_step, owner, next_date, business, section, blocked_by, proof_pr }
+ *   PUT  /:id              edit any of those (moving to parked clears the date: parked rows are never chased;
+ *                          section "proving" = landed, waiting on proof, needs proof_pr "owner/repo#123")
  *   POST /:id/close        { reason } — the real outcome, never "PR merged"
  *   POST /intake           a repo's named stop: { repo, stop, finish_line, next_step?, owner?, business?, next_date?, cleared? }
  *                          upserts by source_key (repo#STOP); `cleared: true` closes it "outcome reached".
@@ -26,7 +27,7 @@ import { readSession } from "../auth";
 import { dayIdInZone, wallClock } from "../../../shared/boss/timezone";
 import { BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
 import { MORNING_SECTIONS } from "../../../shared/boss/mail/morningSections.mjs";
-import { HER, loopKey, loopProblems, morningSection, systemRow, repairsDue, remindersDue, reminderEmail, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
+import { HER, loopKey, loopProblems, proofPrProblem, morningSection, systemRow, repairsDue, remindersDue, reminderEmail, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
 import { admitTask } from "../tasks/admit";
 import { needsHer } from "../../../shared/boss/mail/noticeGate.mjs";
 
@@ -35,7 +36,7 @@ export const openLoops = new Hono<{ Bindings: Env; Variables: Vars }>();
 export const INTAKE_PATH = "/api/open-loops/intake";
 export const TOKEN_KEY = "open_loops_intake_token_sha256";
 const ORIGIN = "https://boss.sequoiataylor.com";
-const FIELDS = ["title", "finish_line", "next_step", "owner", "next_date", "business", "section", "blocked_by"] as const;
+const FIELDS = ["title", "finish_line", "next_step", "owner", "next_date", "business", "section", "blocked_by", "proof_pr"] as const;
 
 export async function sha256(s: string): Promise<string> {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -92,10 +93,10 @@ openLoops.post("/", async (c) => {
   // hers, whoever posts it: it is the team's row, and overdue it becomes a repair (`systemRow`).
   const owner = b!.owner === HER && systemRow({ title: b!.title }) ? (/codex/i.test(b!.title) ? "codex" : "claude") : b!.owner;
   await c.env.DB.prepare(
-    `INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, source_key, blocked_by, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,'open',?,NULL,?,?,?)`,
+    `INSERT INTO owner_open_loops (id, title, finish_line, next_step, owner, next_date, business, section, status, source, source_key, blocked_by, proof_pr, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,'open',?,NULL,?,?,?,?)`,
   ).bind(id, b!.title.trim(), b!.finish_line.trim(), b!.next_step ?? null, owner, section === "parked" ? null : (b!.next_date || null), b!.business, section,
-    b!.source ?? "manual", b!.blocked_by || null, now, now).run();
+    b!.source ?? "manual", b!.blocked_by || null, b!.proof_pr || null, now, now).run();
   return ok(c, { loop: await c.env.DB.prepare(`SELECT * FROM owner_open_loops WHERE id = ?`).bind(id).first() }, 201);
 });
 
@@ -110,13 +111,15 @@ openLoops.put("/:id", async (c) => {
   const next: Record<string, any> = { ...row };
   for (const k of FIELDS) if (b && k in b) next[k] = typeof b[k] === "string" ? b[k].trim() || null : b[k];
   if (next.section === "parked") next.next_date = null;
+  const proof = proofPrProblem(next);
+  if (proof) throw badRequest("That edit was not saved", proof);
   // "Bring back" reopens a parked row, and editing a closed row reopens it only when asked.
   if (b?.reopen === true) { next.status = "open"; next.closed_reason = null; next.closed_at = null; }
   await c.env.DB.prepare(
     `UPDATE owner_open_loops SET title = ?, finish_line = ?, next_step = ?, owner = ?, next_date = ?, business = ?, section = ?, blocked_by = ?,
-       status = ?, closed_reason = ?, closed_at = ?, updated_at = ? WHERE id = ?`,
+       proof_pr = ?, status = ?, closed_reason = ?, closed_at = ?, updated_at = ? WHERE id = ?`,
   ).bind(next.title, next.finish_line, next.next_step, next.owner, next.next_date, next.business, next.section, next.blocked_by,
-    next.status, next.closed_reason, next.closed_at, Date.now(), id).run();
+    next.proof_pr ?? null, next.status, next.closed_reason, next.closed_at, Date.now(), id).run();
   return ok(c, { loop: await c.env.DB.prepare(`SELECT * FROM owner_open_loops WHERE id = ?`).bind(id).first() });
 });
 

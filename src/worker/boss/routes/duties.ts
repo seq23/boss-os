@@ -55,12 +55,10 @@ import { recordSlot } from "../cron/dispatch";
 import { isDue, nextDueAt, EARLY_RUN_GRACE_MS } from "../duties/cadence";
 import { effectiveNextDue } from "../duties/clock";
 export { EARLY_RUN_GRACE_MS };
-import { admitTask } from "../tasks/admit";
 import {
   dutyBrief, editDuty, employeeDuties, loadDuty, pauseDuty, removeDuty, teamCards, allDuties, undoDuty, type EditInput,
 } from "../duties/ownerEdits";
-import { dutyChangeBody } from "../../../shared/boss/duties/editByMail.mjs";
-import { REPO_CHANGE_SEAT } from "../../../shared/boss/repoChange/lane.mjs";
+import { routeFixedDutyChange } from "../duties/editByMail";
 
 export const duties = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -544,12 +542,6 @@ duties.post("/:id/ask-change", async (c) => {
   // The same shape the mail door opens a fixed-step change as (editByMail.ts): a body naming the
   // repository that holds the duty's steps, so `admitTask`'s repo-change router (R24) finds it and
   // this becomes a real repo change instead of a task no lane can act on.
-  const body = dutyChangeBody(d, words, { source: "on her duty page" });
-  const admitted = await admitTask(c.env, {
-    title: `Change how the duty "${d.name}" works`.slice(0, 200),
-    lane: "ops",
-    employee_id: REPO_CHANGE_SEAT,
-    input: { source: "employee_page", build_ask: true, duty_id: d.id, body },
-  });
+  const admitted = await routeFixedDutyChange(c.env, d, words, { source: "employee_page" });
   return ok(c, { sent_to: "Danielle", task_id: admitted.task_id ?? null, created: admitted.created, reason: admitted.reason ?? null });
 });

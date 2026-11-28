@@ -1,3 +1,4 @@
+import { gmailPayloadText, type GmailPart } from "../../../shared/boss/mail/gmailPayload.mjs";
 /**
  * THE ONE PLACE OUTREACH TOUCHES GMAIL. It impersonates exactly one mailbox, `OUTREACH_MAILBOX`
  * (st@time-2-read.com, the Workspace that owns the business domains), and nothing else: the mailbox
@@ -128,9 +129,8 @@ export class GmailSession {
   private async get<T>(path: string): Promise<T> {
     const token = await this.token(SCOPE_READ);
     const res = await timed(this.fetchImpl, `${GMAIL}${path}`, { headers: { authorization: `Bearer ${token}` } });
-    const text = await res.text();
-    if (!res.ok) throw new Error(`Gmail read ${path.split("?")[0]} failed (${res.status}): ${text.slice(0, 160)}`);
-    return JSON.parse(text) as T;
+    if (!res.ok) throw new Error(`Gmail READ failed (${res.status})`);
+    return res.json<T>();
   }
 
   /** The addresses Gmail will send as without rewriting the From (primary, or accepted aliases). */
@@ -158,24 +158,44 @@ export class GmailSession {
 
   /** Message ids and threads matching a search. Ids only — nothing is read here. */
   async list(q: string, max = 50): Promise<{ id: string; threadId: string }[]> {
-    const j = await this.get<{ messages?: { id: string; threadId: string }[] }>(
-      `/messages?maxResults=${max}&q=${encodeURIComponent(q)}`,
-    );
-    return j.messages ?? [];
+    const messages: { id: string; threadId: string }[] = [];
+    let page: string | undefined;
+    do {
+      const query = new URLSearchParams({ maxResults: String(max), q });
+      if (page) query.set("pageToken", page);
+      const result: { messages?: { id: string; threadId: string }[]; nextPageToken?: string } = await this.get(`/messages?${query}`);
+      messages.push(...(result.messages ?? []));
+      page = result.nextPageToken;
+    } while (page);
+    return messages;
   }
 
-  /** One message, headers and plain-text body. Called only for outreach threads and bounces. */
   async read(id: string): Promise<GmailMessage> {
-    const j = await this.get<RawMessage>(`/messages/${encodeURIComponent(id)}?format=full`);
+    const message = await this.get<RawMessage>(`/messages/${encodeURIComponent(id)}?format=full`);
+    return this.decodeMessage(message);
+  }
+
+  async readThread(id: string): Promise<GmailMessage[]> {
+    const thread = await this.get<{ messages: RawMessage[] }>(`/threads/${encodeURIComponent(id)}?format=full`);
+    return Promise.all(thread.messages.map((message) => this.decodeMessage(message)));
+  }
+
+  private async decodeMessage(message: RawMessage): Promise<GmailMessage> {
+    if (!message.id || !message.payload) throw new Error("Gmail omitted a message or its payload");
     const headers: Record<string, string> = {};
-    for (const h of j.payload?.headers ?? []) headers[h.name.toLowerCase()] = h.value;
+    for (const { name, value } of message.payload.headers ?? []) headers[name.toLowerCase()] = value;
+    const loadPart = async (id: string) => {
+      const result = await this.get<{ data: string }>(`/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(id)}`);
+      if (!result.data) throw new Error("Gmail omitted a readable MIME part");
+      return result.data;
+    };
     return {
-      id: j.id,
-      threadId: j.threadId,
-      labelIds: j.labelIds ?? [],
+      id: message.id,
+      threadId: message.threadId,
+      labelIds: message.labelIds ?? [],
       headers,
-      body: plainText(j.payload),
-      internalDate: Number(j.internalDate ?? Date.now()),
+      body: await gmailPayloadText(message.payload, loadPart),
+      internalDate: Number(message.internalDate ?? Date.now()),
     };
   }
 }
@@ -189,38 +209,12 @@ export interface GmailMessage {
   internalDate: number;
 }
 
-interface RawPart {
-  mimeType?: string;
-  headers?: { name: string; value: string }[];
-  body?: { data?: string };
-  parts?: RawPart[];
-}
 interface RawMessage {
   id: string;
   threadId: string;
   labelIds?: string[];
   internalDate?: string;
-  payload?: RawPart;
-}
-
-function decode(data: string): string {
-  try {
-    const bin = atob(data.replace(/-/g, "+").replace(/_/g, "/"));
-    return decodeURIComponent(escape(bin));
-  } catch {
-    return "";
-  }
-}
-
-function plainText(part: RawPart | undefined): string {
-  if (!part) return "";
-  if (part.mimeType === "text/plain" && part.body?.data) return decode(part.body.data);
-  for (const p of part.parts ?? []) {
-    const t = plainText(p);
-    if (t) return t;
-  }
-  if (part.mimeType?.startsWith("text/") && part.body?.data) return decode(part.body.data).replace(/<[^>]+>/g, " ");
-  return "";
+  payload?: GmailPart;
 }
 
 /** "Jane <jane@x.com>" → jane@x.com */

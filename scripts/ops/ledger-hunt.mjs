@@ -26,26 +26,22 @@
  *
  * ─── ONLY NEW, ONLY ONCE ────────────────────────────────────────────────────
  *
- * `~/.boss-os/capital/ledger-hunt-state.json` remembers every row already hunted, keyed the same way
- * `interest-extract.mjs` keys the ledger for merge-idempotency — so the two files can never disagree
- * about what "the same row" means. A row is marked hunted ONLY after a confirmed send: a dry run, or
+ * `~/.boss-os/capital/ledger-hunt-state.json` remembers every row already hunted, keyed by the original ledger row.
+ * A row is marked hunted only after its research has been kept for the morning: a dry run, or
  * a day every sender refuses, must not make tomorrow's run believe today's mail already went. That
  * cost a live request once in `buyer-hunt.mjs --from-boss` and is not repeated here.
  *
- * ─── LOCAL, AND IT STAYS LOCAL ──────────────────────────────────────────────
- *
- * Named counterparties, assets and sizes never reach the Boss OS database — the same rule
- * `interest-match.mjs` states and keeps. This produces a list for her, at her own address, from
- * monique@sequoiataylor.com. Nobody here has been contacted.
- *
- *   npm run capital:ledger-hunt                    # dry run — prints, does not mark anything hunted
- *   npm run capital:ledger-hunt -- --send           # ...and email it, and mark today's rows hunted
+ * Completed findings are kept for the morning view.
+ *   npm run capital:ledger-hunt                   # print results
+ *   npm run capital:ledger-hunt -- --send          # keep results and record a receipt
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
+import { resolveIssuers } from "./lib/deal-reading.mjs";
+import { readState, writeJson } from "./interest-ledger.mjs";
+import { assignedSearch, assetKey, atHerBrokerage, keyOfInterest } from "./interest-match.mjs";
 import { researchLot, renderFilings, renderReach, pressPodcastLeads, renderPressPodcast, money, recordFound } from "./filing-hunt.mjs";
 import { withinLookback } from "../../src/shared/boss/capital/partyLists.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
@@ -56,25 +52,16 @@ const SUPPRESS = path.join(DIR, "not-this-person.json");
 const WRONG_FILE = path.join(DIR, "wrong.json");
 const HUNTED_FILE = path.join(DIR, "ledger-hunt-state.json");
 
-/*
- * NAMED HERE, LITERALLY, SO THE DUTY ROW AND THIS FILE AGREE. `validate:duty-delivery` reads
- * `scripts/ops/ledger-hunt.mjs` for the exact model string the migration names in
- * `$.requested.model` — not filing-hunt.mjs, which is where the call actually happens, because the
- * row's `local_job` names THIS file. An env override is still honoured; the literal default is what
- * the validator checks against.
- */
-const MODEL = process.env.LEDGER_HUNT_MODEL ?? "claude-haiku-4-5-20251001";
-
 const ARGS = process.argv.slice(2);
 const SEND = ARGS.includes("--send");
 
 const loadJson = (p, key) => { try { return JSON.parse(fs.readFileSync(p, "utf8"))[key] ?? []; } catch { return []; } };
 
-/** The same composite key `interest-extract.mjs` uses to merge the ledger — one definition, not two. */
-const rowKey = (r) => `${r.source_message}|${r.side}|${assetKey(r.asset)}|${r.size_usd ?? r.size_shares}`;
+/** Preserve keys from existing hunt receipts. */
+const rowKey = (r) => `${r.source_message}|${r.side}|${assetKey(r.asset).replace(/(inc|corp|corporation|ltd|llc|labs?|technologies|holdings)$/, "")}|${r.size_usd ?? r.size_shares}`;
 
 function loadHunted() {
-  try { return new Set(JSON.parse(fs.readFileSync(HUNTED_FILE, "utf8")).hunted ?? []); } catch { return new Set(); }
+  return new Set(readState(HUNTED_FILE).hunted ?? []);
 }
 
 function markHunted(keys) {
@@ -82,7 +69,7 @@ function markHunted(keys) {
   const set = loadHunted();
   for (const k of keys) set.add(k);
   fs.mkdirSync(DIR, { recursive: true });
-  fs.writeFileSync(HUNTED_FILE, JSON.stringify({ updated_at: new Date().toISOString(), hunted: [...set] }, null, 2), "utf8");
+  writeJson(HUNTED_FILE, { updated_at: new Date().toISOString(), hunted: [...set] });
 }
 
 /**
@@ -117,9 +104,9 @@ function fromRestOfLedger(all, entry, huntSide, suppressed) {
   const wrong = new Set(loadJson(WRONG_FILE, "rows"));
   const usable = all.filter((r) => r.source_message !== entry.source_message
     && !wrong.has(r.source_message) && !atHerBrokerage(r));
-  const hits = assignedSearch(usable, entry.asset, huntSide, entry.size_usd ?? entry.size_shares ?? 0, suppressed)
+  const hits = assignedSearch(usable, entry.issuer ?? entry.asset, huntSide, entry.size_usd ?? entry.size_shares ?? 0, suppressed)
     .filter((h) => h.row?.quote || h.row?.evidence);
-  return { hits, considered: usable.filter((r) => assetKey(r.asset) === assetKey(entry.asset)).length };
+  return { hits, considered: usable.filter((r) => keyOfInterest(r) === keyOfInterest(entry)).length };
 }
 
 function describeEntry(entry) {
@@ -159,6 +146,20 @@ function renderEntry(entry, huntSide, inbox, filings, press, contacts) {
 
 // ─── The run ─────────────────────────────────────────────────────────────────
 
+export async function completeHunt(entry, { research = researchLot, pressResearch = pressPodcastLeads, keep, mark } = {}) {
+  const huntSide = entry.side === "buy" ? "sell" : "buy";
+  const issuer = entry.issuer ?? entry.asset;
+  const filings = await research(issuer, entry.size_usd ?? 0, huntSide);
+  if (filings.note) throw new Error(filings.note);
+  const press = await pressResearch(issuer, huntSide);
+  if (press.note) throw new Error(press.note);
+  if (keep) {
+    await keep(issuer, { holders: filings.holders ?? [], spvs: filings.spvs ?? [], press: press.leads });
+    await mark(entry);
+  }
+  return { filings, press, huntSide };
+}
+
 async function main() {
   const { entries, reason } = newEntries();
   if (reason) {
@@ -176,21 +177,21 @@ async function main() {
   }
 
   const { interests: allEntries = [] } = JSON.parse(fs.readFileSync(LEDGER, "utf8"));
+  const active = allEntries.filter((entry) => withinLookback(entry.date));
+  const issuer = await resolveIssuers(active.map((entry) => entry.asset));
+  const resolved = active.map((entry) => ({ ...entry, issuer: issuer(entry.asset) }));
   const suppressed = new Set(loadJson(SUPPRESS, "people"));
   const contacts = loadContacts();
 
   const sections = [];
-  const keysThisRun = [];
-  for (const entry of entries) {
-    const huntSide = entry.side === "buy" ? "sell" : "buy";
-    const inbox = fromRestOfLedger(allEntries, entry, huntSide, suppressed);
-    const filings = await researchLot(entry.asset, entry.size_usd ?? 0, huntSide);
-    const press = await pressPodcastLeads(entry.asset, entry.size_usd ?? 0, huntSide, { model: MODEL });
-    sections.push({
-      entry, huntSide, inbox, filings, press,
-      count: inbox.hits.length + (filings.holders?.length ?? 0) + press.leads.length,
-    });
-    keysThisRun.push(rowKey(entry));
+  for (const item of entries) {
+    const entry = { ...item, issuer: issuer(item.asset) };
+    const { huntSide, filings, press } = await completeHunt(entry, SEND ? {
+      keep: recordFound, mark: (row) => markHunted([rowKey(row)]),
+    } : {});
+    const inbox = fromRestOfLedger(resolved, entry, huntSide, suppressed);
+    sections.push({ entry, huntSide, inbox, filings, press,
+      count: inbox.hits.length + (filings.holders?.length ?? 0) + press.leads.length });
   }
 
   const total = sections.reduce((n, s) => n + s.count, 0);
@@ -214,30 +215,8 @@ async function main() {
     return;
   }
 
-  /*
-   * ─── NO EMAIL (owner, 23 Oct 2026) ─────────────────────────────────────────
-   *
-   * "people worth a look" was one of nine emails in two days she found no use in. What this found is
-   * kept per company in `~/.boss-os/capital/found.json` — every named holder, the SPV vehicles, the
-   * press and podcast names — and reaches her as "Monique found" in Simone's morning email and on
-   * the Deals page, through `npm run capital:grid`. A row is marked hunted once it is KEPT there,
-   * which is the new "she has the answer".
-   */
-  const byCompany = new Map();
-  for (const sec of sections) {
-    const k = assetKey(sec.entry.asset);
-    const prior = byCompany.get(k) ?? { asset: sec.entry.asset, holders: [], spvs: [], press: [] };
-    prior.holders = prior.holders.length >= (sec.filings.holders?.length ?? 0) ? prior.holders : sec.filings.holders ?? [];
-    prior.spvs = prior.spvs.length ? prior.spvs : sec.filings.spvs ?? [];
-    prior.press = [...prior.press, ...sec.press.leads];
-    byCompany.set(k, prior);
-  }
-  for (const c of byCompany.values()) recordFound(c.asset, c);
-  markHunted(keysThisRun);
-  console.log(`\nKept for the morning email: ${byCompany.size} compan${byCompany.size === 1 ? "y" : "ies"} (${namesOnceLocal([...byCompany.values()].map((c) => c.asset))}).`);
+  console.log(`Kept for the morning email: ${sections.length} completed hunt(s).`);
 }
-
-const namesOnceLocal = (xs) => [...new Set(xs.map(String))].slice(0, 5).join(", ");
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => { console.error(`LEDGER HUNT FAILED: ${err?.stack ?? err}`); process.exit(1); });

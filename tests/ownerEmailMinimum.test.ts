@@ -30,7 +30,6 @@ import { prepEmail } from "../scripts/ops/meeting-prep.mjs";
 import { urgentEmail } from "../scripts/ops/risk-watch.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { spryLaid } from "../scripts/ops/spry-weekly.mjs";
-// @ts-expect-error — plain ESM with no declaration file
 import { outcomesMail } from "../scripts/ops/lp-outcomes.mjs";
 // @ts-expect-error — plain ESM with no declaration file
 import { peopleOwner } from "../scripts/ops/people-worth-a-call.mjs";

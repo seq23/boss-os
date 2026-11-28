@@ -79,7 +79,7 @@ export function fillWords(theirs, yours) {
  * `assignedSearch`'s order with a closer price first among equals.
  */
 export function peopleFor(rows, lot, side, { suppressed = new Set(), now = Date.now(), max = MAX_PEOPLE } = {}) {
-  const hits = assignedSearch(rows, lot.asset, side, Number(lot.size_usd) || 0, suppressed, now)
+  const hits = assignedSearch(rows, lot.issuer ?? lot.asset, side, Number(lot.size_usd) || 0, suppressed, now)
     .filter((h) => h.row?.quote || h.row?.evidence);
   const out = [];
   for (const h of hits) {

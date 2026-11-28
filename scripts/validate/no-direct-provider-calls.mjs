@@ -96,12 +96,14 @@ const BOSS_ROUTER = new Set([
   // Named individually, exactly as the others are, so nothing drifts in behind them.
   "src/worker/boss/router/anthropic.ts",
   "src/worker/boss/router/openai.ts",
-  // ── 0338 · Google Gemini direct, FREE TIER ONLY (4 Nov 2026). Same router, same guards, one host
-  // (GEMINI_HOST in backends.ts); its rows are TRAINS_ON_PROMPTS, so no private work reaches it.
+  // Google Gemini direct uses the fixed GEMINI_HOST.
   "src/worker/boss/router/gemini.ts",
-  // Workers AI needs no entry at all — it is the env.AI BINDING, so it calls no fetch, holds no
-  // bearer token and names no host. That absence is the argument for preferring it.
+  "src/worker/boss/router/workersAi.ts", // REST transport for the dedicated Workers Free account.
 ]);
+
+// Google Workspace data transport uses OAuth bearer headers. Its pathname and origin are
+// fixed in the account broker. SDK imports and model host checks still apply to that file.
+const WORKSPACE_BEARER = "src/worker/boss/agents/simoneAccounts.ts";
 
 export function checkSources(files, checkStale = false) {
   const violations = [];
@@ -114,7 +116,7 @@ export function checkSources(files, checkStale = false) {
     if (MODEL_HOSTNAMES.test(source)) {
       violations.push(`${rel}: model API hostname outside Boss OS's model router`);
     }
-    if (/\bfetch\s*\(/.test(source) && BEARER.test(source)) {
+    if (rel !== WORKSPACE_BEARER && /\bfetch\s*\(/.test(source) && BEARER.test(source)) {
       violations.push(`${rel}: fetch + Bearer authorization outside Boss OS's model router (bearer-token model call)`);
     }
   }
@@ -139,6 +141,7 @@ function scanRealTree() {
 
 function selfTest() {
   const clean = {
+    [WORKSPACE_BEARER]: 'await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", { headers: { authorization: "Bearer " + key } });',
     "src/worker/boss/router/openai.ts":
       'await fetch("https://api.openai.com/v1/responses", { headers: { authorization: `Bearer ${key}` } });',
     "src/worker/boss/lanes/writer.ts": 'import { route } from "../router/route";\nawait route(env, input);',
@@ -150,6 +153,7 @@ function selfTest() {
     "provider SDK import in a Boss OS lane": { ...clean, "src/worker/boss/lanes/sneaky.ts": 'import OpenAI from "openai";\nconst c = new OpenAI();' },
     "scoped provider SDK import": { ...clean, "src/worker/boss/sneaky.ts": 'import { Anthropic } from "@anthropic-ai/sdk";' },
     "model hostname literal outside the router": { ...clean, "src/worker/ai/sneaky.ts": 'const url = "https://api.openai.com/v1/chat/completions";' },
+    "model host in the Google Workspace broker": { ...clean, [WORKSPACE_BEARER]: 'await fetch("https://api.openai.com/v1/responses")' },
     "bearer-token model call in the client": { ...clean, "src/client/sneaky.tsx": 'await fetch(url, { headers: { authorization: "Bearer " + key } });' },
     "a router file in a look-alike folder": { ...clean, "src/worker/boss/routerx/openai.ts": 'await fetch("https://api.openai.com/v1")' },
   };

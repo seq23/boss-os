@@ -148,7 +148,7 @@ real roles someone can have when they work for a Boss."*
 
 | | Role | |
 |---|---|---|
-| **Simone** | Chief of Staff | absorbed Task Intake |
+| **Simone** | Chief of Staff | Runs your day and is in charge of everything Boss OS runs |
 | **Camille** | Director of Research | new — the morning report |
 | **Danielle** | Technical Program Manager | |
 | **Zora** | Archivist | |
@@ -263,19 +263,10 @@ plainly.
 
 ### A duty on her word (21 September 2026)
 
-**"is there a lane for me to ask for a new duty to my Boss OS agents?"** `duties/author.ts` had
-drafted a proper duty from a phrase for weeks and `POST /employees/duties/draft` filed it as a
-`duty_created` card — and nothing invoked either. Now: `#<seat> new duty <her words>` to
-boss@sequoiataylor.com (or `#simone new duty <seat> …`) comes back as the full draft with every
-refusal; `approved` on the thread decides the same judgement call the Inbox button decides
-(`approvals/decide.ts`, extracted from the route so the mail door takes the identical path);
-`changes: …` redrafts; `your call` in the request creates at once with the phrase on the record.
-**Team → Duties** lists every duty per seat (cadence, executor, last run, next run, outcome) and has
-the same door with a preview. `duties/create.ts` is the ONE writer of `standing_duties` at runtime;
-`validate:duty-birth` pins that, the two roads to it, the check above the write, the mail calls
-below the sender refusal, and `INSTALLED_LOCAL_JOBS` equal to the installer. A local-job duty whose
-script is not installed is a `NAMED STOP [NO_SUCH_SCRIPT]`, never a row. Operator steps:
-`docs/boss/OPERATIONS.md` → "How to give an employee a duty". Migration `0267`.
+New mail goes through Simone. To schedule a recurring duty, use **Team → Duties → Add a
+duty**, preview it, and approve its Inbox card. Replies to existing draft threads still
+reach their records and can approve, hold or revise the draft. `duties/create.ts` writes
+the schedule after checking that the duty can run.
 
 ### 22 October 2026 — executors, new duties, the spend rule, LP follow-ups
 

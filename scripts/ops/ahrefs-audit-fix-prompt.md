@@ -21,6 +21,28 @@ else is refused, and every refusal turns this pass red as `NAMED STOP [PERMISSIO
 commands the way the list names them: `~/…`, never the full home path; `cd <dir>` and then `git …`,
 never `git -C`; one command per call, no `;`, `&&` or `$( )` chains.
 
+**Your scratch folder is `<scratch>`** (emptied at the start of every pass; `$TMPDIR` points at it). Put every
+crawl, fetched page, log and helper script there, never in `/tmp` (outside your folders, so `jq`, `grep`,
+`rg` and `head` on it are refused). Commands the list allows, in the form it allows them (proven by
+`scripts/ops/sr-fix-permissions-probe.mjs`):
+- **No `>` into a file, ever**: dontAsk refuses every redirect. Save main's copy with
+  `git show --output=<scratch-abs>/<name> origin/main:<path>`, a live page with `curl -sS <url> -o <scratch>/<name>`,
+  anything else with the Write tool; read a long log through a pipe (`npm test 2>&1 | tail -80`).
+- **A helper script** is a file you Write into `<scratch>`, then `node <scratch>/<file>` or
+  `python3 <scratch>/<file>`; no heredocs into files and no `VAR=value` prefixes (write the variable into the script).
+- **Tests**: `npm test`, `npx vitest run <file>`, `npm run <script>`.
+- **Deleting**: a tracked file with `git rm -q -- <path>` (no `-f`, no `-r`); an untracked file in your worktree with
+  `rm ~/GitHub/.wt-danielle-<…>/<path>`, one file per call, its full `~/` path. Nothing else is deleted.
+- **Your own branch**: `git reset --hard origin/danielle/site-audit-<stamp>` or `git reset --hard FETCH_HEAD`;
+  push with `git push origin HEAD:danielle/site-audit-<stamp>` or `git push -u origin HEAD`. Never `-f`, `+` or `main`.
+- **A PR body is a file**: Write it into `<scratch>` and pass `--body-file`, never `--body "…"` (backticks in it are refused).
+- **Another worktree's state**: `cd` into it, then `git status --short`; `git -C` is refused.
+
+**Every turn re-reads this whole session, so the number of turns is what this pass costs.** When calls
+do not depend on each other, make them in ONE message: the files and greps you need to understand a
+template, the live pages you want to fetch, several Edits to one file. Read a file once, in full or in
+the ranges you need, rather than in many small slices.
+
 ## 1. Find the reports
 
 Ahrefs Site Audit mail lands in **`seq.taylor@gmail.com`** from **`sa@ahrefs.com`**. Use the Gmail
@@ -63,7 +85,7 @@ UI access"** — that sentence is what the 15 and 16 Oct passes wrote nine times
 The mail tells you WHICH SITE and roughly WHAT CLASS. For every flagged site, crawl it yourself:
 
 ```
-python3 ~/GitHub/boss-os/scripts/ops/site-crawl.py crawl <domain> --out /tmp/crawl-<domain>.json
+python3 ~/GitHub/boss-os/scripts/ops/site-crawl.py crawl <domain> --out <scratch>/crawl-<domain>.json
 ```
 
 It reads the sitemap (cap 400 pages), checks every `<a href>`, canonical, hreflang and `<img src>`
@@ -77,7 +99,9 @@ link — leave those alone unless a GET in a real browser UA also fails.
 
 Every defect your crawl confirms in a fixable repository is yours to fix, whatever the mail's
 headline said. Put the crawl's `pages_crawled`, `sitemap_total` and `counts` on the finding row as
-`crawl` — the runner turns a `surfaced` or `fixed_pr` row with no crawl behind it RED (`NOT_CRAWLED`).
+`crawl` when you crawled; otherwise give every row its `domain` and the runner crawls it after you finish
+(`site-audit-lib.mjs finish`), so never crawl only to fill that field. A `surfaced` or `fixed_pr` row the
+runner cannot crawl either is RED (`NOT_CRAWLED`).
 
 ### A CRAWL THAT FAILED: READ WHY, THEN PROBE FROM OUTSIDE
 
@@ -91,7 +115,7 @@ headline said. Put the crawl's `pages_crawled`, `sitemap_total` and `counts` on 
    `AHREFS_CRAWL_CREDITS:`, and still crawl the site yourself so its real state is known.
 2. Otherwise run the outside probe:
    ```
-   python3 ~/GitHub/boss-os/scripts/ops/site-crawl.py probe <domain> --out /tmp/probe-<domain>.json
+   python3 ~/GitHub/boss-os/scripts/ops/site-crawl.py probe <domain> --out <scratch>/probe-<domain>.json
    ```
    It checks DNS, TLS, the start URL's redirects, Cloudflare challenge pages, robots.txt for
    AhrefsBot and AhrefsSiteAudit and the status those agents get. Its `verdict`:
@@ -110,7 +134,7 @@ the mail's. A count from an email is not evidence; a 404 your crawl hit is.
 Owner, 25 Oct 2026: her Search Readiness Checklist enforces itself on every grid repo site. Every
 Monday `npm run sites:audit` checks each site and writes one brief per failure to
 **`~/.boss-os/search-readiness/fix-queue.json`** (`npm run sites:fix-queue` prints it). Read it every
-run. Each brief names the `domain`, the `repo`, the checklist `item_id` and `item_title`, the
+run (a scoped pass gets its briefs in YOUR PASS PACKET instead, read by code). Each brief names the `domain`, the `repo`, the checklist `item_id` and `item_title`, the
 `failure`, the `missing_urls` (for hyperlocal coverage: every town, neighborhood, hospital or
 service × town page the site's coverage manifest says must exist) and the `evidence`.
 
@@ -206,7 +230,9 @@ any more** (owner, 16 Oct 2026): fix it like any other repo — in a worktree, a
 
 ### IN_FLIGHT: never duplicate work already open
 
-Other agents fix these sites too. Before fixing, ask:
+Other agents fix these sites too. A scoped pass's packet lists the repo's open work (every open PR with
+the files it changes, every pushed branch with commits of its own and no merged or closed PR): read it and
+decide. Otherwise, or when the packet says UNREAD, ask before fixing:
 
 ```
 node ~/GitHub/boss-os/scripts/ops/site-audit-lib.mjs inflight <repo> <term> [<term>...]
@@ -385,16 +411,11 @@ records the queue file and the brief ids it handed you, and the reporter sends t
 
 ---
 
-## 6. Clean up and finish with the sentinel
+## 6. Finish with the sentinel
 
-After pushing each finished repository's work, leave its worktree (`cd` elsewhere), then run:
-
-```sh
-bash ~/.boss-os/runtime/scripts/ops/audit-worktree.sh --prune-only <repo>
-```
-
-This fetches origin and removes only clean audit worktrees whose commits are all on origin,
-along with their audit branches. Dirty worktrees and unpushed commits are kept and reported.
+Leave your worktrees where they are: the runner lands from them, and the next `audit-worktree.sh` cut
+in that repository removes the clean ones whose commits are all on origin (dirty or unpushed ones are
+kept and reported).
 
 Print this as the last line, exactly:
 

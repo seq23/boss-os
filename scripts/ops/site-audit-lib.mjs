@@ -11,6 +11,9 @@
  *                               — ONCE PER PULL REQUEST, however many rows it fixed, one LAND line each
  *   scope <repo> [ids]          the queue briefs a scoped pass was handed: its search evidence
  *   repo-for <domain>           which repository serves a domain, from the one list (domainRepos.mjs)
+ *   packet <repo> [ids]         a scoped pass's briefs, repo map and open work, read before the model starts
+ *   finish <findings.json>      crawls the live site of every row that claims a defect and has no crawl yet
+ *   tokens <transcript.jsonl>   what a Claude pass cost: SESSION-TOKENS input=<n> output=<n> turns=<n>
  *   verdict <findings.json>     RULE 0: a pass that left fixable defects unfixed exits RED, named
  *
  * WHY LANDING MOVED IN HERE. The first version of this duty said "IT MERGES NOTHING. She merges."
@@ -28,14 +31,14 @@
  * `AUDIT-VERDICT: GREEN fixed=0 in_flight=6`, a pass that ran and did nothing, which Rule 0 forbids.
  */
 
-import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mayAutoFix } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
-import { scopeSnapshot } from "../../src/shared/boss/siteAudit/evidence.mjs";
-import { repoForDomain } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
+import { scopeSnapshot, scopeBriefs } from "../../src/shared/boss/siteAudit/evidence.mjs";
+import { repoForDomain, domainOfRow } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
 import { heldForOwner } from "../../src/shared/boss/searchReadiness/ownerApproval.mjs";
 
 import { orphanVerdict, mergedOnMain, NEEDS_WORKER, clientApprovalHold } from "../../src/shared/boss/searchReadiness/orphanPr.mjs";
@@ -189,6 +192,179 @@ export function inflight(repo, terms) {
     }
   });
   return matchInFlight(prs, branches, terms);
+}
+
+/** One line saying which repository serves a domain, as `repo-for` prints it. */
+export function repoForLine(domain) {
+  const r = repoForDomain(domain);
+  return r ? (r.repo ? `REPO ${r.repo} (${r.source})` : `NO_REPO ${r.why}`) : "UNKNOWN: this domain is in neither sites.json nor AUDITED_ELSEWHERE (src/shared/boss/siteAudit/domainRepos.mjs); add it there with its repo or the reason it has none.";
+}
+
+/*
+ * ─── THE PASS'S ENVELOPE IS CODE, NOT TURNS (27 Nov 2026, the ahrefs-code-tools job) ─────────────
+ *
+ * Measured over the 165 Claude passes of the 30 days to 27 Nov (~/.claude/projects transcripts): 7.07M
+ * input tokens a pass, 57.8 model turns, 53 of them a single tool call, and every turn re-reads the
+ * whole session. Tool output was only ~26K tokens of a pass: the cost is the NUMBER of turns. A slice
+ * of those turns were the same every pass and needed no judgement: reading the queue for this repo,
+ * asking repo-for, listing open PRs and running the keyword in-flight check, then, after the PR,
+ * crawling the site only to copy pages_crawled onto the row and pruning. Code does those now:
+ *
+ *   passPacket   before the model: the briefs exactly as the queue holds them (every id the pass was
+ *                handed, or named as missing), the repository for each domain, and the repo's open work
+ *                (every open PR with what it changes, every pushed branch with commits of its own). The
+ *                model decides "already in flight" by reading that, not by a term match.
+ *   finishPass   after the model: crawls each claimed row's live site once per domain and records
+ *                `crawl`. A crawl that fails, times out or reads no sitemap leaves the row uncrawled
+ *                (`crawl_error`), so the verdict stays RED (NOT_CRAWLED): an outage is never "crawled".
+ */
+
+const OPEN_WORK_FILES = 40;
+/** This file as the worker types it (`~/…`, the allow list's form), wherever the runner's checkout is. */
+const SELF = fileURLToPath(import.meta.url).replace(homedir(), "~");
+
+/** Pure: the open work of a repo from `gh pr list` JSON and the pushed branches (`{ name, ahead }`). */
+export function openWorkFrom(prs, branches, defaultBranch = "main") {
+  const heads = new Set((prs ?? []).map((p) => p.headRefName));
+  return {
+    prs: (prs ?? []).map((p) => {
+      const files = (p.files ?? []).map((f) => f.path ?? f);
+      return {
+        number: p.number, url: p.url, title: p.title, branch: p.headRefName, draft: Boolean(p.isDraft),
+        own: String(p.headRefName ?? "").startsWith("danielle/site-audit-"),
+        files: files.slice(0, OPEN_WORK_FILES), more_files: Math.max(0, files.length - OPEN_WORK_FILES),
+      };
+    }),
+    // A branch with no commits of its own (merged, or never diverged) is not work in progress (30 Oct 2026).
+    branches: (branches ?? []).filter((b) => b.name !== defaultBranch && !/^(main|master|gh-pages)$/.test(b.name) && !heads.has(b.name) && !(Number(b.ahead) === 0)),
+  };
+}
+
+/**
+ * The open work of `slug` read from GitHub, or `{ unread }` naming why it could not be read (never an
+ * empty list). A branch whose pull request was merged or closed is finished work, not work in progress:
+ * a squash merge leaves its commits "ahead" for ever (keepmyproof, 27 Nov 2026: 87 such branches).
+ */
+export function readOpenWork(slug, { run = (args) => execFileSync("gh", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }) } = {}) {
+  let prs, ended, names, defaultBranch;
+  try {
+    prs = JSON.parse(run(["pr", "list", "-R", slug, "--state", "open", "--limit", "100", "--json", "number,title,headRefName,url,isDraft,files"]));
+    ended = JSON.parse(run(["pr", "list", "-R", slug, "--state", "all", "--limit", "1000", "--json", "headRefName,state"]));
+    names = JSON.parse(run(["api", `repos/${slug}/branches?per_page=100`, "--jq", "[.[].name]"]));
+    defaultBranch = String(run(["api", `repos/${slug}`, "--jq", ".default_branch"])).trim();
+    if (!Array.isArray(prs) || !Array.isArray(ended) || !Array.isArray(names) || !defaultBranch) throw new Error("GitHub answered with something that is not a list");
+  } catch (e) {
+    return { unread: `could not read ${slug}'s open PRs and branches from GitHub (${String(e?.message ?? e).split("\n")[0].slice(0, 160)})` };
+  }
+  const open = new Set(prs.map((p) => p.headRefName));
+  const done = new Set(ended.filter((p) => p.state === "MERGED" || p.state === "CLOSED").map((p) => p.headRefName));
+  const branches = names.filter((n) => n !== defaultBranch && !/^(main|master|gh-pages)$/.test(n) && !open.has(n) && !done.has(n)).map((name) => {
+    try { return { name, ahead: JSON.parse(run(["api", `repos/${slug}/compare/${defaultBranch}...${name}`, "--jq", "{ahead_by}"])).ahead_by }; }
+    catch { return { name, ahead: "unknown" }; } // unread: kept, so it counts as possible work, never as none
+  });
+  return openWorkFrom(prs, branches, defaultBranch);
+}
+
+/** Pure: the packet a scoped pass works from. Every id it was handed is a brief or a named missing id. */
+export function passPacket({ queue, queueFile, repo, briefIds = [], openWork, repoFor = repoForLine }) {
+  const { wanted } = scopeBriefs(queue, repo, briefIds);
+  const found = new Set(wanted.map((b) => b.id));
+  const domains = [...new Set(wanted.map((b) => b.domain).filter(Boolean))];
+  return {
+    repo, queue_file: queueFile, queue_written_at: queue?.written_at ?? null,
+    briefs: wanted,
+    missing_ids: briefIds.filter((id) => !found.has(id)),
+    approved_sites: Array.isArray(queue?.approved_sites) ? queue.approved_sites : [],
+    repo_for: Object.fromEntries(domains.map((d) => [d, repoFor(d)])),
+    open_work: openWork,
+  };
+}
+
+/** The packet as the model reads it: the briefs verbatim, one JSON per line, and the rest in short lines. */
+export function packetText(pk) {
+  const ow = pk.open_work ?? { unread: "no open-work read was made" };
+  const work = ow.unread
+    ? [`OPEN WORK: UNREAD — ${ow.unread}. Before you fix each brief, run \`node ${SELF} inflight ${pk.repo} <term...>\` as section 2 says.`]
+    : [
+        `OPEN WORK in ${pk.repo}: ${ow.prs.length} open PR(s), ${ow.branches.length} pushed branch(es) with commits of their own. Decide IN_FLIGHT by reading what each one changes; a PR marked OWN LANE is yours to finish, never in_flight.`,
+        ...ow.prs.map((p) => `- PR #${p.number}${p.draft ? " [draft]" : ""}${p.own ? " [OWN LANE]" : ""} ${p.url} branch ${p.branch} — ${p.title} — files: ${p.files.join(", ") || "none"}${p.more_files ? ` (+${p.more_files} more: gh pr view ${p.number})` : ""}`),
+        ...ow.branches.map((b) => `- branch ${b.name} (${b.ahead} commit(s) ahead)`),
+      ];
+  return [
+    `## YOUR PASS PACKET (read by code before you started)`,
+    ``,
+    `The queue (${pk.queue_file}, written ${pk.queue_written_at ?? "?"}) was read for you: do not read it again, and do not run repo-for for these domains.`,
+    `BRIEFS (${pk.briefs.length}, exactly as the queue holds them):`,
+    ...pk.briefs.map((b) => JSON.stringify(b)),
+    ...(pk.missing_ids.length ? [`NOT IN THE QUEUE ANY MORE (record each as a \`none\` row saying so): ${pk.missing_ids.join(", ")}`] : []),
+    ...(pk.approved_sites.length ? [`APPROVED SITES this cycle: ${pk.approved_sites.join(", ")}`] : []),
+    `REPO FOR EACH DOMAIN (site-audit-lib.mjs repo-for):`,
+    ...Object.entries(pk.repo_for).map(([d, line]) => `- ${d}: ${line}`),
+    ...work,
+  ].join("\n");
+}
+
+/** The runner's crawl of one domain: { crawl } with what the row records, or { error } naming why not. */
+export function defaultCrawl(domain, { outDir = process.env.BOSS_OS_SITE_AUDIT_DIR ?? tmpdir(), crawler = process.env.SITE_CRAWL_BIN ?? join(dirname(fileURLToPath(import.meta.url)), "site-crawl.py"), timeoutS = 900 } = {}) {
+  const out = join(outDir, `crawl-${String(domain).replace(/[^a-z0-9.-]/gi, "_")}.json`);
+  try { rmSync(out, { force: true }); } catch { /* an old file is replaced or the read below fails */ }
+  const r = spawnSync("timeout", [String(timeoutS), "python3", crawler, "crawl", domain, "--out", out], { encoding: "utf8" });
+  if (r.status !== 0) return { error: `the crawl of ${domain} exited ${r.status ?? r.signal ?? "?"}${r.status === 124 ? " (timed out)" : ""}: ${lastLine(r.stderr || r.stdout)}` };
+  let res;
+  try { res = JSON.parse(readFileSync(out, "utf8")); } catch { return { error: `the crawl of ${domain} wrote no readable result` }; }
+  return crawlRecord(domain, res);
+}
+
+/** Pure: what a row records from a crawl result, or { error } when the crawl never reached the site. */
+export function crawlRecord(domain, res) {
+  const pages = Number(res?.pages_crawled), total = Number(res?.sitemap_total);
+  // No sitemap read means the crawl saw at most a homepage it could not confirm: the site or the network was down.
+  if (!(pages > 0) || !(total > 0)) return { error: `the crawl of ${domain} read no sitemap pages (pages_crawled=${res?.pages_crawled ?? "?"}, sitemap_total=${res?.sitemap_total ?? "?"}): site or network unreachable` };
+  return { crawl: { pages_crawled: pages, sitemap_total: total, counts: res.counts ?? {}, by: "runner" } };
+}
+
+/**
+ * WHAT A CLAUDE PASS COST, FROM ITS OWN TRANSCRIPT (27 Nov 2026): `SESSION-TOKENS input=<n> output=<n>
+ * turns=<n>`, input = fresh + cache read + cache write, each model call counted once (a call is written
+ * as several lines sharing one message id). The runner logs it after every Claude pass, so the cost of
+ * the next pass is a read of its log, not a guess. A transcript that cannot be read, or holds no model
+ * call, is `SESSION-TOKENS unread (<why>)`, never 0.
+ */
+export function sessionTokensLine(text) {
+  const seen = new Set();
+  let input = 0, output = 0;
+  for (const line of String(text ?? "").split("\n")) {
+    let e; try { e = JSON.parse(line); } catch { continue; }
+    if (e?.type !== "assistant" || e.isSidechain) continue;
+    const id = e.message?.id, u = e.message?.usage;
+    if (!id || !u || seen.has(id)) continue;
+    seen.add(id);
+    input += (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+    output += u.output_tokens ?? 0;
+  }
+  return seen.size ? `SESSION-TOKENS input=${input} output=${output} turns=${seen.size}` : "SESSION-TOKENS unread (the transcript holds no model call)";
+}
+
+/** Records `crawl` on every row that claims a defect and has none, one crawl per domain. Returns FINISH lines. */
+export function finishPass(payload, { crawl = defaultCrawl } = {}) {
+  const lines = [];
+  const seen = new Map();
+  for (const f of payload?.findings ?? []) {
+    if (!NEEDS_CRAWL.has(f.disposition) || (f.crawl && Number(f.crawl.pages_crawled) > 0)) continue;
+    const domain = domainOfRow(f);
+    if (!domain) { f.crawl_error = "the row names no domain, so the runner could not crawl it"; lines.push(`FINISH NOT_CRAWLED ${f.project ?? "?"}: ${f.crawl_error}`); continue; }
+    if (!seen.has(domain)) {
+      let r;
+      try { r = crawl(domain); } catch (e) { r = { error: `the crawl of ${domain} threw: ${String(e?.message ?? e).slice(0, 160)}` }; }
+      seen.set(domain, r && (r.crawl || r.error) ? r : { error: `the crawl of ${domain} returned nothing` });
+      const got = seen.get(domain);
+      lines.push(got.crawl ? `FINISH crawled ${domain}: pages=${got.crawl.pages_crawled}/${got.crawl.sitemap_total}` : `FINISH NOT_CRAWLED ${domain}: ${got.error}`);
+    }
+    const got = seen.get(domain);
+    if (got.crawl) { f.crawl = { ...got.crawl }; delete f.crawl_error; } else f.crawl_error = got.error;
+  }
+  if (!lines.length) lines.push("FINISH nothing to crawl: every row that claims a defect already carries its crawl");
+  return lines;
 }
 
 /**
@@ -518,16 +694,37 @@ if (isMain) {
     const snap = scopeSnapshot({ queue: JSON.parse(readFileSync(queueFile, "utf8")), queueFile, repo: rest[0], briefIds: String(rest[1] ?? "").split(/[\s,]+/).filter(Boolean) });
     console.log(JSON.stringify(snap, null, 2));
   } else if (cmd === "repo-for") {
-    const r = repoForDomain(rest[0]);
-    console.log(r ? (r.repo ? `REPO ${r.repo} (${r.source})` : `NO_REPO ${r.why}`) : "UNKNOWN: this domain is in neither sites.json nor AUDITED_ELSEWHERE (src/shared/boss/siteAudit/domainRepos.mjs); add it there with its repo or the reason it has none.");
-    process.exit(r ? 0 : 3);
+    console.log(repoForLine(rest[0]));
+    process.exit(repoForDomain(rest[0]) ? 0 : 3);
+  } else if (cmd === "packet") {
+    const queueFile = process.env.SR_QUEUE_FILE ?? join(homedir(), ".boss-os/search-readiness/fix-queue.json");
+    let queue;
+    try { queue = JSON.parse(readFileSync(queueFile, "utf8")); } catch (e) {
+      console.log(`NAMED STOP [NO_PASS_PACKET] the queue ${queueFile} could not be read (${String(e?.message ?? e).split("\n")[0]}); a queue pass never runs without its briefs.`);
+      process.exit(11);
+    }
+    let slug = null, openWork;
+    try { slug = repoSlug(rest[0]); } catch (e) { openWork = { unread: `no checkout of ${rest[0]} to name its GitHub repo (${String(e?.message ?? e).split("\n")[0].slice(0, 120)})` }; }
+    if (slug) openWork = readOpenWork(slug);
+    const pk = passPacket({ queue, queueFile, repo: rest[0], briefIds: String(rest[1] ?? "").split(/[\s,]+/).filter(Boolean), openWork });
+    console.log(packetText(pk));
+  } else if (cmd === "tokens") {
+    let text;
+    try { text = readFileSync(rest[0], "utf8"); } catch (e) { console.log(`SESSION-TOKENS unread (${String(e?.message ?? e).split("\n")[0].slice(0, 160)})`); process.exit(0); }
+    console.log(sessionTokensLine(text));
+  } else if (cmd === "finish") {
+    if (!existsSync(rest[0])) { console.log(`NAMED STOP [NO_FINDINGS_FILE] ${rest[0]}`); process.exit(9); }
+    const payload = JSON.parse(readFileSync(rest[0], "utf8"));
+    const lines = finishPass(payload);
+    writeFileSync(rest[0], JSON.stringify(payload, null, 2));
+    for (const l of lines) console.log(l);
   } else if (cmd === "inflight") {
     const hit = inflight(rest[0], rest.slice(1));
     // Our own lane's open PR is not someone else's work in flight: the pass finishes it (9 Nov 2026).
     if (hit?.own) console.log(`RESUME_OWN pr ${hit.ref} branch ${hit.branch} — your own unfinished PR: finish it on its branch (FINISH YOUR OWN OPEN PULL REQUESTS); never record in_flight against it`);
     else console.log(hit ? `IN_FLIGHT ${hit.kind} ${hit.ref}${hit.title ? ` — ${hit.title}` : ""}` : "CLEAR");
   } else {
-    console.error("usage: site-audit-lib.mjs verdict|land <findings.json> | inflight <repo> <term...> | scope <repo> [ids] | repo-for <domain>");
+    console.error("usage: site-audit-lib.mjs verdict|land|finish <findings.json> | inflight <repo> <term...> | scope|packet <repo> [ids] | repo-for <domain>");
     process.exit(2);
   }
 }

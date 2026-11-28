@@ -17,7 +17,7 @@ export function employeeMail(
     thread?: string[];
   },
 ): { from: string; to: string[]; reply_to: string; subject: string; text: string; html: string; headers?: Record<string, string>; attachments?: Array<{ filename: string; content: string }> };
-export function postEmployeeMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, fetchImpl?: typeof fetch, opts?: { context?: string | null; seen?: Set<string> }): Promise<Response>;
+export function postEmployeeMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, fetchImpl?: typeof fetch, opts?: { context?: string | null; seen?: Set<string>; idempotencyKey?: string | null }): Promise<Response>;
 /** The door on what would be sent: every repair made, what is still wrong, and whether it must go anyway. */
 export function throughTheDoor(sender: Partial<EmployeeSender> | null, payload: Record<string, any>): { payload: Record<string, any>; repaired: string[]; problems: string[]; mustGo: boolean };
 /** Her address, from BOSS_NOTIFY_TO (the vault or a cloud run's secret); never written in this repo. */
@@ -40,5 +40,5 @@ export function errandMail(i: { to: string; subject: string; text: string; cc?: 
 export function errandPayloadProblems(p: Record<string, any>, o?: { owner?: string }): string[];
 export function postErrandMail(payload: Record<string, any>, fetchImpl?: typeof fetch, o?: { key?: string; commandId?: string | null }): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
 
-export function archiveSentMail(payload: Record<string, any>, id: string, fetchImpl?: typeof fetch, opts?: { commandId?: string | null; key?: string | null }): Promise<boolean>;
-export function flushSentMail(fetchImpl?: typeof fetch, directory?: string): Promise<boolean>;
+export function archiveSentMail(payload: Record<string, any>, id: string, fetchImpl?: typeof fetch, opts?: { commandId?: string | null; key?: string | null; trackErrandThread?: boolean }): Promise<boolean>;
+export function flushSentMail(fetchImpl?: typeof fetch, directory?: string, opts?: { errandKey?: string | null }): Promise<boolean>;

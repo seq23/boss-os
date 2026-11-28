@@ -50,9 +50,14 @@ describe("the briefing duty, due now", () => {
     await dueNow();
     const t0 = Date.now();
     await tick("*/5 * * * *");
-    const duty = await row<any>(`SELECT next_due_at, last_run_at FROM standing_duties WHERE id = 'duty_exec_intel'`);
+    const duty = await row<any>(`SELECT next_due_at, last_run_at, local_hour, local_minute FROM standing_duties WHERE id = 'duty_exec_intel'`);
     expect(duty.last_run_at, "the five-minute tick did not materialise the due duty").toBeGreaterThanOrEqual(t0 - 1000);
-    expect(duty.next_due_at).toBeGreaterThan(t0 + 12 * H);
+    // Its clock moved to its NEXT slot: after now, within a day, at its own Central time. (Was "more than 12 hours
+    // on", which is false every afternoon from 16:00 Central, when the next 04:00 slot is under 12 hours away.)
+    expect(duty.next_due_at).toBeGreaterThan(t0);
+    expect(duty.next_due_at).toBeLessThanOrEqual(t0 + 24 * H);
+    const central = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(duty.next_due_at);
+    expect(central).toBe(`${String(duty.local_hour).padStart(2, "0")}:${String(duty.local_minute).padStart(2, "0")}`);
 
     const run = await row<any>(
       `SELECT r.backend_id, r.status, r.claimed_at, r.task_id FROM backend_runs r JOIN tasks t ON t.id = r.task_id

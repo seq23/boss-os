@@ -5,7 +5,7 @@
 #   settings.json   scripts/ops/noelle-permissions.json with __HOME__, __REPO__ and __RUN__ filled in
 #   gitconfig       her git's only config (GIT_CONFIG_GLOBAL; GIT_CONFIG_NOSYSTEM drops the system osxkeychain
 #                   helper): no credential helper at all, so her git inside the sandbox is logged out
-#   bin/noelle-tool her four vault tools and her two GitHub verbs (push-branch, open-pr: scripts/ops/noelle-github.mjs,
+#   bin/noelle-tool her vault tools and her two GitHub verbs (push-branch, open-pr: scripts/ops/noelle-github.mjs,
 #                   on the Mac's gh login, never the vault); bin/land-after her one way to merge. Both run OUTSIDE the sandbox
 #                   (excludedCommands), so each checks its arguments' shape and starts from an empty environment
 #                   (env -i): nothing she sets, no PATH, NODE_OPTIONS or token of hers, reaches them.
@@ -48,12 +48,18 @@ EOF
 #!/bin/bash -p
 # Noelle's broker; written by scripts/ops/lib/noelle-sandbox.sh. Runs outside her sandbox, from an empty environment.
 # bash -p: no BASH_ENV, no ENV and no exported function of hers is read before this line runs.
-# brain|notice|ledger|backlinks go through the vault; push-branch|open-pr go to GitHub on the Mac's gh login and
+# brain|notice|ledger|backlinks|search-console|post-results go through the vault; push-branch|open-pr go to GitHub on the Mac's gh login and
 # never see the vault. Nothing else: no merge, approve, api, secret, settings or delete verb.
+if [ "\${1:-}" = search-console ] && [ "\$#" -ne 3 ]; then
+  echo "usage: noelle-tool search-console <business> <domain>" >&2; exit 2
+fi
+if [ "\${1:-}" = post-results ] && [ "\$#" -ne 3 ]; then
+  echo "usage: noelle-tool post-results <business> <Buffer post id>" >&2; exit 2
+fi
 case "\${1:-}" in
-  brain|notice|ledger|backlinks) TOOL=(npm run --silent vault:run -- node scripts/ops/noelle.mjs) ;;
+  brain|notice|ledger|backlinks|search-console|post-results) TOOL=(npm run --silent vault:run -- node scripts/ops/noelle.mjs) ;;
   push-branch|open-pr) TOOL=(node scripts/ops/noelle-github.mjs) ;;
-  *) echo "usage: noelle-tool brain|notice|ledger|backlinks|push-branch|open-pr ..." >&2; exit 2 ;;
+  *) echo "usage: noelle-tool brain|notice|ledger|backlinks|search-console|post-results|push-branch|open-pr ..." >&2; exit 2 ;;
 esac
 CALLER_CWD="\$PWD"
 cd $(printf %q "$repo") || exit 6

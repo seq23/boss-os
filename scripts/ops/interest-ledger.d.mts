@@ -1,7 +1,20 @@
-/** Types for the pure exports of `interest-ledger.mjs` the tests touch. See `ics.d.mts` for why this is hand-written. */
-import type { HeaderMap } from "./mail-bulk.d.mts";
-export function bulkReason(headers: HeaderMap): string | null;
-export function shapeReason(text: string): string | null;
-export function withoutQuoted(text: string): string;
-export const SIZE_RE: RegExp;
-export const SIDE_RE: RegExp;
+type Reader = typeof import("../../src/worker/boss/router/freeModel.ts").readWorkerSource;
+
+export function scanBrokerage(options: {
+  directory: string;
+  mailbox: string;
+  api: (url: string) => Promise<unknown>;
+  read: (input: Parameters<Reader>[0]) => ReturnType<Reader>;
+  now?: number;
+  since?: string;
+  backfill?: boolean;
+}): Promise<{
+  status: "complete" | "unavailable" | "allowance-exhausted";
+  window: { start: number; end: number };
+  census: number;
+  kept: number;
+  dropped: number;
+  held: number;
+  never_read: number;
+  held_now: string[];
+}>;

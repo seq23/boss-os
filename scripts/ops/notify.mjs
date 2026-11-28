@@ -32,8 +32,8 @@
  * only for system mail that no employee owns.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, statSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, statSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { outboundFilesPlan } from "../../src/shared/boss/service/files.mjs";
@@ -284,9 +284,27 @@ export function mailStateDir(envName, leaf, env = process.env) {
   return join(homedir(), ".boss-os", leaf);
 }
 const sentMailDir = () => mailStateDir("BOSS_OS_SENT_MAIL_DIR", "sent-mail-pending");
+const isMessageId = (id) => typeof id === "string" && /^<[^<>\s]+@[^<>\s]+>$/.test(id);
+
+async function sentMessageId(fetchImpl, id, key) {
+  if (!key) return null;
+  try {
+    const got = await fetchImpl(`${RESEND}/${encodeURIComponent(id)}`, { headers: { authorization: `Bearer ${key}` } });
+    const metadata = got.ok ? await got.json() : null;
+    return isMessageId(metadata?.message_id) ? metadata.message_id : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveMailRetry(file, entry) {
+  const temp = `${file}.${randomUUID()}.tmp`;
+  writeFileSync(temp, JSON.stringify(entry), { mode: 0o600 });
+  renameSync(temp, file);
+}
 
 /** Durable private retry copies: an archive outage must never cause the email to be sent twice. */
-export async function archiveSentMail(payload, id, fetchImpl = fetch, { commandId = null, key = null } = {}) {
+export async function archiveSentMail(payload, id, fetchImpl = fetch, { commandId = null, key = null, trackErrandThread = false } = {}) {
   if (!id) throw new Error("The accepted email has no identifier.");
   const directory = sentMailDir();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -295,27 +313,34 @@ export async function archiveSentMail(payload, id, fetchImpl = fetch, { commandI
   const record = { provider_id: id, message_id: id, from: payload.from, employee_address: payload.reply_to ?? payload.from, to: [...(payload.to ?? []), ...(payload.cc ?? []), ...(payload.bcc ?? [])].join(", "), subject: payload.subject, text: payload.text ?? "", html: payload.html ?? null,
     command_id: commandId ?? refs.find((r) => r.startsWith("cmd_")) ?? null, in_reply_to: payload.headers?.["In-Reply-To"] ?? null, sent_at: Date.now(),
     layout: payload.headers?.["X-Boss-Layout"] ?? null };
-  writeFileSync(file, JSON.stringify(record), { mode: 0o600 });
+  const entry = { ...record, trackErrandThread };
+  saveMailRetry(file, entry);
   // The provider receipt id is not the RFC Message-ID her reply will carry in References.
-  if (key) {
-    try {
-      const got = await fetchImpl(`${RESEND}/${id}`, { headers: { authorization: `Bearer ${key}` } });
-      const metadata = got.ok ? await got.json() : null;
-      if (metadata?.message_id) { record.message_id = metadata.message_id; writeFileSync(file, JSON.stringify(record), { mode: 0o600 }); }
-    } catch { /* The receipt and exact words remain durable; an unavailable read cannot resend. */ }
+  if (!trackErrandThread) {
+    const messageId = await sentMessageId(fetchImpl, id, key);
+    if (messageId) saveMailRetry(file, { ...entry, message_id: messageId });
   }
-  return flushSentMail(fetchImpl, directory);
+  return flushSentMail(fetchImpl, directory, { errandKey: trackErrandThread ? key : null });
 }
-export async function flushSentMail(fetchImpl = fetch, directory = sentMailDir()) {
+export async function flushSentMail(fetchImpl = fetch, directory = sentMailDir(), { errandKey = null } = {}) {
   if (!process.env.BOSS_PASSCODE || !existsSync(directory)) return false;
   try {
     const cookie = await bossCookieFor(fetchImpl);
     for (const name of readdirSync(directory).filter((n) => n.endsWith(".json"))) {
       const file = join(directory, name);
-      const record = JSON.parse(readFileSync(file, "utf8"));
+      const { trackErrandThread, archived, ...record } = JSON.parse(readFileSync(file, "utf8"));
+      if (trackErrandThread && record.message_id === record.provider_id) {
+        const messageId = await sentMessageId(fetchImpl, record.provider_id, errandKey);
+        if (messageId) {
+          record.message_id = messageId;
+          saveMailRetry(file, { ...record, trackErrandThread });
+        } else if (archived) continue;
+      }
       const r = await fetchImpl(`${BOSS_ORIGIN}/api/boss/mail/sent`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(record) });
       if (!r.ok) throw new Error(`Mail history refused the record (${r.status})`);
-      unlinkSync(file);
+      if (trackErrandThread && record.message_id === record.provider_id) {
+        saveMailRetry(file, { ...record, trackErrandThread, archived: true });
+      } else unlinkSync(file);
     }
     return true;
   } catch (e) {
@@ -353,7 +378,7 @@ export function throughTheDoor(sender, payload) {
   };
 }
 
-export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { context = null, seen = runSeen() } = {}) {
+export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { context = null, seen = runSeen(), idempotencyKey = null } = {}) {
   if (!(Array.isArray(payload?.to) ? payload.to : [payload?.to]).some((a) => String(a ?? "").trim())) {
     console.error(NO_OWNER_ADDRESS);
     return new Response(JSON.stringify({ message: NO_OWNER_ADDRESS }), { status: 422, headers: { "content-type": "application/json" } });
@@ -365,7 +390,7 @@ export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { con
   if (door.problems.length) await holdMail(sender, door.payload, door.problems, fetchImpl, { sentAnyway: true });
   if (door.repaired.length) console.error(`REPAIRED "${payload?.subject}" before sending: ${door.repaired.join("; ")}`);
   // ONE EMAIL PER EVENT IN A RUN: a second email about the same event is not sent, and says so.
-  const event = eventKey(door.payload);
+  const event = idempotencyKey ?? eventKey(door.payload);
   if (seen.has(event)) {
     console.error(`NOT SENT TWICE "${door.payload.subject}": this run already emailed her about it.`);
     return new Response(JSON.stringify({ id: null, duplicate: true }), { status: 200, headers: { "content-type": "application/json" } });
@@ -374,7 +399,7 @@ export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { con
   payload = { ...door.payload, text: String(door.payload.text ?? "").replace(/\u2063/g, "") };
   const res = await fetchImpl(RESEND, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
+    headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}`, ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
     body: JSON.stringify(payload),
   });
   if (res.ok) {
@@ -493,8 +518,7 @@ export async function recordMailRefs({ key, id, refs, payload, context = null },
   let messageId = null;
   for (let i = 0; i < tries && !messageId; i += 1) {
     if (i) await new Promise((r) => setTimeout(r, waitMs));
-    const g = await fetchImpl(`${RESEND}/${id}`, { headers: { authorization: `Bearer ${key}` } }).catch(() => null);
-    messageId = g?.ok ? ((await g.json().catch(() => ({})))?.message_id ?? null) : null;
+    messageId = await sentMessageId(fetchImpl, id, key);
   }
   if (!messageId) return `Resend gave no Message-ID for ${id}`;
   const cookie = await bossCookieFor(fetchImpl);
@@ -539,7 +563,7 @@ export const ERRAND_FROM = "Simone <simone@sequoiataylor.com>";
 export const ERRAND_REPLY_TO = "simone@sequoiataylor.com";
 export function errandMail({ to, subject, text, cc = [], inReplyTo = null }) {
   // In their thread (26 Oct 2026): a follow-up answers THEIR message, so their mail client threads it.
-  const thread = inReplyTo && /^<[^<>\s]+@[^<>\s]+>$/.test(inReplyTo) ? { headers: { "In-Reply-To": inReplyTo, References: inReplyTo } } : {};
+  const thread = isMessageId(inReplyTo) ? { headers: { "In-Reply-To": inReplyTo, References: inReplyTo } } : {};
   return { from: ERRAND_FROM, to: [to], reply_to: ERRAND_REPLY_TO, subject: String(subject).slice(0, 200), text, ...(cc.length ? { cc } : {}), ...thread };
 }
 /** What is wrong with an errand payload, by name. `[]` means it may go. Pure. */
@@ -562,7 +586,7 @@ export async function postErrandMail(payload, fetchImpl = fetch, { key = process
   if (!key) return { ok: false, error: "no BOSS_OS_MAIL_KEY in the environment (run through the vault)" };
   const res = await fetchImpl(RESEND, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${key}` }, body: JSON.stringify(payload) });
   const body = await res.json().catch(() => ({}));
-  if (res.ok && body?.id) await archiveSentMail(payload, body.id, fetchImpl, { commandId, key });
+  if (res.ok && body?.id) await archiveSentMail(payload, body.id, fetchImpl, { commandId, key, trackErrandThread: Boolean(commandId) });
   return res.ok && body?.id ? { ok: true, id: body.id } : { ok: false, error: `${res.status} ${String(body?.message ?? "").slice(0, 200)}` };
 }
 

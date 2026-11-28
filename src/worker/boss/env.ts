@@ -1,4 +1,6 @@
-export interface Env {
+import type { WorkerReadingCredentials } from "./router/freeModel";
+
+export interface Env extends WorkerReadingCredentials {
   DB: D1Database;
   VAULT: R2Bucket;
   SESSIONS: KVNamespace;
@@ -40,6 +42,9 @@ export interface Env {
   GSC_SERVICE_ACCOUNT_JSON?: string;
   /** R3: AES-256 key (base64, 32 bytes) for keys she emails as `SECRET NAME=value`. Absent → the door fails closed. */
   BOSS_OS_SECRET_HANDOFF_KEY?: string;
+  BOSS_SIMONE_GOOGLE_CLIENT_ID?: string;
+  BOSS_SIMONE_GOOGLE_CLIENT_SECRET?: string;
+  BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT?: string;
 
   /**
    * Workers AI. A BINDING, not an HTTP client — which is why it needs no key, no hostname, and no

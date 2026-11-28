@@ -1,0 +1,40 @@
+name: Simone fixture proof
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/simone-proof.yml'
+      - 'e2e/boss-simone.spec.ts'
+      - 'scripts/e2e/render-simone-reply.mjs'
+      - 'scripts/ops/**simone*'
+      - 'src/**/simone*'
+      - 'src/**/TellSimone.tsx'
+      - 'src/**/EmployeePage.tsx'
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    name: Render the reply and exercise both message boxes at 390 px
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e -- e2e/boss-simone.spec.ts
+      - run: node scripts/e2e/render-simone-reply.mjs test-results/simone-email
+        if: always()
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simone-fixture-proof
+          path: test-results/
+          if-no-files-found: error

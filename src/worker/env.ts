@@ -1,5 +1,7 @@
+import type { WorkerReadingCredentials } from "./boss/router/freeModel";
+
 /** Worker environment bindings. Names must match wrangler.toml. */
-export interface Env {
+export interface Env extends WorkerReadingCredentials {
   /** D1 — relational operational truth. */
   WP_OS_DB: D1Database;
   /** R2 — governed binary documents/artifacts only. Optional at runtime; absence degrades cleanly. */
@@ -64,6 +66,9 @@ export interface Env {
   BOSS_EXTRA_OWNER_SENDERS?: string;
   /** R3 (docs/SERVICE_RULES.md): the Worker secret that encrypts a key she emails. Set from the vault. */
   BOSS_OS_SECRET_HANDOFF_KEY?: string;
+  BOSS_SIMONE_GOOGLE_CLIENT_ID?: string;
+  BOSS_SIMONE_GOOGLE_CLIENT_SECRET?: string;
+  BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT?: string;
   BOSS_OS_VERSION?: string;
   BOSS_DEFAULT_PROVIDER?: string;
 }

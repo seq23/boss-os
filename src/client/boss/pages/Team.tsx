@@ -665,12 +665,8 @@ function Owns() {
  *
  * Per employee, every duty with its cadence, executor, last run, next run and last outcome — the
  * roster endpoint has carried all of that for a while and no screen showed it in one place. And
- * "Add a duty": her phrase in, the draft previewed in full (the same letter the mail door sends),
- * then Create files exactly what the mail door files — a card in the Inbox whose Approve creates
- * it. A draft that cannot run is a NAMED STOP here, as it is by mail, and files nothing.
- *
- * The mail door is stated on the screen because it is the door she will actually use from her
- * phone: `#<seat> new duty …` to boss@sequoiataylor.com, reply `approved`.
+ * "Add a duty" previews her request in full. Creating the draft adds an Inbox card, where
+ * approval puts the duty on the schedule. An existing draft can still be answered by email.
  */
 function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
   const [data, setData] = useState<any | null>(null);
@@ -753,10 +749,8 @@ function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
       <p className="eyebrow">Add a duty</p>
       <div className="panel" data-testid="add-duty">
         <p className="row-sub" style={{ marginTop: 0 }}>
-          Say it the way you would say it to her. The draft comes back in full — cadence with the slot, executor, model, delivery,
-          and anything that would stop it — before anything exists. From your phone: email boss@sequoiataylor.com with
-          <code> #&lt;seat&gt; new duty</code> and the same words; reply <code>approved</code> to the draft. Put <em>your call</em> in the
-          request and it is created without waiting.
+          Describe the recurring work in your own words. Preview shows when it runs, who does it,
+          where the result goes and anything blocking it. Approve the draft in the Inbox to add it to the schedule.
         </p>
         <label className="field">
           <span>Who owns it</span>

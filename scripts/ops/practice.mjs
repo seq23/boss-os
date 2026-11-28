@@ -2,7 +2,7 @@
 /**
  * A PRACTICE RUN OF THE BRANCH'S MAILBOX ON REAL MAIL, WRITING NOTHING (owner, 15 Nov 2026: "stop
  * changes taking hours"). Before a change to how her mail is read lands, run it on the email that
- * prompted it and read the brief and the reply it would send.
+ * prompted it and inspect the queue, brief, and attachment diagnostics.
  *
  *   npm run practice -- <mail id>...          # boss_inbound_mail ids (the arrival rows)
  *   npm run practice -- <mail id> --rung gemma   # walk only the free rung whose id contains "gemma"
@@ -56,7 +56,7 @@ export function printable(id, d) {
   const fr = d.first_read;
   return [
     `═══ ${id} — ${d.subject || "(no subject)"}`,
-    `to ${d.to ?? "?"} · ${d.bytes} bytes · ${d.typed_chars} typed characters · would go to: ${d.would_route_to.join(", ") || "nobody"}`,
+    `to ${d.to ?? "?"} · ${d.bytes} bytes · ${d.typed_chars} typed characters · intake queue: ${d.would_route_to.join(", ") || "unavailable"}`,
     "",
     "THE BRIEF",
     ...(fr ? [`  first read by ${fr.reader ?? "no rung"}${fr.stop ? ` — stopped: ${fr.stop}` : ""} `, ...(fr.tried.length ? fr.tried.map((t) => `    tried ${String(t).replace(/\s+/g, " ").slice(0, 110)}`) : ["    tried none"])] : ["  no first read (no words of hers)"]),
@@ -64,9 +64,6 @@ export function printable(id, d) {
     ...(fr ? [`  holds ${fr.holds} · questions ${fr.questions} · unclear ${fr.unclear}`, ...fr.unclear_items.map((u) => `  unclear: "${u.words}" — ${u.missing}`)] : []),
     `  files: heard ${d.files.heard.length} · read ${d.files.read.length} · zips ${d.files.zips.length} · unopened ${d.files.unopened.length}`,
     ...d.files.unopened.map((u) => `  unopened: ${u.filename} — ${u.reason}`),
-    "",
-    `THE REPLY — ${d.got_it.subject}`,
-    d.reply_text,
     "",
   ].join("\n");
 }

@@ -28,7 +28,7 @@ cat > "$PLIST" <<EOF
 <plist version="1.0"><dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
-  <array><string>/bin/bash</string><string>-lc</string><string>cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/simone-commands.mjs</string></array>
+  <array><string>/bin/bash</string><string>-lc</string><string>cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/simone-commands.mjs; old_rc=\$?; npm run --silent vault:run -- node scripts/ops/simone.mjs; agent_rc=\$?; exit \$((old_rc || agent_rc))</string></array>
   <key>StartCalendarInterval</key>
   <array>
 $INTERVALS  </array>

@@ -122,6 +122,7 @@ export function macDueToday({ next_due_at, timezone }, now) {
  *   otherwise                        → run, with her instructions if she wrote any.
  */
 export function briefDecision(brief, { onlyIfDue = false } = {}) {
+  if (brief.operating_stop) return { run: false, code: 10, line: `SKIPPED [OPERATIONS_PAUSED] ${brief.duty_id}: paused by the owner.` };
   if (brief.removed) return { run: false, code: 10, line: `SKIPPED [REMOVED] ${brief.duty_id}: you removed this duty, so it does not run.` };
   if (brief.paused) return { run: false, code: 10, line: `SKIPPED [PAUSED] ${brief.duty_id}: paused on the employee page, so it does not run until you resume it.` };
   if ((onlyIfDue || brief.owner_schedule) && !brief.due) {

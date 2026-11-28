@@ -1,0 +1,29 @@
+name: Chief sign-off
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  chief-signoff:
+    if: github.event_name == 'pull_request_target' || github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted policy
+        uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - name: Inspect pull request metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ops/simone/chief-signoff.mjs

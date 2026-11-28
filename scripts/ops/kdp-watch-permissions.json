@@ -1,6 +1,7 @@
 {
   "_why": "kdp-watch.sh's whole permission list (scripts/validate/claude-runs-locked.mjs checks it): read the case mail, send the case email, read its own state files, write determination.json, read a page in Simone's own Chrome. Nothing else.",
   "permissions": {
+    "defaultMode": "dontAsk",
     "allow": [
       "mcp__claude_ai_Gmail__search_threads",
       "mcp__claude_ai_Gmail__get_thread",

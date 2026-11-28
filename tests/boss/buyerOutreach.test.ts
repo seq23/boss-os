@@ -234,7 +234,7 @@ describe("a reviewed buyer gets a letter, and nothing sends it", () => {
     const task = await env.DB.prepare(`SELECT * FROM tasks WHERE id = ?`).bind(rw.results![0]!.task_id).first<any>();
     expect(task.status).toBe("queued");
     expect(task.employee_id).toBe("emp_research");
-    expect(task.model_access).toBe("private_model_only");
+    expect(task.model_access).toBe("public_model_approved");
     expect(JSON.parse(task.input).outreach_rewrite.rewrite_id).toBe(rw.results![0]!.id);
     expect(JSON.parse(task.input).backend_id).toBeUndefined(); // no seat, no launchd wait
 

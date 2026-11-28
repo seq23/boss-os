@@ -1993,6 +1993,8 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .loops-add { align-self: flex-start; margin-top: 10px; }
 .loops-parked-h { margin-top: 24px; }
 .loops-closed { margin-top: 18px; }
+.loops-proving { margin-top: 18px; }
+.loops-proving .brain-cards { margin-top: 10px; }
 .loops-focus { border-color: var(--gold); }
 .loops-confirm input { overflow-wrap: anywhere; }
 /* ☰ More → Succession Book */

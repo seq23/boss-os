@@ -108,9 +108,9 @@ describe("a public company is not a live deal (item 22)", () => {
       .map(({ company, via }) => ({ company, via }))).toEqual(rows.slice(2));
   });
   it("only a named buyer and seller with fitting size and close price is a match for her email", () => {
-    const m = { seller: { who: "Alder Partners" }, buyer: { who: "Birch Capital" }, fit: { size: "good", price: "good" } };
+    const m = { seller: { who: "Alder Partners", named: true }, buyer: { who: "Birch Capital", named: true }, fit: { size: "good", price: "good" } };
     expect(realMatch(m)).toBe(true);
-    expect(realMatch({ ...m, buyer: { who: "Unnamed" } })).toBe(false);
+    expect(realMatch({ ...m, buyer: { who: "Unnamed", named: false } })).toBe(false);
     expect(realMatch({ ...m, fit: { size: "good", price: "far" } })).toBe(false);
   });
 });

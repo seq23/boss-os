@@ -173,4 +173,28 @@ describe("Open Loops", () => {
     const rc = await env.DB.prepare(`SELECT repo, github_repo, origin, repair_kind FROM repo_changes WHERE task_id = ?`).bind(t!.id).first<any>();
     expect(rc).toMatchObject({ repo: "boss-os", github_repo: "seq23/boss-os", origin: "repair", repair_kind: "open_loop_overdue" });
   });
+  it("landed, waiting on proof: a proving row needs its PR, is never open, overdue or chased, and comes back on request (27 Nov 2026)", async () => {
+    const { isOverdue, visibleLoops, morningSection } = await import("../../src/shared/boss/openLoops/openLoops.mjs");
+    // No PR, or a PR that is not "owner/repo#123": refused, on create and on edit.
+    expect((await apiJson("/api/open-loops", { method: "POST", body: { business: "spry", finish_line: "Keeps every entry", owner: "sequoia", title: "TEST proving no PR", section: "proving" } })).status).toBe(400);
+    expect((await apiJson("/api/open-loops", { method: "POST", body: { business: "spry", finish_line: "Keeps every entry", owner: "sequoia", title: "TEST proving bad PR", section: "proving", proof_pr: "seq-bin 198" } })).status).toBe(400);
+    const row = await create({ title: "TEST synthetic form keeps nothing", owner: "sequoia", next_date: "2026-11-05", next_step: "Check it kept the entry." });
+    expect((await apiJson(`/api/open-loops/${row.id}`, { method: "PUT", body: { section: "proving" } })).status).toBe(400);
+    expect((await apiJson(`/api/open-loops/${row.id}`, { method: "PUT", body: { section: "proving", proof_pr: "seq23/seq-bin#x" } })).status).toBe(400);
+    const moved = await apiJson(`/api/open-loops/${row.id}`, { method: "PUT", body: { section: "proving", proof_pr: "seq23/seq-bin#198" } });
+    expect(moved.status).toBe(200);
+    expect(moved.body.data.loop).toMatchObject({ section: "proving", proof_pr: "seq23/seq-bin#198", status: "open" });
+    // Her row, its date long past: still not on the main list, not late, not in her email, no reminder.
+    const loops = (await list()).loops;
+    expect(visibleLoops(loops).shown.map((l: any) => l.id)).not.toContain(row.id);
+    expect(isOverdue(loops.find((l: any) => l.id === row.id), "2026-11-10")).toBe(false);
+    expect(morningSection(loops, "2026-11-10", { origin: "https://boss.test" }).title).toBe("Your open loops: 0, none overdue");
+    await env.DB.prepare(`DELETE FROM boss_task_notices WHERE kind = 'open_loop_reminder'`).run();
+    const ran = await runOpenLoopsDaily(env as any, NOW);
+    expect(ran).toMatchObject({ ran: true, shown: 0, overdue: 0, repairs: [], reminders: [] });
+    // "Bring back": it is on the main list again (and late), its PR kept for the record.
+    const back = await apiJson(`/api/open-loops/${row.id}`, { method: "PUT", body: { section: "not_finished" } });
+    expect(back.body.data.loop).toMatchObject({ section: "not_finished", proof_pr: "seq23/seq-bin#198" });
+    expect(visibleLoops((await list()).loops).shown.map((l: any) => l.id)).toContain(row.id);
+  });
 });

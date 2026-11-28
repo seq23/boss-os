@@ -3,7 +3,7 @@ import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 import { getBool, getSetting } from "../lib/settings";
 import { AppError } from "../lib/http";
-import { costPolicy } from "../../../shared/boss/governance";
+import { costPolicy, DEFAULT_MODEL_ACCESS } from "../../../shared/boss/governance";
 import { orderCandidates, vendorFamily } from "../../../shared/boss/router/candidateOrder.mjs";
 import { ATTEMPT_DEADLINE_MS, CHAIN_BUDGET_MS, nextAttemptDeadlineMs, RESEARCH_ATTEMPT_DEADLINE_MS } from "./deadlines";
 import { ProviderCallError, WEB_SEARCH_CALL_MICROS, type ChatMessage } from "./types";
@@ -16,7 +16,7 @@ import { laneAllowance, monthWindowStart, routeIsBilled, type Refusal } from "..
 import {
   MAX_ATTEMPTS_PER_BACKEND, breakerState, recordFailure, recordSuccess, trip,
 } from "./breaker";
-import { isPrivateModelRoute, privateLexicon, scanForModelAccess } from "./modelAccess";
+import { isPrivateModelRoute } from "./modelAccess";
 import { bypassFor, predictSpend, type BypassRow } from "./bypass";
 import {
   GRADIENT_HARD_STOP_MICROS, gradientEffect, gradientState, isProtectedWork,
@@ -155,17 +155,7 @@ export interface RouteRequest {
   intakeKind?: string | null;
   risk?: string;
   sensitivity?: string;
-  /**
-   * THE WORK CARD'S OWN LABEL — `public_model_approved` or `private_model_only`.
-   *
-   * It is the axis that governs routing, and it is SEPARATE from the audience axis on purpose.
-   * `internal` vs `external` says who may receive the output and reaches nothing in this file; a
-   * run is not sent to a narrower set of models because a partner is the reader. See
-   * `shared/boss/governance.ts`.
-   *
-   * Absent means `public_model_approved`, and it means it SAFELY: the content scan below runs
-   * either way and can raise the run on its own, so an omitted label costs nothing.
-   */
+  /** Compatibility with callers carrying older work-card metadata. */
   modelAccess?: string | null;
   costMode?: string | null;
   /** Hard ceiling from the task's permission envelope. 0 means lane budget only. */
@@ -184,6 +174,8 @@ export interface RouteRequest {
    * promote a model past privacy, capability, risk or budget — it can only take candidates away.
    */
   onlyProviderId?: string | null;
+  /** Confine a measured trial to the exact candidate whose output was reviewed. */
+  onlyModelId?: string;
   /**
    * THIS WORK NEEDS A STRONG MODEL: when money is being spent on it, try the Claude family first,
    * then OpenAI, then the rest. Free routes still come first and the spend lever still decides
@@ -196,12 +188,6 @@ export interface RouteRequest {
    * lever, the ceilings and the per-run cap all still decide whether it runs.
    */
   webSearch?: boolean;
-  /**
-   * Text this run fetched from public web pages, each an exact substring of a message (meeting-prep
-   * research). The deal-term PATTERNS skip it; the committed-LP names and brain marks still read it.
-   * See `DeclaredAccess.publicWebText` in modelAccess.ts.
-   */
-  publicWebText?: readonly string[];
   /** Overrides the route's output limit. A briefing is far longer than the route's default reply. */
   maxOutputTokens?: number;
   /**
@@ -209,12 +195,6 @@ export interface RouteRequest {
    * routine work (Today's food row) that must never cost money.
    */
   freeOnly?: boolean;
-  /**
-   * A DRAFT THAT INVOLVES AN LP OR DEAL TERMS (owner, Today v4, 31 Oct 2026). Written on her Claude
-   * seat only — never Codex/ChatGPT, never a free or training route, never a cloud model. The Worker
-   * has no Claude seat, so the router refuses it outright: FAIL CLOSED (`confidentialDraftRefusal`).
-   */
-  confidentialDraft?: boolean;
   /**
    * WHICH JOB THIS IS, for its model list (`model_job_policies`, 4 Nov 2026): "meeting_prep",
    * "lp_reply", "summarise"… A run without one, or whose job has no row, routes exactly as before.
@@ -227,17 +207,6 @@ export interface RouteRequest {
    * instead of landing a bad answer. A paid answer is never discarded here; its caller checks it.
    */
   accept?: (text: string) => string | null;
-}
-
-/**
- * THE ONE REFUSAL FOR AN LP / DEAL-TERMS DRAFT ON THE WORKER'S ROUTER. Pure, so the sentence is pinned.
- * The Mac's seat ladder has its own guard (`confidentialLadder`, duties/seatOrder.ts).
- */
-export function confidentialDraftRefusal(): { message: string; hint: string } {
-  return {
-    message: "An LP or deal-terms draft is written on the Claude seat only, so no cloud model may write it",
-    hint: "Run it on the Claude seat on her Mac, or write it from a fixed template.",
-  };
 }
 
 export interface RouteResult {
@@ -478,22 +447,12 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
 
   const risk = opts.risk ?? "low";
   const sensitivity = opts.sensitivity ?? "private";
-  if (opts.confidentialDraft) {
-    const r = confidentialDraftRefusal();
-    await recordDecision(db, {
-      lane: opts.lane, taskId: opts.taskId, employeeId: opts.employeeId, intakeKind: opts.intakeKind, risk, sensitivity,
-      costMode: "n/a", routeId: opts.routeId, modelAccess: "private_model_only",
-      outcome: "blocked_policy", reason: r.message, candidates: [],
-    });
-    throw new RoutingBlocked(r.message, "blocked_policy", r.hint);
-  }
   const costMode = opts.costMode ?? (await getSetting(db, "cost_mode")) ?? "NORMAL";
   const policy = costPolicy(costMode);
   const base = {
     lane: opts.lane, taskId: opts.taskId, employeeId: opts.employeeId,
     intakeKind: opts.intakeKind, risk, sensitivity, costMode, routeId: opts.routeId,
-    /** Filled in the moment the scan answers, below. Null before then, and null means "not yet". */
-    modelAccess: null as string | null,
+    modelAccess: DEFAULT_MODEL_ACCESS,
   };
 
   if (!policy.autonomousSpendAllowed) {
@@ -551,38 +510,11 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
 
   const requireBenchmarkHighRisk = await getBool(db, "require_benchmark_high_risk", true);
 
-  /*
-   * ─── THE CONFIDENTIAL LINE IS DRAWN BEFORE ANY CANDIDATE IS SCREENED ───────
-   *
-   * The owner ruled that LP names and deal terms are confidential, and every model here is
-   * `privacy_class = 'cloud'`, so the existing privacy rule cannot separate the route that may hold
-   * them from the route that may not. This reads the OUTGOING MESSAGES against the names this
-   * database actually holds, plus the patterns that describe the shape of a deal term — see
-   * `confidential.ts` for why it is not a prompt, a wrapper or a caller's promise.
-   *
-   * IT RUNS EVEN WHEN THE CALLER SAID NOTHING. A caller that declares `restricted` is believed
-   * immediately; a caller that declares nothing is still read. The two cover each other's gap, and
-   * the mechanism does not depend on every caller ever written remembering a flag.
-   *
-   * AN UNESTABLISHED SCAN IS A HIT. If the lexicon cannot be built the run is treated as
-   * confidential, which leaves it the routes that do not train — free, and still working.
-   */
-  const lexicon = await privateLexicon(db);
-  const access = scanForModelAccess(opts.messages, lexicon, {
-    modelAccess: opts.modelAccess ?? null,
-    sensitivity: opts.sensitivity,
-    publicWebText: opts.publicWebText ?? null,
-  });
-
-  base.modelAccess = access.access;
-
   const ctx = {
     policy, risk, sensitivity,
     intakeKind: opts.intakeKind ?? null,
     requireBenchmarkHighRisk,
     cloudForRestrictedAllowed: opts.cloudForRestrictedAllowed ?? false,
-    modelAccess: access.access,
-    modelAccessReason: access.reason,
     jobPolicy: await loadJobPolicy(db, opts.jobKey),
     isBilled: (m: ModelRow) => {
       const b = WIRING_BY_PROVIDER.get(m.provider_id)?.backendId;
@@ -755,6 +687,7 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
   // A grounded search passes over the models that refused grounding since today's reset (experience.ts).
   const groundingOut = opts.webSearch ? await groundingOutToday(db) : new Set<string>();
   const ordered = assembled.filter(({ model, tier }) => {
+    if (opts.onlyModelId && model.id !== opts.onlyModelId) return false;
     if (groundingOut.has(model.id)) {
       considered.push({
         model_id: model.id, backend_id: WIRING_BY_PROVIDER.get(model.provider_id)?.backendId ?? null,
@@ -1114,16 +1047,7 @@ export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<
             maxOutputTokens: effectiveOutputTokens,
             temperature: route.temperature,
             webSearch: opts.webSearch === true,
-            /*
-             * THE ROW'S PRIVACY CLAIM, SENT TO THE VENDOR TO HONOUR — see `openrouter.ts`.
-             *
-             * Read from `models.data_use` through the SAME predicate `policy.ts` uses to decide
-             * eligibility, so there is one statement of what "private model" means and the two
-             * cannot drift into disagreeing. It is deliberately NOT keyed off `ctx.modelAccess`:
-             * a route recorded as non-training is asked to prove it on every call, not only on the
-             * calls somebody remembered to label, and if the vendor cannot the request fails
-             * instead of leaking.
-             */
+            // Honor the vendor data-use setting recorded for this model.
             requireNoTraining: isPrivateModelRoute(model.data_use),
             /*
              * NEVER LONGER THAN WHAT IS LEFT OF THE CHAIN. `ATTEMPT_DEADLINE_MS` is the ceiling for

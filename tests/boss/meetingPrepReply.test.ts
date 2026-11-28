@@ -11,6 +11,7 @@ import { recordMailRefs } from "../../src/worker/boss/intake/mailRefs";
 import { macWork, getCommand, openMeetingPrep, prepFinished, prepMentions, personalPreps } from "../../src/worker/boss/commands/run";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { ERRAND_SENDERS } from "../../src/shared/boss/commands/parse.mjs";
+import { cloudflareAuth } from "./cloudflareAuth";
 
 const HER = ERRAND_SENDERS[0]!;
 const NOW = Date.parse("2026-10-26T23:10:00Z");
@@ -20,7 +21,7 @@ const REAL_NOW = Date.now;
 function herReply(body: string, { to = "simone@sequoiataylor.com", inReplyTo = PREP_ID } = {}) {
   const headers = new Headers({
     from: `Sequoia <${HER}>`, subject: "Re: Prep: Jo (Fake Co), Tue 27 Oct, 10am ET",
-    "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass",
+    "authentication-results": cloudflareAuth(HER),
     "message-id": `<her-${Math.random().toString(36).slice(2)}@mail.example.test>`,
     "in-reply-to": inReplyTo, references: inReplyTo,
   });

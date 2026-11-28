@@ -36,7 +36,6 @@ export type Named = string | { name: string; why?: string };
 export interface Template { subject: string; body: string; follow_up: string; follow_up_2?: string | null; follow_up_3?: string | null }
 export const TOUCH_FIELD: Readonly<Record<number, string>>;
 export function hasTouchWords(t: Partial<Template> | null | undefined, n: number): boolean;
-export const PROSPECT_COMPLAINT: RegExp;
 export function namesLine(names: Named[], variant?: number): string;
 export const DEFAULT_PROSPECT_TEMPLATE: Readonly<Template>;
 export function subjectNames(names: Named[]): string;
@@ -55,7 +54,6 @@ export function nextTouchAt(p: any): number | null;
 export function lpWho(r: any): string;
 export function proposeFeatured(supply: any[], rules?: { never?: string[]; add?: string[]; drop?: string[]; publicNames?: string[] }, now?: number): { name: string; why: string }[];
 export function staleFeatured(featured: { name: string; why?: string; asked?: boolean }[], supply: any[], now?: number): string[];
-export function sideFromReply(text: string): "buyer" | "seller" | "both" | "unknown";
 export function nameRulesIn(text: string): { rule: "never" | "add" | "drop"; name: string }[];
 export function fmtUsd(n: unknown): string;
 export function blur(name: string | null | undefined, email?: string | null): string;

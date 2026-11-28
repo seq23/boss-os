@@ -41,36 +41,28 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   (`sync_device.last_seen_at`, stamped by the agent's poll and `/claim`). Code: `queue/freeRung.ts`,
   `queue/consumer.ts`, `aiRoles.mjs afterCodexLimit`. OpenRouter `:free` calls carry `max_price` 0 and
   stop on any reported cost (`router/openrouter.ts`); its web plugin is never used.
-- **Routes by ability, no model named** (owner, 13 Nov 2026: "all private stuff can go through codex i
-  need a backup to claude", "its more about model ability too", "there needs to be no standing rule
-  about any … model"). ONE table, `src/shared/boss/aiRoles.mjs` `ROUTE_TABLE`: a job has a class, a
-  route has a tier (free = Gemini free then OpenRouter free; Codex = the `codex` CLI on her ChatGPT
-  plan, never an API key; Claude = her Claude seat), and the order per class is that data:
-
-  | Class | What it is | Not private | Private |
-  |---|---|---|---|
-  | hard | writes code that lands, decides, merges, reviews, repairs, money, interprets a brain, reaches her or a customer unchecked; and any job with no class | Claude → Codex → named stop | Claude only; waits for Claude by name (`WAITING_FOR_CLAUDE`), never Codex |
-  | clear_brief | housekeeping, docs, test lists, bulk edits with a clear brief | Codex → Claude → named stop | Claude → Codex → named stop |
-  | short | sorting, summaries, first drafts, routine searches, read-only lists something else checks, recording her words or a number into a brain | free → Codex → Claude → named stop | Claude → Codex → named stop |
-
-  The class comes from what the queue already knows (`jobClassOf`: a repair, a repo change, a
-  confidential draft, a Chrome job and an interpreting brain edit are hard; then the intake kind;
-  anything else is hard). Private = what the privacy screen marks (committed LP names, deal terms,
-  private brain parts, an unreadable lexicon): the free tier is on no private row, and that is the
-  data-use rule (`router/policy.ts` stage 1: unknown data use = training, not approvable), not an
-  ability rule. Private brain parts are still cut for every seat but Claude's.
-  **Self-correcting, from the run logs, nothing new stored:** a seat that fails a class twice in a row
-  stops getting it for a week or until one good run, and the job moves up a rung
-  (`duties/seatOrder.ts` `seatFailedTwice`, reading `backend_runs` and `ladder_release` events; out of
-  usage is not a failure). Inside the free tier a job tries each free candidate in turn, the one that
-  last completed that kind of job first; a free answer that is empty or fails the job's own check
-  fails that model for that kind, and two in a row pass it over (`router/experience.ts` `freeMemory`,
-  reading `model_job_outcome`); a spent free allowance is a note, never a failure. On the 1st the
-  Systems list gets one line, per route: completed, failed, redone (`router/routeCounts.ts`, event
-  `route_month`). Pinned by `tests/boss/abilityRouting.test.ts`.
-- **Private model only** means a COMMITTED LP's name and deal terms (owner, 4 Nov 2026): prospects
-  are public. `committed_at` on `prospects` and `lp_reply_drafts` (migration 0339) puts a name back
-  in the router's private lexicon.
+- **Routes by ability** (owner, 26 Nov 2026): `src/shared/boss/aiRoles.mjs` classifies work
+  by its required capability. Hard work such as judgement, code and unchecked reports uses the
+  subscription seats. Simone can select a verified free Workers AI or Gemini model for a managed
+  agent's short, reviewed drafts once its measured results qualify. The queue reads
+  `model_job_outcome` and returns the work to a subscription seat when results drop or the free
+  model cannot finish. Simone can choose a free route again after its evidence qualifies. The daily operating note lists
+  each change and the reason. The move records use `settings` and `task_events`.
+- **Worker reading** uses `readWorkerSource` in `src/worker/boss/router/freeModel.ts` from Node or the Worker.
+  Monique starts with Gemini and the other workers start with Workers AI. A provider error or a spent
+  day on one lane moves the read to the other lane; a per-minute limit is waited out once (at most 60 s).
+  When no lane answers, a spent day returns `allowance-exhausted` and anything else `unavailable`, and the
+  job keeps that item unread. Jobs pass their instructions and the complete source in distinct roles.
+  Credentials (ruling of 27 Nov 2026, existing vault names only): Gemini reads `GEMINI_API_KEY` (Google
+  answers it with FreeTier quota ids, so it cannot bill); Workers AI reads `CF2_ACCOUNT_ID` plus
+  `CF2_WORKERS_AI_TOKEN`, the second Cloudflare account, which has no Workers Paid plan and stops itself
+  at 10,000 neurons a day. Never the main account: the Worker's `AI` binding is not read, and a CF2 id
+  equal to `CLOUDFLARE_ACCOUNT_ID` turns the Workers AI lane off. A lane with missing credentials is skipped.
+- **Boss OS model access** (owner, 24–26 Nov 2026): ordinary deal and LP wording travels intact to
+  eligible models. The router and the intake ladder cut sections marked confidential in brain text.
+  The recipient still determines outward approval. The router still applies capability, an explicit
+  restricted-routing card where one is required, and the spend guard. West Peek OS maintains its
+  own router and masks fund/LP material on its free fallback.
 - **Her time zone**: setting `owner_timezone` (default `America/Chicago`), `GET/PUT
   /api/boss/system/owner-timezone` `{ tz }`. Meeting prep shows times in it, the meeting's own zone
   in brackets only when different.
@@ -81,6 +73,19 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   time in the skipped spring hour runs just after the jump (02:30 is 03:30 CDT); a time in the
   repeated fall hour runs at the first one. A worker-clocked Central cron in the 02:00 hour fails
   `clockRowProblems`. Pinned by `tests/centralClock.test.ts` and `tests/boss/centralClockCallers.test.ts`.
+
+Monique's LP reply list and outcome reconciliation use full Gmail threads, read newest first, at most
+`LP_READS_PER_RUN` (200) model reads a morning. A sender with an unread reply gets no draft and no drip
+while the reader retries; everyone whose replies are read is drafted as usual, and the run still ends on
+`NAMED STOP [LP_REPLY_UNREAD]`. In the Worker's outreach tick an unread reply holds only its own address
+(and its partner campaign) and is on Today as a count; Gmail itself unreadable holds every send. A reply,
+deal email or grid-check message the model calls uncertain on three runs is held for her: kept unread,
+never marked done, named with its Gmail link in the morning email's notices
+(`scripts/ops/lib/held-for-person.mjs`), and the job reads the next one. An outage never counts toward that. A dated deferral closes the current sequence
+and keeps its requested date; only a permanent request or a complaint becomes a permanent opt-out.
+The scheduled Deals grid run re-reads the brokerage source from the previous Central day and checks
+its interests against the stored grid. The Scorecard uses that duty's existing run row. The October
+re-read uses the extraction checkpoint to resume and appends interests without changing earlier rows.
 
 ## Inherited West Peek chassis code
 - **Retired 22 Nov 2026** (her yes, personal brain): the copied fund sign-in, fund screens, fund
@@ -179,6 +184,21 @@ morning assembly honour it, including stale section files. Records and manual re
 It now retries sign-in once (before any Gmail send), then returns a structured failure that the
 held-reply path records. The send itself is never blindly retried. This reproduces the reported
 error in a test; production traces for the two reported requests were not available locally.
+
+### Simone’s operating inventory
+
+Simone’s first operating wake of the Central day builds the inventory from the employee and duty
+registries, Schedule, Scorecard, Email Map, Sites Map, tracked job definitions, and available
+scheduler state. The owner can open `/api/boss/simone/operations` after signing in. Simone reads the
+same snapshot with her leased `operations` tool. The latest snapshot is in `settings`. Warnings go to
+Updates that day and to the existing morning note. A duplicate wake keeps the first complete write.
+
+An installed trigger and a delivered result have separate readings. An unreadable source stays open.
+Scorecard numbers belong to their initiatives, and an individual item without a receiving-end reader
+says “no proof yet.” The office-outreach check requires the approved receiving Workspace mailbox in
+the vault’s `PNP_OUTREACH_PROOF_MAILBOX` setting. The sender status feed supplies a sender and an
+arrival time. An empty mailbox search in that window shows a missing copy. A positive match stays
+unconfirmed until the feed supplies the original Message-ID.
 
 ### Output floors and Kendra's alarms (6 Nov 2026)
 Owner, 5 Nov 2026: stop "green but did nothing" (P&P outreach ran green 2-5 Nov and sent 0; Wynn's

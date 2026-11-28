@@ -9,6 +9,8 @@ import { plainReply } from "./boss/intake/mailRefs";
 // The structured event spine, for the one thing in this file that writes to it: a reply that did
 // not go. Everything else here logs through the handlers it calls.
 import { logEvent } from "./boss/lib/log";
+import { operatingStopped } from "./boss/lib/operatingStop";
+import { routeSimoneWhenMacIsDown } from "./boss/agents/simoneFallback";
 import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, partnerPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossDutyClock, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, runBossKendra, toBossEnv as toBossEnvForCron } from "./bossMount";
 /** Where the West Peek fund screens and their API live now (the chassis retirement, 22 Nov 2026). */
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -339,19 +341,25 @@ export default {
      */
     if (event?.cron === MAIL_ALARM_CRON) {
       ctx.waitUntil(runMailAlarm(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss mail alarm failed", err)));
-      ctx.waitUntil(runBossCloudClock(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss cloud clock failed", err)));
-      ctx.waitUntil(
-        runBossDutyClock(toBossEnvForCron(env), now.getTime())
-          .then((r) => { if (r.fired.length) console.log("boss duties materialised", JSON.stringify(r.fired)); })
-          .catch((err) => console.error("boss duties failed", err))
-          // The drain reads the clock when it starts, never the tick's: a task enqueued a moment ago is
-          // visible from its own enqueue time, which is after `now`.
-          .then(() => drainBossTasks(env, new Date()))
-          .then((r) => { if (r.ran || r.failed || r.dead) console.log("boss task drain", JSON.stringify(r)); })
-          .catch((err) => console.error("boss task drain failed", err)),
-      );
+      // The owner's stop ("stop everything") holds everything below; only the alarm above still runs.
+      if (!(await operatingStopped(env.WP_OS_DB))) {
+        ctx.waitUntil(runBossCloudClock(toBossEnvForCron(env), now.getTime()).then(() => undefined).catch((err) => console.error("boss cloud clock failed", err)));
+        ctx.waitUntil(routeSimoneWhenMacIsDown(toBossEnvForCron(env), now.getTime())
+          .catch(() => console.error("Simone’s cloud fallback could not finish")));
+        ctx.waitUntil(
+          runBossDutyClock(toBossEnvForCron(env), now.getTime())
+            .then((r) => { if (r.fired.length) console.log("boss duties materialised", JSON.stringify(r.fired)); })
+            .catch((err) => console.error("boss duties failed", err))
+            // The drain reads the clock when it starts, never the tick's: a task enqueued a moment ago is
+            // visible from its own enqueue time, which is after `now`.
+            .then(() => drainBossTasks(env, new Date()))
+            .then((r) => { if (r.ran || r.failed || r.dead) console.log("boss task drain", JSON.stringify(r)); })
+            .catch((err) => console.error("boss task drain failed", err)),
+        );
+      }
       return;
     }
+    if (await operatingStopped(env.WP_OS_DB)) return;
     // The copied West Peek fund jobs (runDueJobs) no longer run here: West Peek OS runs them itself
     // and the pause migration in #531 switched off diagnostics_sweep, deck_reading and network_sync
     // (chassis retirement, her yes 22 Nov 2026).
@@ -376,7 +384,8 @@ export default {
     // Monique's outreach: replies, brakes, sends inside the cap and window, list building.
     ctx.waitUntil(
       runBossOutreach(toBossEnvForCron(env), now.getTime()).then((r) => {
-        console.log("boss outreach tick", JSON.stringify({ sent: r.sent, replies: r.replies, paused: r.paused, stop: r.stop ?? null }));
+        // Counts and business keys only: a held reply's address never reaches the log.
+        console.log("boss outreach tick", JSON.stringify({ sent: r.sent, replies: r.replies, paused: r.paused, stop: r.stop ?? null, held: r.held ?? null, refused: Object.keys(r.refused) }));
       }).catch((err) => {
         console.error("boss outreach failed", err);
       }),

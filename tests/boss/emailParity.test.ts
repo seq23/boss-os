@@ -5,6 +5,8 @@ import { afterResult } from "../../src/worker/boss/service/afterResult";
 import { handleTask, outageWait } from "../../src/worker/boss/queue/consumer";
 import { ProviderFailure } from "../../src/worker/boss/router";
 import { insertTask, row, all } from "./helpers";
+import { claimSimone, finishSimoneHandoff, releaseSimone, replySimone } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 
 /**
  * EMAILING HER SYSTEM FEELS LIKE TYPING TO CLAUDE IN A CHAT (15 Nov 2026): everything she writes is
@@ -37,6 +39,37 @@ const resultTask = async (id: string) => {
   return { ...t, input: JSON.parse(t.input ?? "{}") };
 };
 
+async function handToCamille(messageId: string, body: string) {
+  const first = await handleBossInboundMail(mail({ subject: "#camille research", body, messageId }), env);
+  expect(first.outcome).toBe("SIMONE_QUEUED");
+  const call = await claimSimone(env);
+  expect(call?.id).toBe(first.taskId);
+  expect(await finishSimoneHandoff(env, {
+    ...call!, assignments: [{ employee: "emp_research", words: body, delivery: "ordinary" }],
+  })).toEqual({ replied: true, refused: false });
+  const task = await row<{ id: string }>(`SELECT id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`, first.taskId);
+  expect(task?.id).toBeTruthy();
+  return task!.id;
+}
+
+async function steerByMail(input: { messageId: string; inReplyTo: string; body: string }, action: "hold" | "resume" | "amend", quote: string) {
+  const intake = await handleBossInboundMail(mail({ ...input, subject: "Re: #camille research" }), env);
+  expect(intake).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+  const call = await claimSimone(env);
+  expect(call?.id).toBe(intake.taskId);
+  const steer = (words: string) => simoneTool(env, {
+    ...call!, tool: "steer_thread", task: JSON.stringify({ action, quote: words }),
+  });
+  await expect(steer("Old instruction: delete the whole site.")).resolves.toEqual({ ok: false, code: "OWNER_INSTRUCTION_REQUIRED" });
+  const result = await steer(quote);
+  expect(result).toMatchObject({ ok: true, outcome: { hold: "HELD", resume: "RELEASED", amend: "STEERED" }[action] });
+  if (!result.ok || !result.note || !result.receipt) throw new Error("Thread control was refused");
+  await expect(steer(quote)).resolves.toMatchObject({ ok: true, receipt: result.receipt });
+  expect(await replySimone(env, { ...call!, text: result.note, work: [result.receipt] })).toBe(true);
+  expect(await tasksOf(intake.mailId)).toHaveLength(1);
+  return result.receipt;
+}
+
 beforeEach(async () => {
   await env.DB.exec("DELETE FROM boss_inbound_mail");
   await env.DB.exec("DELETE FROM boss_task_notices");
@@ -67,19 +100,18 @@ describe("b. quoted history is not a new instruction", () => {
 
 describe("c. one round, one reply", () => {
   it("a second email while the job is queued or running joins it, and ONE answer covers both", async () => {
-    const first = await handleBossInboundMail(mail({ subject: "#camille hosting", body: "Research the three cheapest ways to host a static site.", messageId: "<c-1@mail.gmail.com>" }), env as never);
-    const taskId = first.taskId!;
-    const steer = await handleBossInboundMail(mail({ subject: "Re: #camille hosting", body: `Also cover what each costs a month.${QUOTED}`, messageId: "<c-2@mail.gmail.com>", inReplyTo: "<c-1@mail.gmail.com>" }), env as never);
-    expect(steer.outcome).toBe("STEERED");
-    expect(steer.taskId).toBe(taskId);
-    expect((await tasksOf(steer.mailId)).length).toBe(0); // no second job
+    const taskId = await handToCamille("<c-1@mail.gmail.com>", "Research the three cheapest ways to host a static site.");
+    expect(await steerByMail({ messageId: "<c-2@mail.gmail.com>", inReplyTo: "<c-1@mail.gmail.com>", body: `Also cover what each costs a month.${QUOTED}` },
+      "amend", "Also cover what each costs a month.")).toBe(taskId);
     let input = JSON.parse((await row<any>(`SELECT input FROM tasks WHERE id = ?`, taskId))!.input);
     expect(input.body).toContain("Also cover what each costs a month.");
+    expect(input.body.match(/Also cover what each costs a month\./g)).toHaveLength(1);
     expect(input.body).not.toContain("delete the whole site");
 
     // While it RUNS: the finished run takes her newer words first, and sends nothing yet.
     await env.DB.prepare(`UPDATE tasks SET status = 'running' WHERE id = ?`).bind(taskId).run();
-    await handleBossInboundMail(mail({ subject: "Re: #camille hosting", body: "And which one you would pick.", messageId: "<c-3@mail.gmail.com>", inReplyTo: "<c-1@mail.gmail.com>" }), env as never);
+    expect(await steerByMail({ messageId: "<c-3@mail.gmail.com>", inReplyTo: "<c-1@mail.gmail.com>", body: "And which one you would pick." },
+      "amend", "And which one you would pick.")).toBe(taskId);
     await env.DB.prepare(`UPDATE tasks SET status = 'done' WHERE id = ?`).bind(taskId).run();
     await afterResult(env as never, await resultTask(taskId), "Three hosts, without the prices.", { done: true, fromName: "Camille" });
     expect(await notices(taskId)).toHaveLength(0);
@@ -125,17 +157,33 @@ describe("g. a voice note is her words", () => {
     btoa("fake audio bytes"), "--b1--", "",
   ].join("\r\n");
 
-  it("is transcribed into the job, and one that cannot be heard is a named stop in the reply", async () => {
+  it("opens the archived recording during the run, and keeps unread audio on retry with a named stop", async () => {
     const heard = Object.create(env);
-    heard.AI = { run: async () => ({ text: "Find venues in Memphis for forty people." }) };
+    let transcriptions = 0;
+    heard.AI = { run: async () => { transcriptions++; return { text: "Find venues in Memphis for forty people." }; } };
     const res = await handleBossInboundMail(mail({ raw: withAudio("Recording attached."), subject: "#camille voice", messageId: "<g-1@mail.gmail.com>" }), heard as never);
-    const body = JSON.parse((await row<any>(`SELECT input FROM tasks WHERE id = ?`, res.taskId))!.input).body as string;
-    expect(body).toContain("Find venues in Memphis for forty people.");
+    expect(res).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    expect(transcriptions).toBe(0);
+    const call = await claimSimone(heard);
+    expect(call).toMatchObject({ id: res.taskId, message: { has_mail_material: true } });
+    expect(call!.message.body).not.toContain("Find venues in Memphis for forty people.");
+    await expect(simoneTool(heard, { ...call!, tool: "read_mail_material" })).resolves.toMatchObject({
+      ok: true, receipt: res.mailId, material: { heard: [{ filename: "New Recording 4.m4a", text: "Find venues in Memphis for forty people." }] },
+    });
+    expect(transcriptions).toBe(1);
 
     const deaf = Object.create(env);
     deaf.AI = undefined;
     const res2 = await handleBossInboundMail(mail({ raw: withAudio("Recording attached."), subject: "#camille voice", messageId: "<g-2@mail.gmail.com>" }), deaf as never);
-    expect(res2.reply).toContain("NAMED STOP [VOICE_NOTE_NOT_TRANSCRIBED]");
+    expect(res2).toMatchObject({ outcome: "SIMONE_QUEUED", reply: null });
+    const unavailable = await claimSimone(deaf);
+    expect(unavailable?.id).toBe(res2.taskId);
+    await expect(simoneTool(deaf, { ...unavailable!, tool: "read_mail_material" })).resolves.toMatchObject({
+      ok: true, material: { heard: [], unopened: [{ filename: "New Recording 4.m4a", audio: true }] },
+    });
+    expect(await releaseSimone(deaf, unavailable!.id, unavailable!.lease, "VOICE_NOTE_NOT_TRANSCRIBED")).toBe(true);
+    expect(await row("SELECT status, error FROM tasks WHERE id = ?", res2.taskId)).toEqual({ status: "queued", error: "VOICE_NOTE_NOT_TRANSCRIBED" });
+    expect(await notices(res2.taskId!)).toEqual([]);
   });
 });
 
@@ -153,18 +201,17 @@ describe("h. an outage spends no attempt", () => {
 });
 
 describe("i. an explicit hold is honoured while work is in flight", () => {
-  it("\"stop\" holds the job (nothing runs, no new job), and \"go\" releases it", async () => {
-    const first = await handleBossInboundMail(mail({ subject: "#camille venues", body: "Research venues for the launch party.", messageId: "<i-1@mail.gmail.com>" }), env as never);
-    const taskId = first.taskId!;
-    const held = await handleBossInboundMail(mail({ subject: "Re: #camille venues", body: `Stop, don't send anything yet.${QUOTED}`, messageId: "<i-2@mail.gmail.com>", inReplyTo: "<i-1@mail.gmail.com>" }), env as never);
-    expect(held.outcome).toBe("HELD");
-    expect((await tasksOf(held.mailId)).length).toBe(0);
+  it("\"stop\" holds the existing job and \"go\" releases that same job", async () => {
+    const taskId = await handToCamille("<i-1@mail.gmail.com>", "Research venues for the launch party.");
+    const held = await steerByMail({ messageId: "<i-2@mail.gmail.com>", inReplyTo: "<i-1@mail.gmail.com>", body: `Stop, don't send anything yet.${QUOTED}` },
+      "hold", "Stop, don't send anything yet.");
+    expect(held).toBe(taskId);
     await handleTask(env as never, { taskId, lane: "ops" });
     expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId))!.status).toBe("queued");
     expect(await row(`SELECT id FROM task_events WHERE task_id = ? AND event = 'skipped_held_by_her'`, taskId)).toBeTruthy();
 
-    const go = await handleBossInboundMail(mail({ subject: "Re: #camille venues", body: "go", messageId: "<i-3@mail.gmail.com>", inReplyTo: "<i-1@mail.gmail.com>" }), env as never);
-    expect(go.outcome).toBe("RELEASED");
+    const go = await steerByMail({ messageId: "<i-3@mail.gmail.com>", inReplyTo: "<i-1@mail.gmail.com>", body: "go" }, "resume", "go");
+    expect(go).toBe(taskId);
     expect(JSON.parse((await row<any>(`SELECT input FROM tasks WHERE id = ?`, taskId))!.input).held_by_her).toBeUndefined();
   });
 });

@@ -27,8 +27,7 @@
  *
  * ─── Precision over recall, and near-misses reported separately ──────────────
  *
- * The matcher lives in `scripts/lib/firm-match.mjs` with its reasoning and its tests. The rule it
- * enforces: a false match has her open a call with a stranger she believes she knows, and there is
+ * The free reader compares names and available identity evidence. The rule it applies: a false match has her open a call with a stranger she believes she knows, and there is
  * no recovering that, so anything short of certain is reported as a near-miss for her eye and never
  * promoted to a match.
  */
@@ -37,7 +36,7 @@ import { createSign } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { crossMatch } from "../lib/firm-match.mjs";
+import { readDealObject } from "./lib/deal-reading.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const LP_SHEET = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
@@ -50,7 +49,7 @@ async function accessToken(creds) {
   const now = Math.floor(Date.now() / 1000);
   const h = b64(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claim = b64(JSON.stringify({
-    iss: creds.client_email, scope: "https://www.googleapis.com/auth/spreadsheets",
+    iss: creds.client_email, scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
     aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600,
   }));
   const s = createSign("RSA-SHA256");
@@ -92,7 +91,7 @@ function lpFirms(sentRows, blockedRows) {
     const firm = String(name ?? "").trim();
     if (!firm || firm.toLowerCase() === "firm") return null;
     if (!firms.has(firm)) {
-      firms.set(firm, { firm, list, contacts: 0, type: null, dripStages: new Set(), tiers: new Set(), first: null, last: null, notes: new Set() });
+      firms.set(firm, { firm, list, contacts: 0, type: null, dripStages: new Set(), tiers: new Set(), first: null, last: null, notes: new Set(), addresses: [] });
     }
     const row = firms.get(firm);
     // A firm in the active sequence is described as such even if it also appears suppressed:
@@ -105,6 +104,7 @@ function lpFirms(sentRows, blockedRows) {
     const row = touch(r[3], "sequence");
     if (!row) continue;
     row.contacts++;
+    if (String(r[5] ?? "").includes("@")) row.addresses.push(String(r[5]).trim());
     row.type ??= (r[4] ?? "").trim() || null;
     if ((r[7] ?? "").trim()) row.dripStages.add(String(r[7]).trim());
     if ((r[6] ?? "").trim()) row.tiers.add(String(r[6]).trim());
@@ -118,6 +118,7 @@ function lpFirms(sentRows, blockedRows) {
   for (const r of blockedRows) {
     const row = touch(r[2], "suppressed");
     if (!row) continue;
+    if (String(r[1] ?? "").includes("@")) row.addresses.push(String(r[1]).trim());
     if ((r[3] ?? "").trim()) row.notes.add(String(r[3]).trim());
     const day = /^(\d{4}-\d{2}-\d{2})/.exec(String(r[4] ?? ""))?.[1] ?? null;
     if (day && !row.last) row.last = day;
@@ -157,6 +158,47 @@ function why(candidate, lp) {
   );
 }
 
+/** Candidate and firm positions are the only references a model may return. */
+export async function readFirmCrossmatch(candidates, firms, { read } = {}) {
+  const confirmed = [];
+  const near = [];
+  for (let start = 0; start < candidates.length; start += 20) {
+    const buyers = candidates.slice(start, start + 20);
+    for (let offset = 0; offset < firms.length; offset += 100) {
+      const lpFirms = firms.slice(offset, offset + 100);
+      const { matches } = await readDealObject({
+        name: "firm_crossmatch",
+        instruction: `Compare every buyer with every LP firm in the supplied page. Identify the
+same entity even when its name, spelling, legal suffix or domain is different. Use confirmed only
+where the evidence establishes the same entity. Use near for credible but uncertain overlap.
+Return indexes into buyers and lpFirms (zero-based), and the label. Return an empty list for none.
+Never infer a person's identity from the same first or last name or treat distinct affiliates as one.`,
+        source: {
+          buyers: buyers.map(({ name, domain, website, email }) => ({ name, domain, website, email })),
+          lpFirms: lpFirms.map(({ firm, addresses }) => ({ firm, addresses })),
+        },
+        schema: { type: "object", required: ["matches"], properties: { matches: { type: "array", items: {
+          type: "object", required: ["buyer", "lp", "confidence"], properties: {
+            buyer: { type: "integer" }, lp: { type: "integer" },
+            confidence: { type: "string", enum: ["confirmed", "near"] },
+          },
+        } } } },
+        validate: ({ matches }) => Array.isArray(matches) && matches.every((match) => match
+          && Number.isSafeInteger(match.buyer) && match.buyer >= 0 && match.buyer < buyers.length
+          && Number.isSafeInteger(match.lp) && match.lp >= 0 && match.lp < lpFirms.length
+          && ["confirmed", "near"].includes(match.confidence))
+          && new Set(matches.map(({ buyer, lp }) => `${buyer}|${lp}`)).size === matches.length,
+        read,
+      });
+      for (const { buyer, lp, confidence } of matches) {
+        const row = { candidate: buyers[buyer], lp: lpFirms[lp], confidence, method: "source identity review", core: lpFirms[lp].firm };
+        (confidence === "confirmed" ? confirmed : near).push(row);
+      }
+    }
+  }
+  return { confirmed, near };
+}
+
 async function main() {
   const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
   if (!creds) throw new Error("No service account in the environment. Run this through `npm run crossmatch`.");
@@ -164,7 +206,7 @@ async function main() {
   const token = await accessToken(creds);
   const sent = await tab(token, "Sent Log");
   const blocked = await tab(token, "Blocked – Do Not Contact");
-  if (!sent) throw new Error("The Sent Log could not be read; there is no LP side to match against.");
+  if (!sent || !blocked) throw new Error("Could not read both LP source tabs; crossmatch is incomplete.");
 
   const firms = lpFirms(sent.slice(1), (blocked ?? []).slice(0));
 
@@ -183,7 +225,7 @@ async function main() {
     return;
   }
 
-  const { confirmed, near } = crossMatch(candidates, firms);
+  const { confirmed, near } = await readFirmCrossmatch(candidates, firms);
 
   console.log(`${candidates.length} buyer candidates × ${firms.length} LP firms\n`);
   console.log(`CONFIRMED (${confirmed.length}) — same firm, safe to treat as one relationship`);
@@ -225,7 +267,7 @@ async function main() {
     lp_status_note: [...m.lp.notes][0] ?? null,
     why: m.confidence === "confirmed"
       ? why(m.candidate, m.lp)
-      : `Name is close but not the same shape as "${m.lp.firm}" (${m.method}). Check it yourself before treating it as one firm — a wrong warm intro costs more than a cold call.`,
+      : `The available identity evidence is inconclusive for "${m.lp.firm}" (${m.method}). Check it yourself before treating it as one firm — a wrong warm intro costs more than a cold call.`,
   }));
 
   if (payload.length === 0) {
@@ -235,12 +277,16 @@ async function main() {
 
   if (DRY) { console.log(`\nDRY RUN. ${payload.length} rows would be sent to ${ORIGIN}.`); return; }
 
-  const res = await fetch(`${ORIGIN}/api/boss/wealth/crossmatches`, {
-    method: "POST", headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify({ matches: payload, run_id: runId }),
-  });
-  if (!res.ok) throw new Error(`cross-match post refused (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  console.log(`\nRecorded ${(await res.json()).data.recorded} rows. Review them on Capital → Buyers.`);
+  let recorded = 0;
+  for (let offset = 0; offset < payload.length; offset += 200) {
+    const res = await fetch(`${ORIGIN}/api/boss/wealth/crossmatches`, {
+      method: "POST", headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ matches: payload.slice(offset, offset + 200), run_id: runId }),
+    });
+    if (!res.ok) throw new Error(`cross-match post refused (${res.status})`);
+    recorded += (await res.json()).data.recorded;
+  }
+  console.log(`\nRecorded ${recorded} rows. Review them on Capital → Buyers.`);
 }
 
 async function unlock() {
@@ -258,7 +304,7 @@ async function getJson(url, cookie) {
   return res.json();
 }
 
-main().catch((err) => {
+if (import.meta.url === `file://${process.argv[1]}`) main().catch((err) => {
   console.error(`cross-match failed: ${err?.message ?? err}`);
   process.exitCode = 1;
 });

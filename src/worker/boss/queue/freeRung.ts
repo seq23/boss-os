@@ -25,7 +25,6 @@ import { getBackend } from "../backends/registry";
 import { isPlanSpent } from "../backends/spent";
 import { OPENAI_SEAT, seatsForRoutes } from "../duties/seatOrder";
 import { routeOrder, SHORT } from "../../../shared/boss/aiRoles.mjs";
-import { scanForModelAccess, privateLexicon } from "../router/modelAccess";
 import { CENTRAL, formatIn } from "../../../shared/boss/schedule/clock.mjs";
 
 const KENDRA = "emp_continuity";
@@ -201,9 +200,9 @@ export async function seatReady(env: Env, backendId: string, now = Date.now()): 
  * off the free routes) → Claude's seat, then Codex's (owner, 13 Nov 2026). Each only when the seat
  * is not spent and her Mac is seen.
  */
-export async function researchSeats(env: Env, o: { privateAsk?: boolean } = {}, now = Date.now()): Promise<string[]> {
+export async function researchSeats(env: Env, now = Date.now()): Promise<string[]> {
   const out: string[] = [];
-  for (const seat of seatsForRoutes(routeOrder({ jobClass: SHORT, privateWork: o.privateAsk === true }).routes)) {
+  for (const seat of seatsForRoutes(routeOrder({ jobClass: SHORT }).routes)) {
     if (await seatReady(env, seat, now)) out.push(seat);
   }
   return out;
@@ -234,8 +233,8 @@ export async function asResearchPage(env: Env, task: any, input: Record<string, 
 
 export type FreeResearchOutcome =
   | { handled: true }
-  /** Every free rung is out. `capped`: a daily allowance ran out (the earliest reset); `privateAsk`: the screen kept it off free routes. */
-  | { handled: false; why: string; capped: { code: string; why: string; resumeAt: number | null } | null; privateAsk?: boolean };
+  /** Every free rung is out. `capped`: a daily allowance ran out (the earliest reset). */
+  | { handled: false; why: string; capped: { code: string; why: string; resumeAt: number | null } | null };
 
 /**
  * THE FREE RUNGS FOR RESEARCH, IN HER ORDER (owner, 6 Nov 2026: "it started with all free tiers and if
@@ -267,16 +266,7 @@ export async function runFreeResearch(
     ).bind(crypto.randomUUID(), t.id, t.lane, nextTickAt(Date.now()), Date.now(), TICK_ONLY).run();
     return { handled: true };
   }
-  /*
-   * THE PRIVACY SCREEN FIRST, FAIL CLOSED. The free tiers train on prompts; an ask the screen flags
-   * never reaches Google or OpenRouter. It goes to the seats (the caller): Claude's, then Codex's.
-   */
   const ask = researchAskOf(task, input);
-  const verdict = scanForModelAccess([{ role: "user", content: ask }], await privateLexicon(env.DB),
-    { modelAccess: task.model_access ?? null, sensitivity: task.sensitivity ?? null });
-  if (verdict.privateOnly) {
-    return { handled: false, privateAsk: true, capped: null, why: `the privacy screen keeps this off the free routes (${verdict.reason ?? "private"})` };
-  }
   const step = (detail: Record<string, unknown>) => env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
     .bind(newId("tev"), t.id, Date.now(), JSON.stringify(detail)).run();
 
