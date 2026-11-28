@@ -10,6 +10,7 @@ import { progressLine, senderClient } from "../scripts/ops/pnp-corporate-outreac
 import { readMorningSections, writeMorningSection } from "../src/shared/boss/mail/morning.mjs";
 import { MORNING_SECTION_SPECS } from "../src/shared/boss/mail/morningSections.mjs";
 import { buildDay } from "../scripts/ops/your-day.mjs";
+import { personalHasMessage } from "../scripts/ops/lib/toni-mail.mjs";
 
 // Fictional replies in the shape GET /api/outreach/replies returns (seq23/p-n-p functions/_lib/outreach-inbound.mjs).
 const NOW = Date.parse("2026-11-28T12:00:00Z");
@@ -161,5 +162,24 @@ describe("the arrival rule: only a receiving-end receipt is arrival", () => {
     expect(replyArrivals(r, [{ day: "2026-11-17", built_at: built, keys: [key(r[0])], arrival: "arrived" }], key, NOW)[0].arrival).toBe("arrived");
     expect(replyArrivals(r, [{ day: "2026-11-17", built_at: built, keys: [key(r[0])], arrival: "unknown" }], key, NOW)[0].arrival).toBe("unknown");
     expect(replyArrivals(r, [{ day: "2026-11-17", built_at: built, keys: [], arrival: "arrived" }], key, built + 60_000)[0].arrival).toBe("pending");
+  });
+});
+
+describe("her Gmail as the receiving end (read-only, ids only)", () => {
+  it("finds a copy by Message-ID outside spam and trash, and an error is never a yes or a no", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (u: URL | string, init: RequestInit) => {
+      calls.push(String(u)); expect(init.method).toBe("GET"); expect(init.redirect).toBe("error");
+      return Response.json(String(u).includes("found") ? { messages: [{ id: "1" }] } : { resultSizeEstimate: 0 });
+    }));
+    try {
+      expect(await personalHasMessage("<found@x.example>", "tok")).toBe(true);
+      expect(await personalHasMessage("<absent@x.example>", "tok")).toBe(false);
+      const q = new URL(calls[0]).searchParams.get("q");
+      expect(q).toBe("rfc822msgid:found@x.example -in:spam -in:trash");
+      expect(new URL(calls[0]).pathname).toBe("/gmail/v1/users/me/messages");
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("no", { status: 500 })));
+      await expect(personalHasMessage("<x@x.example>", "tok")).rejects.toThrow();
+    } finally { vi.unstubAllGlobals(); }
   });
 });

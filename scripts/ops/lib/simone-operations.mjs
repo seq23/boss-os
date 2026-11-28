@@ -10,7 +10,7 @@ import { citedIn, isScanned, uncovered } from "./email-map.mjs";
 import { macContext, readMetric } from "./scorecard-readers.mjs";
 import { arrivalVerdict, mailboxArrival, replyArrivals, resendArrival } from "../../../src/shared/boss/mail/arrival.mjs";
 import { realReplies, replyKey } from "../../../src/shared/boss/mail/agentReplies.mjs";
-import { personalGrantPresent, personalToken } from "./toni-mail.mjs";
+import { personalGrantPresent, personalHasMessage, personalToken } from "./toni-mail.mjs";
 import { resendRecord } from "../notify.mjs";
 import { localConfig, senderClient } from "../pnp-corporate-outreach.mjs";
 import { readMailCounts, readSiteAudit, workerChecks } from "./worker-checks.mjs";
@@ -58,16 +58,10 @@ export async function receiptFor(row, { mailbox = null, resend = null, now = Dat
   return "unknown";
 }
 
-/** Her Gmail, read-only, searched by Message-ID: true found, false absent (spam and trash count as absent). */
+/** Her Gmail, read-only (the personal grant), searched by Message-ID: true found, false absent. */
 export async function personalSearch(env, fetchImpl = fetch) {
   const token = await personalToken({ env, fetchImpl });
-  return async (id) => {
-    const q = encodeURIComponent(`rfc822msgid:${id} -in:spam -in:trash`);
-    const r = await fetchImpl(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=1&q=${q}`, { headers: { authorization: `Bearer ${token}` }, redirect: "error" });
-    if (!r.ok) throw new Error(`gmail ${r.status}`);
-    const body = await r.json();
-    return Array.isArray(body?.messages) && body.messages.length > 0;
-  };
+  return (id) => personalHasMessage(id, token);
 }
 
 /** Resend's own last event for one Boss OS send, with the key of the team that sent it. */
