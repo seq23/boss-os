@@ -69,7 +69,8 @@ describe("every real reply becomes a Decide card with their words and a Reply bu
   });
 
   it("never loses a card to what someone typed, or to an unreadable copy", () => {
-    const nasty = "See flyer_final.pdf #holiday **asap** at https://x.example/a?b=1 or call 901-555-0100, ref abc_def_ghi";
+    // "I could not read" is a phrase her email refuses outright: without the cut, the whole card would be dropped.
+    const nasty = "Sorry, I could not read your flyer_final.pdf #holiday **asap** at https://x.example/a?b=1 or call 901-555-0100, ref abc_def_ghi";
     const words = theirWords(nasty);
     expect(words).toContain("call 901-555-0100");
     const mail = day([reply({ text: nasty })]);
@@ -79,6 +80,12 @@ describe("every real reply becomes a Decide card with their words and a Reply bu
     expect(unread.body).toMatch(/could not be read from the stored copy/);
     expect(day([reply({ text: null, unread: "x" })]).dropped).toEqual([]);
     expect(replyUrl({ email: "a@b.example", subject: "" })).toContain("su=Re%3A+your+note");
+    // The quoted email is cut at its attribution, even wrapped over two lines or cut short.
+    expect(theirWords("We have our own team. My Best, Pat\nOn Mon, Nov 16, 2026 at 10:34 AM 'Porch & Party 901' via Sales <s@x.example>\nwrote:\n> Hi")).toBe("We have our own team. My Best, Pat");
+    expect(theirWords("Thanks, Pat ----- Pat Example On Fri, Nov 6, 2026 at 9:")).toBe("Thanks, Pat ----- Pat Example");
+    expect(theirWords("We are open on Mon, Nov 30 from 9 to 5.")).toBe("We are open on Mon, Nov 30 from 9 to 5.");
+    // A picture or a link turned to text by their mail client is not their words.
+    expect(theirWords("We will pass. Have a great week! [Fictional Credit Union Logo]<https://fictional.example/> [image: award] Thanks")).toBe("We will pass. Have a great week! Thanks");
   });
 });
 

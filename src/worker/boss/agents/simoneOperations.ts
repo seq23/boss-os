@@ -112,7 +112,8 @@ export async function storeOperatingReport(env: Env, input: unknown, now = Date.
     .bind(previous?.observedAt ?? now - 86_400_000, now).all<{ line: string }>();
   const note = { section: "operations", at: new Date(now).toISOString(), title: "Simone’s operating check",
     lines: [...summary, ...moves.results.map(({ line }) => line), ...(report.proposal ? [report.proposal] : [])],
-    link: { label: "See the operating inventory", url: `${BOSS_ORIGIN}/api/boss/simone/operations` },
+    // A screen, never an /api link: her email holds the whole morning when it carries one (28 Nov 2026).
+    link: { label: "See it on Updates", url: `${BOSS_ORIGIN}/?tab=updates` },
   };
   const key = `simone-operations-${report.day}`;
   const [saved] = await env.DB.batch([

@@ -44,6 +44,9 @@ it("keeps one fresh inventory, makes it available to Simone, and publishes a sam
   expect(await row("SELECT count(*) AS n FROM boss_task_notices WHERE subject LIKE 'NOT WORKING:%'")).toEqual({ n: 1 });
   expect(await row("SELECT json_extract(body, '$.lines[0]') AS evidence FROM morning_sections WHERE section = 'operations'"))
     .toEqual({ evidence: issues[0] });
+  // Her email holds the whole morning on an /api link: the note links a screen (28 Nov 2026).
+  expect(await row("SELECT json_extract(body, '$.link.url') AS url FROM morning_sections WHERE section = 'operations'"))
+    .toEqual({ url: expect.stringMatching(/^https:\/\/[^/]+\/\?tab=updates$/) });
   await fileSimoneMessage(env, { source: "simone_daily", subject: "Operating check", body: "Read the results." });
   const call = (await claimSimone(env))!;
   await expect(simoneTool(env, { id: call.id, lease: call.lease, tool: "operations" }))

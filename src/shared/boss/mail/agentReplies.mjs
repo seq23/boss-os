@@ -55,7 +55,13 @@ export function realReplies(replies) {
  * fails is cut out word by word: a card is never lost because of what someone typed.
  */
 export function theirWords(text) {
-  let words = cleanText(String(text ?? "").replace(/\s+/g, " ").trim(), { prose: true });
+  // What a mail client leaves behind when it turns HTML into text: "<https://…>" after a link and
+  // "[Company Logo]" / "[image: …]" where a picture was. Structure, never their words.
+  // The quoted email starts at its client's attribution line ("On Mon, Nov 16, 2026 at 10:34 AM … wrote:"),
+  // which a narrow client wraps over two lines, so the mailer's own cut can miss it.
+  const own = String(text ?? "").split(/\s(?=On (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,? (?:[A-Z][a-z]{2,8} \d{1,2}|\d{1,2} [A-Z][a-z]{2,8}),? \d{4}\b)/)[0];
+  const plain = own.replace(/<(?:https?:|mailto:)[^>\s]*>/gi, " ").replace(/\[(?:image:[^\]]*|[^\]]{0,80}\b(?:logo|image|icon|photo)\b[^\]]{0,40})\]/gi, " ");
+  let words = cleanText(plain.replace(/\s+/g, " ").trim(), { prose: true });
   for (let i = 0; i < 8 && words; i++) {
     const problems = lineProblems(words);
     if (!problems.length) break;
