@@ -134,10 +134,19 @@ export function isWestPeekKey(name) {
   return FUND_TEAM_KEYS.includes(n) || /^WP_/.test(n);
 }
 
+/**
+ * The vault's long-lived Claude sign-in (her `claude setup-token`, saved 28 Nov 2026 as
+ * ANTHROPIC_CLAUDE_CODE_OAUTH_TOKEN, valid one year) under the name the Claude CLI reads. Every unattended
+ * `claude -p` a vault:run job starts then stays signed in on her plan when the Mac's own login lapses
+ * (it ends 3-6 Dec 2026). A token the caller already set wins.
+ */
+export const CLAUDE_TOKEN_VAULT_KEY = "ANTHROPIC_CLAUDE_CODE_OAUTH_TOKEN";
+
 /** The environment a Boss OS process may start with: everything except a West Peek key. */
 export function bossOsProcessEnv(env) {
   const out = {};
   for (const [k, v] of Object.entries(env ?? {})) if (!isWestPeekKey(k)) out[k] = v;
+  if (!out.CLAUDE_CODE_OAUTH_TOKEN && out[CLAUDE_TOKEN_VAULT_KEY]) out.CLAUDE_CODE_OAUTH_TOKEN = out[CLAUDE_TOKEN_VAULT_KEY];
   return out;
 }
 
