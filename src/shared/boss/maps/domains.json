@@ -568,6 +568,21 @@
       ]
     },
     {
+      "domain": "wekeepyouspry.com",
+      "business": "spry",
+      "repo": "WKYS",
+      "registrar": "Cloudflare",
+      "dns": "main",
+      "mail": "routing",
+      "mail_words": "Cloudflare Email Routing (MX records present); addresses not read here.",
+      "site": "wkys",
+      "tier": "keep",
+      "tier_why": "Serves We Keep You Spry.",
+      "expires": "2027-11-26",
+      "auto_renew": true,
+      "renew_read": "28 Nov 2026, whois expiry by hand; auto-renew not read"
+    },
+    {
       "domain": "lauscismedical.com",
       "business": "spry",
       "repo": "local-guides-generator",
