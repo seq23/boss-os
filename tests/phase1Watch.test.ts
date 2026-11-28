@@ -40,9 +40,12 @@ describe("billing watch: a failed payment surfaces as one plain Decide item", ()
 
   it("holds the window and prior alerts on incomplete, foreign-ID, and capped reads and retries the same item", async () => {
     const thread = [message("m1", "The card was declined.")];
+    // An answer that skips or swaps the target is never a verdict: the target counts as uncertain (held for her
+    // after three runs, #584 recheck R2), never "other" or a notice; a reader outage still throws and is retried.
     for (const answer of [[], [{ id: "wrong", kind: "other", vendor: "", detail: "" }]]) {
-      await expect(classifyToniThread(thread, ["m1"], BILLING_MAIL, async () => reply(answer))).rejects.toThrow("did not classify every target");
+      expect(await classifyToniThread(thread, ["m1"], BILLING_MAIL, async () => reply(answer))).toEqual([{ id: "m1", at: thread[0]!.internalDate, kind: "uncertain" }]);
     }
+    await expect(classifyToniThread(thread, ["m1"], BILLING_MAIL, async () => ({ status: "unavailable", provider: "workers-ai" }) as never)).rejects.toThrow("did not classify every target");
     const list = vi.fn(async (_token: string, _query: string): Promise<[string, Set<string>][]> => [["thread", new Set(["m1"])]]);
     const load = async () => thread;
     const token = async () => "fixture";

@@ -585,6 +585,7 @@
     "agent": {"owner": "Simone", "kind": "reads-meaning", "source": {"count": "unavailable", "evidence": "Snapshot, sync and queued work sources"}, "handled": {"count": "unavailable", "evidence": "Per-item coverage receipt"}},
     "agent-poll": {"owner": "Kendra", "kind": "reads-meaning", "source": {"count": "unavailable", "evidence": "Seat-eligible work"}, "handled": {"count": "unavailable", "evidence": "Per-item Mac poll receipts"}},
     "agent-search-guard": {"owner": "Toni", "kind": "plumbing"},
+    "skill-check": {"owner": "Zora", "kind": "plumbing"},
     "ai-visibility": {"owner": "Noelle", "kind": "reads-meaning", "source": {"count": "unavailable", "evidence": "AI visibility search sources"}, "handled": {"count": "unavailable", "evidence": "Per-query review receipt"}},
     "archive-audit": {"owner": "Zora", "kind": "plumbing"},
     "boss-duty-clock": {"owner": "Simone", "kind": "plumbing", "call": "runBossDutyClock", "schedule": "boss-os-mail-alarm"},
