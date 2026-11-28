@@ -1796,6 +1796,30 @@
       "macWindow": "LIGHT"
     },
     {
+      "id": "skill-check",
+      "name": "Weekly skill firing test",
+      "what": "Runs 80 sample asks through claude -p and records whether the right one of the 20 most-used skills loads; a misfire opens one seq-bin issue for a person to fix the description.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "mac",
+      "slots": [
+        "sun 23:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.skill-check"
+        ]
+      },
+      "output": {
+        "metric": "skill asks checked",
+        "floor": 1,
+        "runs": 1
+      },
+      "macWindow": "HEAVY"
+    },
+    {
       "id": "chatgpt-searches",
       "name": "ChatGPT hidden searches",
       "what": "Each night asks the week's buyer questions for the sites due that night in ChatGPT Temporary Chats (her Chrome), records the searches ChatGPT ran, what it read and cited and whether her site showed up, and sends each site's gaps to its search pages as new searches; a limit or sign-out moves the rest to the next night.",
