@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * SIMONE: "DO YOU STILL WANT TO GO?" (owner, 26 Oct 2026: "Simone needs to send a reminder 28 hrs
- * before to ask if i still want to go"). Every 10 minutes 06:00–23:00, launchd
- * com.seq.boss-errand-reminders through duty-run.sh → duty_errand_reminders.
+ * before to ask if i still want to go"). The Boss OS Worker dispatches GitHub Actions job-errand-reminders.yml
+ * every 10 minutes for duty_errand_reminders.
  *
  * Asks Boss OS which bookings are 28 hours away (`POST /commands/errand-reminders`: the true instant
  * of each booking, New York time, minus 28 hours), sends each one email from Simone — what, where,

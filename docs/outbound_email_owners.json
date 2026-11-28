@@ -4,6 +4,12 @@
     "The client"
   ],
   "owners": {
+    "meeting-prep": { "seat": "Simone", "why": "Simone prepares upcoming calls from the owner’s calendar." },
+    "mac-disk": { "seat": "Kendra", "why": "Kendra owns Mac health and the low-space checks." },
+    "invitation-answers": { "seat": "Simone", "why": "Simone handles calendar and mailbox replies on the owner’s instruction." },
+    "spirit-in-morning": { "seat": "Imani", "why": "Imani owns the daily practice material carried in Your day." },
+    "brains-lines": { "seat": "Simone", "why": "Simone carries the brains check and scoreboard into Your day." },
+    "hicks-quarterly-update": { "seat": "Camille", "why": "Camille prepares the quarterly update for the owner to approve." },
     "monique-outreach": { "seat": "Monique", "why": "Her outreach lane (9 Oct 2026, \"u do it all\")." },
     "memphis-senior-outreach": { "seat": "Monique", "why": "Her outreach lane, for Memphis Senior Care Homes (13 Oct 2026)." },
     "senior-lead-notification": { "seat": "Camille", "why": "Memphis Senior Care Homes' lead notification; The Industry Guides' lead paths and property performance are Camille's duty." },

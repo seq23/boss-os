@@ -482,4 +482,16 @@ describe("the screen door", () => {
     const d = withDuties.duties[0];
     for (const k of ["executor", "last_run_at", "next_due_at", "last_outcome", "last_failure_reason", "state"]) expect(k in d).toBe(true);
   });
+
+  it("warns about a missing model only on a duty an agent runs (ship review, 27 Nov 2026)", async () => {
+    const all = (await apiJson(`/api/employees/roster`)).body.data.roster.flatMap((e: any) => e.duties);
+    // Zora's waiting-on check is a Mac script with no model by design: no warning.
+    const mac = all.find((d: any) => d.id === "duty_waiting_on");
+    expect(mac?.executor).toBe("local_job");
+    expect(mac.model_warning).toBeNull();
+    // An agent duty with no model named still carries the warning.
+    await env.DB.prepare(`UPDATE standing_duties SET executor = 'agent', task_input = '{}' WHERE id = 'duty_waiting_on'`).run();
+    const again = (await apiJson(`/api/employees/roster`)).body.data.roster.flatMap((e: any) => e.duties).find((d: any) => d.id === "duty_waiting_on");
+    expect(again.model_warning).toMatch(/names no model/);
+  });
 });

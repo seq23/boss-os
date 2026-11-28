@@ -158,11 +158,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   top: 0;
   z-index: 10;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-height: calc(70px + env(safe-area-inset-top));
   padding: calc(14px + env(safe-area-inset-top)) 18px 12px;
-  background: linear-gradient(var(--ground) 70%, transparent);
+  background: var(--ground);
 }
 
 .topbar h1 {
@@ -601,6 +602,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .row-main { flex: 1; min-width: 0; }
 .row-title { font-weight: 500; }
 .row-sub { color: var(--muted); font-size: 13px; }
+[data-testid="path-row"],
+[data-testid="duty-row"],
+[data-testid="duty-draft"] { align-items: flex-start; }
+[data-testid="path-row"] .pill,
+[data-testid="duty-row"] .pill { display: inline-block; margin-left: 0; margin-right: 4px; white-space: nowrap; }
+[data-testid="path-row"] .row-val { text-align: right; }
+[data-testid="duty-row"] .row-title .pill { margin-left: 6px; }
+@media (max-width: 600px) {
+  .row[data-testid="path-row"],
+  .row[data-testid="duty-row"],
+  .row[data-testid="duty-draft"] { display: grid; grid-template-columns: minmax(0, 1fr); }
+  [data-testid="path-row"] .row-val { text-align: left; }
+}
 .row-val { font-family: var(--mono); font-size: 13px; color: var(--muted); white-space: nowrap; }
 
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -1769,21 +1783,30 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .tab-more-icon { font-size: 18px; line-height: 19px; height: 19px; }
 .more-panel {
   position: absolute; left: 0; right: 0; bottom: 100%;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 6px;
   padding: 10px 12px; background: var(--card); border-top: 1px solid var(--line);
   box-shadow: 0 -8px 24px color-mix(in srgb, var(--ink) 12%, transparent);
 }
 .more-item {
-  font: inherit; font-size: 14px; color: var(--ink); background: var(--card-2);
-  border: 1px solid var(--line); border-radius: 10px; padding: 10px 8px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--card-2);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 4px; min-height: 44px; cursor: pointer;
 }
 .more-item[aria-current="page"] { border-color: var(--lane); color: var(--lane); }
+/* On a wide screen the drawer sits over the page's own column with compact tiles, not edge to edge
+   (ship review, 27 Nov 2026: 410px-wide buttons under a 1000px page read as a default grid). */
+@media (min-width: 760px) {
+  .more-panel {
+    left: 50%; right: auto; transform: translateX(-50%);
+    width: min(1040px, calc(100% - 24px));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    border: 1px solid var(--line); border-bottom: none; border-radius: 12px 12px 0 0;
+  }
+}
 
 .fab {
-  position: fixed; right: 14px; bottom: calc(var(--nav-h, 64px) + 12px); z-index: 31;
   background: var(--ink); color: var(--ground); border: none; border-radius: 999px;
-  padding: 10px 16px; font: inherit; font-weight: 600; font-size: 14px;
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 25%, transparent); cursor: pointer; white-space: nowrap;
+  min-height: 44px; padding: 8px 14px; font: inherit; font-weight: 600; font-size: 14px;
+  white-space: nowrap;
 }
 .sheet-scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--ink) 35%, transparent); z-index: 40; }
 .sheet {
@@ -1901,12 +1924,21 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .email-map-filter { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--ink); }
 .email-map-filter select { flex: 1; font-family: var(--body); font-size: 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 3px; background: var(--card-2); color: var(--ink); }
 .email-map-business > summary { display: flex; flex-direction: column; gap: 2px; }
+[data-testid="email-map"] .email-map-business > summary {
+  display: list-item;
+  min-height: 44px;
+  list-style-position: inside;
+}
+[data-testid="email-map"] .email-map-count { display: block; margin-top: 2px; }
+.email-map-card .brain-rev > summary,
+[data-testid="path-row"] .brain-rev > summary { min-height: 44px; padding: 10px 0; }
 .email-map-business-name { font-family: var(--display); font-size: 20px; color: var(--ink); }
 .email-map-count { font-size: 14px; color: var(--muted); }
 .email-map-business .brain-cards { margin-top: 8px; }
 .email-map-card { cursor: default; }
 .email-map-what { font-size: 16px; color: var(--ink); line-height: 1.4; }
 .email-map-runs { align-self: flex-start; font-size: 13px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; }
+.row-sub .email-map-runs { display: inline-block; white-space: nowrap; font-size: 12px; padding: 0 6px; }
 .email-map-dl { display: grid; grid-template-columns: 1fr; gap: 2px; margin: 8px 0 0; font-size: 14px; }
 .email-map-dl dt { color: var(--muted); margin-top: 6px; }
 .email-map-dl dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }

@@ -723,7 +723,7 @@ export async function deliverExecutiveReport(
    * Her brief: "the run must never exit silent — a failed run delivers a named notice with the
    * reason and the retry time." On 9 September the run failed at 12:07Z and that was the day's
    * report: nothing re-queued it, and the block read "failed" until the next morning. Now a failed
-   * delivery re-materialises the duty once, and the Mac's next slot (06:35 / 06:50 / 07:10 Central)
+   * delivery re-materialises the duty once, and the Mac's next slot (04:35 / 05:05 / 10:15 Central)
    * claims the new task. Three attempts a morning, none after noon Central — a retry that costs a
    * run each time must not turn a broken feed into six runs a day.
    */

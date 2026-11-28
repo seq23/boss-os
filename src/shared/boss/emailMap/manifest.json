@@ -6,7 +6,7 @@
     { "key": "porch-and-party", "label": "Porch & Party", "blurb": "Valerie's business: her admin emails, customer emails, Camille's office outreach and the P&P Studio." },
     { "key": "time-2-read", "label": "Time-2-Read", "blurb": "Monique's groups and institutions outreach, and the app's own emails." },
     { "key": "industry-guides", "label": "Spry Labs", "blurb": "The side businesses under Spry Labs: the Industry Guides' lead forms and outreach, ApprovalPrep, Dream Wedding, A Player Mode, KeepMyProof, How We Know, Kindle books and the backlink network." },
-    { "key": "personal", "label": "Personal", "blurb": "Boss OS to you: Simone's morning email, Spirit, Brains, errands, practice and lapse emails, meeting prep, and the team's notices." },
+    { "key": "personal", "label": "Personal", "blurb": "Boss OS to you: Simone's morning email, Spirit, Brains, errands, practice reminders, meeting prep, and the team's notices." },
     { "key": "spry", "label": "Creator studios", "blurb": "Spry's creator studios: the shared studio app and the creator dashboards it runs for clients, with their sign-in codes, briefs, clips and weekly recaps." },
     { "key": "friends", "label": "Friends' sites", "blurb": "Emails the friends' sites send to their own owners (Claire at Horse, Monika at Hicks). Their results stay in their own repos." }
   ],
@@ -27,6 +27,7 @@
     {
       "id": "brokerage-deal-finds", "business": "brokerage",
       "what": "New deals and the matches Monique found (buy and sell on the same company), what the hunts found, and the monthly ask for your live book",
+      "name": "New deals and matches",
       "sender": "Monique", "owner": "Monique",
       "from": "Inside Simone's morning email", "to": "You",
       "when": "Daily scan 5:30 AM; the monthly nudge on the 1st; a hunt you ask for within 5 minutes",
@@ -38,6 +39,7 @@
     {
       "id": "brokerage-buyers-tuesday", "business": "brokerage",
       "what": "Buyers for what you're selling: one email, two sections (people in your own mail who want it, and funds that report holding it), sized and priced against your sell orders",
+      "name": "Buyers for what you sell",
       "sender": "Monique", "owner": "Monique",
       "from": "Monique <monique@sequoiataylor.com>", "to": "You",
       "when": "Tuesdays 7:00 AM",
@@ -49,6 +51,7 @@
     {
       "id": "brokerage-sellers-thursday", "business": "brokerage",
       "what": "Sellers for what your LPs want to buy: one email, two sections (people in your own mail who hold or can source it, and funds that report holding it), sized and priced against your buy orders",
+      "name": "Sellers for what LPs want",
       "sender": "Monique", "owner": "Monique",
       "from": "Monique <monique@sequoiataylor.com>", "to": "You",
       "when": "Thursdays 7:00 AM",
@@ -60,6 +63,7 @@
     {
       "id": "people-worth-a-call", "business": "brokerage",
       "what": "Three to five people worth a conversation this week, by name, with why each one and what to say",
+      "name": "People worth a call",
       "sender": "Monique", "owner": "Monique",
       "from": "Monique <monique@sequoiataylor.com>", "to": "You",
       "when": "Mondays 7:15 AM",
@@ -72,6 +76,7 @@
     {
       "id": "wpv-front-door", "business": "west-peek-ventures",
       "what": "The front door: every email to os@joinwestpeek.com is read, filed onto a card and answered by Porter or the employee who owns it",
+      "name": "The front door (os@)",
       "sender": "Porter", "owner": "Porter",
       "from": "Porter or the employee who owns the card, as name@joinwestpeek.com", "to": "The partner who wrote (you or Scooter)",
       "when": "Within a minute of the email arriving",
@@ -82,6 +87,7 @@
     {
       "id": "wpv-partner-mail", "business": "west-peek-ventures",
       "what": "Every West Peek OS email to the partners: previews to approve, finished work, \"Porter, tell Scooter\" notes, hand-offs, Walker's monthly note",
+      "name": "Mail to the partners",
       "sender": "Porter (and the employee who did the work)", "owner": "Porter",
       "from": "name@joinwestpeek.com (\"Name · West Peek\"); system mail from os@westpeek.ventures", "to": "You and Scooter only (code-enforced)",
       "when": "As work finishes; the Worker ticks every minute",
@@ -92,6 +98,7 @@
     {
       "id": "wpv-wynn-brand-emails", "business": "west-peek-ventures",
       "what": "TLC brand emails: Wynn's pitches and follow-ups to brands, signed as you, sent only after you approve each one",
+      "name": "TLC brand pitches",
       "sender": "Wynn", "owner": "Wynn",
       "from": "Your fund mailbox, through your own Gmail", "to": "Brands (sponsors for the Learning Club and Rooms)",
       "when": "Approved emails go every half hour",
@@ -104,6 +111,7 @@
     {
       "id": "wpv-wynn-weekly-approval", "business": "west-peek-ventures",
       "what": "One email a week with every brand draft waiting for you, numbered by club; reply \"approve all\", \"approve 1, 3\", \"skip 2\" or \"change 2: …\"",
+      "name": "Weekly brand drafts to approve",
       "sender": "Wynn", "owner": "Wynn",
       "from": "Wynn <wynn@joinwestpeek.com>", "to": "You",
       "when": "Weekly, once the Monday brand batch has finished",
@@ -114,6 +122,7 @@
     {
       "id": "wpv-wynn-catch-up", "business": "west-peek-ventures",
       "what": "Catch-up approval email: brand drafts that waited a day without being in an email, all in one list",
+      "name": "Brand drafts catch-up",
       "sender": "Wynn", "owner": "Wynn",
       "from": "Wynn <wynn@joinwestpeek.com>", "to": "You",
       "when": "Only when a draft has waited 24 hours; at most one a day",
@@ -124,6 +133,7 @@
     {
       "id": "wpv-wynn-brand-reply", "business": "west-peek-ventures",
       "what": "A brand replied: Wynn's answer for you to approve before it goes",
+      "name": "A brand replied",
       "sender": "Wynn", "owner": "Wynn",
       "from": "Wynn <wynn@joinwestpeek.com>", "to": "You",
       "when": "When a brand replies",
@@ -134,6 +144,7 @@
     {
       "id": "wpv-wynn-roundup", "business": "west-peek-ventures",
       "what": "Monday TLC roundup: what waits on you, anything stuck, each club's dates and go/no-go, brands by stage, cash and in-kind committed",
+      "name": "Monday TLC roundup",
       "sender": "Wynn", "owner": "Wynn",
       "from": "Wynn <wynn@joinwestpeek.com>", "to": "You only (never Scooter)",
       "when": "Mondays 9:00 AM",
@@ -144,6 +155,7 @@
     {
       "id": "wpv-club-pace", "business": "west-peek-ventures",
       "what": "Club pace and go/no-go: a club behind pace (60 and 42 days out) or at its go/no-go (21 and 14 days out), and a brand's counter for your yes, no or counter",
+      "name": "Club pace and go/no-go",
       "sender": "Wynn", "owner": "Wynn",
       "from": "Wynn <wynn@joinwestpeek.com>", "to": "You (both partners for a counter)",
       "when": "Only at those dates, or when a brand counters",
@@ -154,6 +166,7 @@
     {
       "id": "wpv-parker-rooms", "business": "west-peek-ventures",
       "what": "Parker's Room proposal with a one-sheet per pick, next Learning Club topics and host options",
+      "name": "Parker's Room proposal",
       "sender": "Parker", "owner": "Parker",
       "from": "Parker <parker@joinwestpeek.com>", "to": "You and Scooter",
       "when": "Monthly (topics on the 1st) and when a Room packet is built",
@@ -164,6 +177,7 @@
     {
       "id": "wpv-approved-outside-email", "business": "west-peek-ventures",
       "what": "Any other outside email on an approved card: your own words sent as you, or an employee's signed with its own address",
+      "name": "Approved outside emails",
       "sender": "Porter (gatekeeper)", "owner": "Porter",
       "from": "You through your own Gmail, or name@joinwestpeek.com", "to": "The card's recipient (only if the card is on your Outside email list)",
       "when": "When you approve it",
@@ -175,6 +189,7 @@
     {
       "id": "wpv-partner-tail", "business": "west-peek-ventures",
       "what": "The partner tail: a fix report for each new email Scooter sends os@, and a Monday digest (ends 4 Jan 2027)",
+      "name": "The partner tail",
       "sender": "Porter", "owner": "Porter",
       "from": "os@westpeek.ventures", "to": "You (your fund inbox)",
       "when": "Checks every 15 minutes; digest Mondays 7:00 AM",
@@ -186,9 +201,10 @@
     {
       "id": "monique-prospects", "business": "west-peek-ventures",
       "what": "Monique's prospect emails to the people you approved: one first email and up to three follow-ups (day 3, 7 and 14; emails 3 and 4 only in words you approved), weekdays only, then never again",
+      "name": "Prospect emails",
       "sender": "Monique", "owner": "Monique",
       "from": "Your fund outreach mailbox (through the delegation you OK'd)", "to": "Prospects you approved, at most 20 new a day",
-      "when": "Weekdays 9:30 AM (never Saturday or Sunday), once you approved the template",
+      "when": "Weekdays 10:40 AM Central, once you approved the template",
       "runs": "mac", "trigger": "Mac job com.seq.boss-prospects (lp:prospects --live)",
       "pause": "Outreach kill switch on Team → Outreach, or launchctl bootout gui/501/com.seq.boss-prospects",
       "as_her": true,
@@ -198,9 +214,10 @@
     {
       "id": "lp8-drip", "business": "west-peek-ventures",
       "what": "The one-list LP emails: a first email and three follow-ups in the same thread (day 3, 7 and 14), in the words you approved, then never again; a reply, bounce or block anywhere at their firm stops everyone there",
+      "name": "One-list LP emails",
       "sender": "Monique", "owner": "Monique",
       "from": "sequoia@westpeek.ventures (through the delegation you OK'd)", "to": "The people on your private LP list, at most 6 new a weekday",
-      "when": "Weekdays 9:30 AM (never Saturday or Sunday), once the list is approved",
+      "when": "Weekdays 10:45 AM Central, once the list is approved",
       "runs": "mac", "trigger": "Mac job com.seq.boss-lp8-drip (lp8:drip)",
       "pause": "Set approved to false in the private plan, or launchctl bootout gui/501/com.seq.boss-lp8-drip",
       "as_her": true,
@@ -210,6 +227,7 @@
     {
       "id": "her-tap-send", "business": "west-peek-ventures",
       "what": "A held LP reply, sent the moment you tap \"Send as is\" in the morning email; a picked time adds the calendar invite",
+      "name": "A held LP reply, on your tap",
       "sender": "Monique", "owner": "Monique",
       "from": "The address the person wrote to (their own thread)", "to": "The person who replied",
       "when": "Only when you tap",
@@ -221,6 +239,7 @@
     {
       "id": "wpv-lp-outcomes", "business": "west-peek-ventures",
       "what": "What happened to every LP email: opt-outs first, then replies and bounces",
+      "name": "What happened to LP emails",
       "sender": "Monique", "owner": "Monique",
       "from": "Monique <monique@sequoiataylor.com>", "to": "You",
       "when": "Tuesdays 7:15 AM",
@@ -232,6 +251,7 @@
     {
       "id": "wpv-lp-morning-lines", "business": "west-peek-ventures",
       "what": "LP replies to answer, people to catch up with, and the 8Raise line when something is wrong",
+      "name": "LP lines in the morning email",
       "sender": "Monique", "owner": "Monique",
       "from": "Inside Simone's morning email", "to": "You",
       "when": "Daily (LP run 6:15 AM, catch-ups 6:20 AM, 8Raise 6:25 AM)",
@@ -243,6 +263,7 @@
     {
       "id": "wpv-site-lead", "business": "west-peek-ventures",
       "what": "A joinwestpeek.com site-form lead",
+      "name": "joinwestpeek.com lead",
       "sender": "The site (no employee)", "owner": "Porter",
       "from": "The site's EMAIL_FROM setting", "to": "A managing partner, and the network sheet",
       "when": "When someone submits the form",
@@ -253,6 +274,7 @@
     {
       "id": "wpv-topbarz-code", "business": "west-peek-ventures",
       "what": "Top Barz vote verification code",
+      "name": "Top Barz vote code",
       "sender": "The site (no employee)", "owner": "Porter",
       "from": "Top Barz Voting <topbarz@joinwestpeek.com>", "to": "The voter",
       "when": "When someone votes",
@@ -263,6 +285,7 @@
     {
       "id": "wpv-westpeek-live", "business": "west-peek-ventures",
       "what": "westpeek.live sign-in links and event-request emails (plus a by-hand delivery probe)",
+      "name": "westpeek.live sign-ins",
       "sender": "The site (no employee)", "owner": "Porter",
       "from": "notifications@events.westpeek.live", "to": "The person signing in or asking for an event",
       "when": "On sign-in or an event request",
@@ -273,6 +296,7 @@
     {
       "id": "wpv-network-introductions", "business": "west-peek-ventures",
       "what": "Network OS double-opt-in introductions (retired 27 Sep 2026)",
+      "name": "Network introductions (retired)",
       "sender": "Nobody now", "owner": "Porter",
       "from": "The Gmail account behind its token", "to": "The introduced contacts",
       "when": "Never: nothing calls it",
@@ -285,6 +309,7 @@
     {
       "id": "pnp-corporate-outreach", "business": "porch-and-party",
       "what": "Camille's office Christmas outreach to Memphis offices: one email and one follow-up on day 3 (the approved contract holds no more), plain text; stops at 4 bookings or 5 Dec",
+      "name": "Office Christmas outreach",
       "sender": "Camille", "owner": "Camille",
       "from": "Porch & Party 901 <sequoia@porchandparty901.com>", "to": "Memphis offices (published addresses, checked first)",
       "when": "Weekdays 10:20 AM",
@@ -300,6 +325,7 @@
     {
       "id": "pnp-marketplace-report", "business": "porch-and-party",
       "what": "Marketplace listings: an email only when Camille could not finish the day's listing run (what happened, what she did, status)",
+      "name": "Marketplace run problems",
       "sender": "Camille", "owner": "Camille",
       "from": "Camille <camille@sequoiataylor.com>", "to": "You",
       "when": "Daily 1:40 PM, only on a failed run",
@@ -311,6 +337,7 @@
     {
       "id": "pnp-valerie-todo", "business": "porch-and-party",
       "what": "Valerie's 7 AM to-do; on Mondays the same email carries \"Your week\"",
+      "name": "Valerie's to-do",
       "sender": "Porch & Party (its own system)", "owner": "Danielle",
       "from": "Porch & Party <hello@porchandparty901.com>", "to": "Valerie",
       "when": "Daily 7:00 AM",
@@ -321,6 +348,7 @@
     {
       "id": "pnp-new-request", "business": "porch-and-party",
       "what": "New request notice when a customer fills in the request form",
+      "name": "New customer request",
       "sender": "Porch & Party (its own system)", "owner": "Danielle",
       "from": "Porch & Party <hello@porchandparty901.com>", "to": "Valerie",
       "when": "When a request arrives",
@@ -331,6 +359,7 @@
     {
       "id": "pnp-invoices", "business": "porch-and-party",
       "what": "Invoices to customers with a copy to Valerie; the year-end summary on request",
+      "name": "Invoices",
       "sender": "Porch & Party (Valerie presses Send)", "owner": "Danielle",
       "from": "Porch & Party <hello@porchandparty901.com>", "to": "The customer; Valerie (copy)",
       "when": "When Valerie presses Send in /admin",
@@ -341,6 +370,7 @@
     {
       "id": "pnp-hold-reminders", "business": "porch-and-party",
       "what": "Reminder to a customer whose unpaid rental hold is about to end (once per end time)",
+      "name": "Rental hold reminders",
       "sender": "Porch & Party (its own system)", "owner": "Danielle",
       "from": "Porch & Party <hello@porchandparty901.com>", "to": "The customer",
       "when": "Checked every hour",
@@ -351,6 +381,7 @@
     {
       "id": "pnp-customer-reminders", "business": "porch-and-party",
       "what": "Day-before booking reminders, and thank-yous for jobs marked done",
+      "name": "Booking reminders and thanks",
       "sender": "Porch & Party (its own system)", "owner": "Danielle",
       "from": "Porch & Party <hello@porchandparty901.com>", "to": "The customer",
       "when": "Daily 10:00 AM",
@@ -361,6 +392,7 @@
     {
       "id": "pnp-studio-mail", "business": "porch-and-party",
       "what": "P&P Studio: sign-in codes only (the brief, clips-ready, recap and posting-problem emails to you are cancelled, 1 Nov 2026)",
+      "name": "P&P Studio sign-in codes",
       "sender": "P&P Studio (its own system)", "owner": "Danielle",
       "from": "The studio's sender (Creator Studios)", "to": "The studio's owner",
       "when": "When someone signs in",
@@ -372,6 +404,7 @@
     {
       "id": "t2r-groups-outreach", "business": "time-2-read",
       "what": "Monique's emails to homeschool pods, co-ops, microschools, libraries and programs: a free 15-day code each, one follow-up on day 3 (up to three only in words you approved)",
+      "name": "Groups outreach",
       "sender": "Monique", "owner": "Monique",
       "from": "st@time-2-read.com", "to": "Groups and institutions (published addresses, checked first)",
       "when": "Up to 10 new groups a weekday; the Mac imports weekdays 8:15 AM, the cloud sends hourly",
@@ -384,6 +417,7 @@
     {
       "id": "t2r-app-auth", "business": "time-2-read",
       "what": "App sign-in and account emails",
+      "name": "App sign-in emails",
       "sender": "The app (no employee)", "owner": "Danielle",
       "from": "Supabase Auth's own mailer (the project's email settings)", "to": "The user",
       "when": "On sign-up, sign-in or a password reset",
@@ -394,6 +428,7 @@
     {
       "id": "t2r-app-parents", "business": "time-2-read",
       "what": "Parent emails: consent requests",
+      "name": "Parent consent requests",
       "sender": "The app (no employee)", "owner": "Danielle",
       "from": "Time-2-Read <hello@time-2-read.com> (Reply-To st@time-2-read.com)", "to": "The parent",
       "when": "When a child signs up and a parent's consent is needed",
@@ -404,6 +439,7 @@
     {
       "id": "t2r-app-feedback", "business": "time-2-read",
       "what": "App feedback: to the team inbox, with a copy to the user who sent it",
+      "name": "App feedback",
       "sender": "The app (no employee)", "owner": "Danielle",
       "from": "The app's feedback sender", "to": "The team inbox; the user",
       "when": "When someone sends feedback",
@@ -414,6 +450,7 @@
     {
       "id": "t2r-app-admin-reports", "business": "time-2-read",
       "what": "App cost report and traffic alerts",
+      "name": "App cost and traffic alerts",
       "sender": "The app (no employee)", "owner": "Danielle",
       "from": "Time2Read Reports / Alerts (Resend's test sender)", "to": "The app's admin address",
       "when": "On the app's schedule, and when traffic jumps or drops",
@@ -424,6 +461,7 @@
     {
       "id": "t2r-app-breach-notice", "business": "time-2-read",
       "what": "Security notice to users if there is ever a data breach",
+      "name": "Data breach notice",
       "sender": "The app (no employee)", "owner": "Danielle",
       "from": "Time-2-Read Security <privacy@time-2-read.com>", "to": "Affected users",
       "when": "Only if someone runs it",
@@ -434,6 +472,7 @@
     {
       "id": "t2r-lifecycle-welcome", "business": "time-2-read",
       "what": "Welcome: three things to try on the first night of the 7-day trial",
+      "name": "Trial welcome",
       "sender": "The app (no employee)", "owner": "Sequoia",
       "from": "Time-2-Read <hello@time-2-read.com> (Reply-To st@time-2-read.com)", "to": "The parent who holds the account (never a child, a school account or a parent of a linked school child)",
       "when": "Right after a trial starts; once per account",
@@ -444,6 +483,7 @@
     {
       "id": "t2r-lifecycle-trial-ending", "business": "time-2-read",
       "what": "Trial ending: what each child read, the charge date, keep / switch to yearly / cancel links",
+      "name": "Trial ending",
       "sender": "The app (no employee)", "owner": "Sequoia",
       "from": "Time-2-Read <hello@time-2-read.com> (Reply-To st@time-2-read.com)", "to": "The parent who holds the account (never a child, a school account or a parent of a linked school child)",
       "when": "2 days before the trial ends (12 to 48 hours before); once per account",
@@ -454,6 +494,7 @@
     {
       "id": "t2r-lifecycle-free-stories", "business": "time-2-read",
       "what": "3 free stories used: the free-week offer when a free account finishes its 3rd story",
+      "name": "Free stories used",
       "sender": "The app (no employee)", "owner": "Sequoia",
       "from": "Time-2-Read <hello@time-2-read.com> (Reply-To st@time-2-read.com)", "to": "The parent who holds the account (never a child, a school account or a parent of a linked school child)",
       "when": "Within the hour after the 3rd finished story; once per account, ever",
@@ -464,6 +505,7 @@
     {
       "id": "t2r-lifecycle-come-back", "business": "time-2-read",
       "what": "Come back: their child's stories are still saved (no discount, no pressure)",
+      "name": "Come back",
       "sender": "The app (no employee)", "owner": "Sequoia",
       "from": "Time-2-Read <hello@time-2-read.com> (Reply-To st@time-2-read.com)", "to": "The parent who holds the account (never a child, a school account or a parent of a linked school child)",
       "when": "14 days after a subscription ends; once per account, ever",
@@ -474,6 +516,7 @@
     {
       "id": "hgoml-app-mail", "business": "time-2-read",
       "what": "heygetonmylevel (the subscriber bonus): feedback, cost report and traffic alerts",
+      "name": "heygetonmylevel app mail",
       "sender": "The app (no employee)", "owner": "Danielle",
       "from": "The app's senders", "to": "The team inbox; the user for feedback",
       "when": "On feedback, and on the app's schedule",
@@ -485,6 +528,7 @@
     {
       "id": "monique-outreach", "business": "industry-guides",
       "what": "Monique's outreach to businesses for the guides and the side businesses (A Player Mode, ApprovalPrep, the wedding checklist, Time-2-Read): first email, a follow-up on day 3, and for the guides emails 3 and 4 on day 7 and 14 once you approve their words, then never again",
+      "name": "Business outreach",
       "sender": "Monique", "owner": "Monique",
       "from": "hello@theindustryguides.com for every guide; hello@aplayermode.com, hello@approvalprep.com, hello@weddingchecklistpdf.com, st@time-2-read.com", "to": "Prospect businesses (about 10 a day per site)",
       "when": "Hourly in the sending window",
@@ -495,6 +539,7 @@
     {
       "id": "memphis-senior-outreach", "business": "industry-guides",
       "what": "Monique's outreach to senior living communities for Memphis Senior Care Homes",
+      "name": "Senior living outreach",
       "sender": "Monique", "owner": "Monique",
       "from": "hello@theindustryguides.com", "to": "Assisted living and memory care communities around Memphis",
       "when": "Hourly in the sending window, once the guides' sender is live",
@@ -505,6 +550,7 @@
     {
       "id": "senior-lead-notification", "business": "industry-guides",
       "what": "Memphis Senior Care Homes: a new family lead",
+      "name": "New family lead",
       "sender": "The site (no employee)", "owner": "Camille",
       "from": "The Industry Guides <hello@theindustryguides.com>", "to": "You",
       "when": "When a family submits the form",
@@ -515,6 +561,7 @@
     {
       "id": "senior-facility-teaser", "business": "industry-guides",
       "what": "Memphis Senior Care Homes: a no-names teaser to communities that fit a family",
+      "name": "Teaser to communities",
       "sender": "The site (no employee)", "owner": "Camille",
       "from": "The Industry Guides <hello@theindustryguides.com>", "to": "Matching communities",
       "when": "On a new lead",
@@ -525,6 +572,7 @@
     {
       "id": "senior-facility-release", "business": "industry-guides",
       "what": "Memphis Senior Care Homes: the family's details to a community that accepted",
+      "name": "Family details released",
       "sender": "The site (no employee)", "owner": "Camille",
       "from": "The Industry Guides <hello@theindustryguides.com>", "to": "The accepting community",
       "when": "When a community accepts",
@@ -535,6 +583,7 @@
     {
       "id": "senior-pass-notice", "business": "industry-guides",
       "what": "Memphis Senior Care Homes: the family went elsewhere or the round filled",
+      "name": "Family went elsewhere",
       "sender": "The site (no employee)", "owner": "Camille",
       "from": "The Industry Guides <hello@theindustryguides.com>", "to": "Communities that passed or missed the round",
       "when": "When the round closes",
@@ -545,6 +594,7 @@
     {
       "id": "senior-family-followups", "business": "industry-guides",
       "what": "Memphis Senior Care Homes: 30, 60 and 90-day follow-ups to the family",
+      "name": "Family follow-ups",
       "sender": "The site (no employee)", "owner": "Camille",
       "from": "The Industry Guides <hello@theindustryguides.com>", "to": "The family who asked for help",
       "when": "30, 60 and 90 days after the lead",
@@ -555,6 +605,7 @@
     {
       "id": "guides-lead-notification", "business": "industry-guides",
       "what": "A visitor asked for help on one of the five guides",
+      "name": "Guide visitor asked for help",
       "sender": "The site (no employee)", "owner": "Camille",
       "from": "The guide's EMAIL_FROM setting", "to": "The guide's lead list",
       "when": "When someone submits request-assistance",
@@ -565,6 +616,7 @@
     {
       "id": "industryguides-lead-notification", "business": "industry-guides",
       "what": "A visitor asked for help on theindustryguides.com (no page posts to it today)",
+      "name": "theindustryguides.com lead",
       "sender": "The site (no employee)", "owner": "Camille",
       "from": "The Industry Guides <hello@theindustryguides.com>", "to": "The hub's lead list",
       "when": "When someone submits request-assistance",
@@ -575,9 +627,10 @@
     {
       "id": "lgcv-search-outcomes-weekly", "business": "industry-guides",
       "what": "Weekly search report for every portfolio site, now a section of the Spry Labs weekly",
+      "name": "Weekly search report",
       "sender": "The Industry Guides (no employee)", "owner": "Camille",
       "from": "The Industry Guides <hello@theindustryguides.com>", "to": "No one directly (the Spry Labs weekly carries it)",
-      "when": "Wednesdays 7:03 AM, into the Spry Labs weekly",
+      "when": "Tuesday evenings at 6:08 PM Central, with retries on Wednesday; its summary goes into the Spry Labs weekly",
       "runs": "spry-weekly", "trigger": "GitHub Action search-outcomes-weekly.yml uploads its summary for Boss OS",
       "pause": "gh workflow disable search-outcomes-weekly.yml -R seq23/local-guides-citation-velocity",
       "code": [{"repo": "local-guides-citation-velocity", "paths": [".github/workflows/search-outcomes-weekly.yml", "scripts/search_console/search_outcomes_weekly.py", "scripts/search_console/spry_weekly_summary.mjs"]}]
@@ -585,6 +638,7 @@
     {
       "id": "spry-weekly-outcomes", "business": "industry-guides",
       "what": "Weekly outcome reports for A Player Mode, Creator Network, the Spry Labs site and the local guides, now sections of the Spry Labs weekly",
+      "name": "Weekly outcome reports",
       "sender": "The site (no employee)", "owner": "Camille",
       "from": "The repo's report sender setting", "to": "No one directly (the Spry Labs weekly carries them)",
       "when": "Wednesdays 7:13 to 7:43 AM, into the Spry Labs weekly",
@@ -595,6 +649,7 @@
     {
       "id": "spry-labs-weekly", "business": "industry-guides",
       "what": "The Spry Labs weekly: one email, a short section for each side business's week (a missing report is a plain line)",
+      "name": "The Spry Labs weekly",
       "sender": "Camille", "owner": "Camille",
       "from": "Camille <camille@sequoiataylor.com>", "to": "You",
       "when": "Wednesdays 8:15 AM",
@@ -606,6 +661,7 @@
     {
       "id": "approvalprep-download-email", "business": "industry-guides",
       "what": "ApprovalPrep download link after a purchase",
+      "name": "ApprovalPrep download link",
       "sender": "The site (no employee)", "owner": "Danielle",
       "from": "ApprovalPrep <hello@mail.approvalprep.com>", "to": "The buyer",
       "when": "On a purchase or a resend request",
@@ -616,6 +672,7 @@
     {
       "id": "approvalprep-email-nurture", "business": "industry-guides",
       "what": "ApprovalPrep free-item series: the free Letter of Explanation sample or the free credit starter (\"Before you pay a credit repair company\", from 7 Nov 2026) at once, then one email every 3 days about one paid kit (5 after the sample, 2 after the starter), stopping on purchase, unsubscribe or the last step",
+      "name": "ApprovalPrep free-item series",
       "sender": "The site (no employee)", "owner": "Danielle",
       "from": "ApprovalPrep <hello@mail.approvalprep.com>", "to": "A person who typed their address for the free sample or the free credit starter",
       "when": "Due steps sent at 8:17, 13:17 and 18:17 Central",
@@ -626,6 +683,7 @@
     {
       "id": "approvalprep-notification-dispatch", "business": "industry-guides",
       "what": "ApprovalPrep weekly notification dispatch (records only, sends nothing)",
+      "name": "ApprovalPrep weekly dispatch",
       "sender": "Nobody", "owner": "Danielle",
       "from": "None", "to": "None",
       "when": "Fridays, dry run",
@@ -636,6 +694,7 @@
     {
       "id": "wedding-delivery-email", "business": "industry-guides",
       "what": "Wedding checklist order delivery (the $9 PDF and $39 bundle), retries, and an alert to you if a delivery fails",
+      "name": "Wedding checklist delivery",
       "sender": "The site (no employee)", "owner": "Danielle",
       "from": "Dream Wedding Builder <orders@mail.weddingchecklistpdf.com>", "to": "The buyer; you for a failed delivery",
       "when": "On purchase; failed sends retried hourly",
@@ -646,6 +705,7 @@
     {
       "id": "creator-studios-mail", "business": "spry",
       "what": "Creator Studios: sign-in codes, brief ready, clips ready, weekly recap, posting problems",
+      "name": "Creator Studios mail",
       "sender": "The studio (no employee)", "owner": "Danielle",
       "from": "The studio's sender", "to": "The studio's owner",
       "when": "Hourly checks, a 7:30 AM brief, Monday recap",
@@ -656,6 +716,7 @@
     {
       "id": "aplayer-mode-user-actions", "business": "industry-guides",
       "what": "A Player Mode: emails a user approved in the app, sent from their own Gmail",
+      "name": "A Player Mode: user's own emails",
       "sender": "The user", "owner": "Danielle",
       "from": "The user's own Gmail", "to": "Whoever the user wrote to",
       "when": "When the user approves",
@@ -666,6 +727,7 @@
     {
       "id": "aplayer-mode-renewal-reminder", "business": "industry-guides",
       "what": "A Player Mode: one plain-text reminder before each yearly renewal (price, date, how to cancel, a link), for yearly plans bought by card or in the App Store; the law asks for it 15 to 45 days ahead",
+      "name": "A Player Mode renewal reminder",
       "sender": "The app (no employee)", "owner": "Danielle",
       "from": "billing@mail.aplayermode.com (replies go to support@aplayermode.com)", "to": "The subscriber",
       "when": "Daily at 9 or 10 AM Central, once per renewal",
@@ -676,6 +738,7 @@
     {
       "id": "youtube-comment-watch", "business": "industry-guides",
       "what": "How We Know: new YouTube comments worth a reply",
+      "name": "How We Know: YouTube comments",
       "sender": "Monique", "owner": "Monique",
       "from": "Monique <monique@sequoiataylor.com>", "to": "You",
       "when": "Daily 2:05 PM and 7:05 PM",
@@ -687,6 +750,7 @@
     {
       "id": "hwk-loop-stops", "business": "industry-guides",
       "what": "How We Know: \"needs you\" stops, as GitHub issues GitHub emails you",
+      "name": "How We Know: needs-you stops",
       "sender": "GitHub", "owner": "Monique",
       "from": "notifications@github.com", "to": "You",
       "when": "When a loop stage stops",
@@ -697,6 +761,7 @@
     {
       "id": "hwk-sunday-digest", "business": "industry-guides",
       "what": "How We Know: the Sunday digest, now a section of the Spry Labs weekly (the issue stays as the record; it no longer emails you)",
+      "name": "How We Know: Sunday digest",
       "sender": "GitHub", "owner": "Monique",
       "from": "notifications@github.com", "to": "No one directly (the Spry Labs weekly carries it)",
       "when": "Sundays 11:00 AM, into Wednesday's Spry Labs weekly",
@@ -707,6 +772,7 @@
     {
       "id": "hwk-monthly-review", "business": "industry-guides",
       "what": "How We Know: monthly review issue",
+      "name": "How We Know: monthly review",
       "sender": "GitHub", "owner": "Monique",
       "from": "notifications@github.com", "to": "You",
       "when": "The 1st, early morning",
@@ -717,6 +783,7 @@
     {
       "id": "authority-network-issues", "business": "industry-guides",
       "what": "Backlink network: autopilot and distribution issues (emailed if you watch the repo)",
+      "name": "Backlink network issues",
       "sender": "GitHub", "owner": "Monique",
       "from": "notifications@github.com", "to": "You, if watching",
       "when": "Daily",
@@ -727,9 +794,10 @@
     {
       "id": "kdp-surface-report", "business": "industry-guides",
       "what": "Kindle: what this month's Amazon KDP mail means, and anything that needs you",
+      "name": "Kindle monthly report",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
-      "when": "Monthly, the 1st at 9:30 AM",
+      "when": "Monthly, the 1st at 10:30 AM Central",
       "runs": "mac", "trigger": "Mac job com.seq.kdp-surface",
       "pause": "launchctl bootout gui/501/com.seq.kdp-surface",
       "launchd": ["com.seq.kdp-surface"],
@@ -738,6 +806,7 @@
     {
       "id": "kdp-new-title", "business": "industry-guides",
       "what": "Kindle: a stop with the one thing to do while publishing an approved book, a still-waiting note, and the Amazon link when it is live",
+      "name": "Kindle: publishing a book",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
       "when": "Mondays at 9:45 AM, only when a book you approved is not yet live",
@@ -749,17 +818,19 @@
 
     {
       "id": "simone-your-day", "business": "personal",
-      "what": "Your one morning email: Decide, new deals and Monique found, Spirit, Camille's briefing in three headlines, Done for you, Catch up with, Porch & Party to-do for Valerie",
+      "what": "Your one morning email: Decide, new deals and Monique found, Spirit, Camille's briefing in three headlines, Done for you, Catch up with, Porch & Party to-do for Valerie, and an 8Raise note if Monique’s credits need attention",
+      "name": "Morning email",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
-      "when": "Daily at 6:40 AM; a 7:50 AM safety run sends it only if the first did not",
-      "runs": "github", "trigger": "GitHub Action job-your-day.yml in boss-os (off the Mac since 1 Nov 2026)",
+      "when": "Once each morning: first try 6:40 AM Central; if it has not gone yet, catch-up tries at 7:10, 7:30, 7:50, 9:30 AM and 12:30 PM",
+      "runs": "github", "trigger": "GitHub Actions job-your-day.yml, dispatched by the Boss OS Worker",
       "pause": "Disable job-your-day.yml in boss-os",
       "code": [{ "repo": "boss-os", "paths": [".github/workflows/job-your-day.yml", "scripts/ops/your-day.mjs", "scripts/ops/notify.mjs", "src/shared/boss/mail/morning.mjs", "src/shared/boss/mail/plain.mjs"] }]
     },
     {
       "id": "spirit-in-morning", "business": "personal",
       "what": "Spirit: the week, moon and sky, the morning sequence, a new gratitude sentence, the week's practice",
+      "name": "Spirit",
       "sender": "Simone", "owner": "Imani",
       "from": "Inside Simone's morning email", "to": "You",
       "when": "Daily, in the morning email",
@@ -770,9 +841,10 @@
     {
       "id": "brains-lines", "business": "personal",
       "what": "Brains: the scoreboard grid on the 1st and one line from the weekly check on Mondays",
+      "name": "Brains lines",
       "sender": "Simone", "owner": "Simone",
       "from": "Inside Simone's morning email", "to": "You",
-      "when": "The 1st and Mondays",
+      "when": "In the morning email on the 1st and on Mondays",
       "runs": "folded", "trigger": "Part of Simone's morning email",
       "pause": "Pausing the morning email pauses it",
       "code": [{ "repo": "boss-os", "paths": ["src/shared/boss/brains/brain.mjs"] }]
@@ -780,10 +852,11 @@
     {
       "id": "meeting-prep", "business": "personal",
       "what": "Meeting prep the evening before each call: who, what was said, what to ask",
+      "name": "Meeting prep",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
-      "when": "From 6:00 PM for tomorrow's meetings; any hour for a meeting later today with no prep",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-meeting-prep, hourly",
+      "when": "From 6:00 PM Central for tomorrow's meetings; any hour for a meeting later today with no prep",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-meeting-prep, hourly at :05 from midnight through 6 AM and from 10 AM through 11 PM Central",
       "pause": "launchctl bootout gui/501/com.seq.boss-meeting-prep",
       "launchd": ["com.seq.boss-meeting-prep"],
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/meeting-prep.mjs", "src/shared/boss/meetingPrep/prep.mjs"] }]
@@ -791,10 +864,11 @@
     {
       "id": "simone-errands", "business": "personal",
       "what": "Errands: a booking or request to the business you named in your email, signed by Simone as Chief of Staff",
+      "name": "Errands",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "The one business address you wrote",
-      "when": "Within 10 minutes of your email",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-simone-commands (every 10 minutes, 6 AM to 11 PM)",
+      "when": "On the next Mac tick after your email",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-simone-commands, every 10 minutes at 06:00, 06:10, 06:20 and from 10:00–23:50 Central",
       "pause": "Reply \"cancel\" before the next tick",
       "launchd": ["com.seq.boss-simone-commands"],
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/simone-commands.mjs", "scripts/ops/notify.mjs", "src/worker/boss/commands/run.ts"] }]
@@ -802,6 +876,7 @@
     {
       "id": "errand-reminders", "business": "personal",
       "what": "\"Do you still want to go?\" 28 hours before a booking Simone made, with Yes, keep it / Cancel it",
+      "name": "Errand reminders",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
       "when": "28 hours before each booking",
@@ -812,10 +887,11 @@
     {
       "id": "simone-commands", "business": "personal",
       "what": "Simone's follow-ups on what you asked by email: a lookup's candidates, a draft to approve word for word, a bounce, a code's counts",
+      "name": "Simone's follow-ups",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
-      "when": "Within 10 minutes, only when she owes you an answer",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-simone-commands",
+      "when": "During the Mac’s polling windows, only when she owes you an answer",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-simone-commands, every 10 minutes at 06:00, 06:10, 06:20 and from 10:00–23:50 Central",
       "pause": "launchctl bootout gui/501/com.seq.boss-simone-commands",
       "launchd": ["com.seq.boss-simone-commands"],
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/simone-commands.mjs"] }]
@@ -823,6 +899,7 @@
     {
       "id": "simone-sends-on-her-word", "business": "personal",
       "what": "An email to a person, or the calendar invite you asked for, sent for you only after your Send",
+      "name": "Sent on your Send",
       "sender": "Simone", "owner": "Simone",
       "from": "Your Workspace mailbox (st@time-2-read.com for Time-2-Read)", "to": "The person you named",
       "when": "Only when you tap Send or reply \"send\"",
@@ -834,16 +911,18 @@
     {
       "id": "practice-lapse", "business": "personal",
       "what": "No longer an email of its own (13 Nov 2026): when you drift, one line in Simone's morning email with the streak and one of your own laws (day 2, day 4, day 7, then every 3 days)",
+      "name": "Practice lapse line",
       "sender": "Imani", "owner": "Imani",
-      "from": "Imani <imani@sequoiataylor.com>", "to": "You",
-      "when": "From 10:00 AM, at most one a day, only while you are drifting",
-      "runs": "github", "trigger": "GitHub Actions job-errand-reminders.yml (practice-nudges)",
-      "pause": "Open the app, talk to the coach or close a gate; or disable the job-errand-reminders workflow on GitHub",
-      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/practice-nudges.mjs", "src/worker/boss/practice/lapse.ts"] }]
+      "from": "Inside Simone’s morning email", "to": "You",
+      "when": "In Your day on lapse ladder days",
+      "runs": "folded", "trigger": "Your day reads the practice lapse line",
+      "pause": "Open the app, talk to the coach or close a gate",
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/your-day.mjs", "src/worker/boss/practice/lapse.ts", "src/worker/boss/routes/practice.ts"] }]
     },
     {
       "id": "practice-midday", "business": "personal",
       "what": "The midday push: today's law and \"Did you hold it?\" with the Midday gate one tap away",
+      "name": "Midday push",
       "sender": "Imani", "owner": "Imani",
       "from": "Imani <imani@sequoiataylor.com>", "to": "You",
       "when": "Noon to 3:00 PM, once, while the Midday gate is open",
@@ -854,6 +933,7 @@
     {
       "id": "ancestral-hour-reminder", "business": "personal",
       "what": "Your ancestral hour: 3 days before the month ends and on the last day, with Done ✓",
+      "name": "Ancestral hour",
       "sender": "Imani", "owner": "Imani",
       "from": "Imani <imani@sequoiataylor.com>", "to": "You",
       "when": "Twice at the end of each month, from 10:00 AM, until it is done",
@@ -864,10 +944,11 @@
     {
       "id": "toni-risk-watch", "business": "personal",
       "what": "Money at risk now (paid AI calls), as a problem email after the fix is running",
+      "name": "Money at risk",
       "sender": "Toni", "owner": "Toni",
       "from": "Toni <toni@sequoiataylor.com>", "to": "You",
-      "when": "Checked daily 8:20 AM; emails only when money is at risk",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-risk-watch",
+      "when": "Daily at 10:35 AM Central; outside locks Fridays at 11:35 AM Central",
+      "runs": "mac", "trigger": "Mac jobs com.seq.boss-risk-watch and com.seq.boss-outside-locks",
       "pause": "launchctl bootout gui/501/com.seq.boss-risk-watch",
       "launchd": ["com.seq.boss-risk-watch", "com.seq.boss-outside-locks"],
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/risk-watch.mjs", "scripts/ops/lib/duty-kit.mjs"] }]
@@ -875,9 +956,10 @@
     {
       "id": "mac-disk", "business": "personal",
       "what": "Mac disk: how much space is free after the daily clean-up. Not an email since 7 Nov 2026: a row on the Updates page (☰ More → Updates), counted in the morning email",
+      "name": "Mac disk space",
       "sender": "Simone (for Kendra)", "owner": "Kendra",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
-      "when": "Daily 7:15 AM (disk sweep, under 15 GB free, once a day) and 9:00 AM (clean-up, under 20 GB free)",
+      "when": "Daily at 11:05 AM Central (cleanup) and 11:25 AM Central (disk sweep)",
       "runs": "mac", "trigger": "Mac jobs com.seq.disk-sweep and com.seq.boss-mac-cleanup",
       "pause": "launchctl bootout gui/501/com.seq.disk-sweep; launchctl bootout gui/501/com.seq.boss-mac-cleanup",
       "launchd": ["com.seq.boss-mac-cleanup", "com.seq.disk-sweep"],
@@ -886,6 +968,7 @@
     {
       "id": "boss-task-notices", "business": "personal",
       "what": "A stopped task, as a problem email (what happened, what we did, status); checked again first so a false alarm never goes. Also the reminder for an overdue Open Loops item that needs you (day 1 late, then every 3 days, at most 3)",
+      "name": "A stopped task",
       "sender": "The employee whose task it is", "owner": "Simone",
       "from": "name@sequoiataylor.com", "to": "You",
       "when": "Six checks a day, only when a task is still stopped or an open loop that needs you is late",
@@ -897,9 +980,10 @@
     {
       "id": "repo-change", "business": "personal",
       "what": "A site or repo change an employee ran: landed, blocked, or sent back for rework",
+      "name": "Site and repo changes",
       "sender": "Danielle (or the employee who ran it)", "owner": "Danielle",
       "from": "name@sequoiataylor.com", "to": "You",
-      "when": "Every 20 minutes from 6:00 AM; only when a change finishes",
+      "when": "Every 20 minutes from 10:00 AM to 9:40 PM Central; only when a change finishes",
       "runs": "mac", "trigger": "Mac job com.seq.boss-repo-change",
       "pause": "launchctl bootout gui/501/com.seq.boss-repo-change",
       "launchd": ["com.seq.boss-repo-change"],
@@ -908,10 +992,11 @@
     {
       "id": "service-tick", "business": "personal",
       "what": "Vault intake: a key you emailed in is saved to the vault on the Mac. Sends no email of its own (7 Nov 2026): the confirmation is the line in Simone's reply to your email",
+      "name": "Vault intake",
       "sender": "Kendra", "owner": "Kendra",
       "from": "name@sequoiataylor.com", "to": "You",
-      "when": "Every 5 minutes, only when a key arrived",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-agent-poll",
+      "when": "When a key arrives, in Simone’s reply",
+      "runs": "folded", "trigger": "Mac job com.seq.boss-agent-poll",
       "pause": "launchctl bootout gui/501/com.seq.boss-agent-poll",
       "launchd": ["com.seq.boss-agent-poll"],
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/service-tick.mjs"] }]
@@ -919,9 +1004,10 @@
     {
       "id": "zora-archive-audit", "business": "personal",
       "what": "Friday archive audit: stale documents fixed or flagged, newly filed pieces",
+      "name": "Friday archive audit",
       "sender": "Zora", "owner": "Zora",
       "from": "Inside Simone's morning email", "to": "You",
-      "when": "Fridays 8:40 AM",
+      "when": "Fridays at 10:35 AM Central",
       "runs": "folded", "trigger": "Mac job com.seq.boss-archive-audit writes a morning section",
       "pause": "launchctl bootout gui/501/com.seq.boss-archive-audit",
       "launchd": ["com.seq.boss-archive-audit"],
@@ -930,6 +1016,7 @@
     {
       "id": "simone-mail-tail-report", "business": "personal",
       "what": "The tail on what you email Boss OS: one line per job, followed to done",
+      "name": "The tail on your emails",
       "sender": "Simone", "owner": "Simone",
       "from": "Inside Simone's morning email", "to": "You",
       "when": "Checked every 15 minutes",
@@ -941,10 +1028,11 @@
     {
       "id": "exec-report", "business": "personal",
       "what": "Camille's Executive Intelligence Report: shown on Today, not emailed",
+      "name": "Executive Intelligence Report",
       "sender": "Camille", "owner": "Camille",
       "from": "No email", "to": "Today in Boss OS",
-      "when": "Daily, early morning",
-      "runs": "not-email", "trigger": "Mac job com.seq.boss-agent",
+      "when": "Daily at 4:00 AM Central; the 4:05 AM Mac slot claims it",
+      "runs": "not-email", "trigger": "Boss OS duty and Worker queue, claimed by Mac job com.seq.boss-agent",
       "pause": "launchctl bootout gui/501/com.seq.boss-agent",
       "launchd": ["com.seq.boss-agent"],
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/agent-claim.sh"] }]
@@ -952,10 +1040,11 @@
     {
       "id": "ci-sweep-issues", "business": "personal",
       "what": "Red builds across the repos, as GitHub issues GitHub emails you",
+      "name": "Red builds",
       "sender": "GitHub", "owner": "Danielle",
       "from": "notifications@github.com", "to": "You",
-      "when": "Mondays and Fridays 8:00 AM (retry 9:00 AM)",
-      "runs": "mac", "trigger": "Mac job com.seq.ci-sweep",
+      "when": "Tuesdays and Saturdays 10:15 PM Central (retry 10:20 PM)",
+      "runs": "mac", "trigger": "Mac jobs com.seq.ci-sweep and com.seq.ci-sweep-retry",
       "pause": "launchctl bootout gui/501/com.seq.ci-sweep (and -retry, -resume)",
       "launchd": ["com.seq.ci-sweep", "com.seq.ci-sweep-retry"],
       "code": [{"repo": "~/bin", "paths": ["ci-sweep.sh"]}]
@@ -963,6 +1052,7 @@
     {
       "id": "claude-gmail-connector", "business": "personal",
       "what": "Emails a Claude session sends for you when you ask (client updates, replies)",
+      "name": "Sent by a Claude session",
       "sender": "Claude (on your request)", "owner": "Simone",
       "from": "Your personal Gmail", "to": "Whoever the session addresses",
       "when": "Only while a session is open",
@@ -975,6 +1065,7 @@
     {
       "id": "client-dashboards-mail", "business": "spry",
       "what": "Client creator dashboards: briefs and recaps",
+      "name": "Client dashboard mail",
       "sender": "The client's dashboard", "owner": "The client",
       "from": "The client's sender", "to": "The client",
       "when": "Hourly checks, a morning brief, Monday recap",
@@ -988,6 +1079,7 @@
     {
       "id": "fund-i-lp-drip-twin", "business": "west-peek-ventures",
       "what": "Fund I LP drip (Twin)",
+      "name": "Fund I LP drip (Twin)",
       "sender": "Twin (an outside drip tool), from a West Peek mailbox", "owner": "Sequoia",
       "from": "A West Peek mailbox, set in Twin", "to": "Prospective Fund I LPs",
       "when": "On Twin's own drip schedule",
@@ -1002,6 +1094,7 @@
       "id": "hicks-quarterly-update",
       "business": "personal",
       "what": "The Hicks Consulting quarterly website update, drafted for your OK: the email word for word with Approve and open in Gmail / Change the words / Skip. Nothing reaches the client until you approve, and then only from your own Gmail.",
+      "name": "Hicks quarterly update",
       "sender": "Camille",
       "owner": "Camille",
       "from": "Camille <camille@sequoiataylor.com>",
@@ -1016,6 +1109,7 @@
     {
       "id": "wpv-forms-alarm", "business": "west-peek-ventures",
       "what": "West Peek site forms: an alarm when a form submission could not be delivered (and a \"fixed\" email once it works again), plus the 8 AM test submission that proves the forms still reach you",
+      "name": "West Peek form alarm",
       "sender": "The site (no employee)", "owner": "Porter",
       "from": "West Peek forms <forms@joinwestpeek.com>", "to": "The West Peek forms alarm list (three addresses, kept in the West Peek OS vault)",
       "when": "At most one alarm an hour per problem; the test runs daily at 8 AM for westpeek.ventures and on Mondays for the other two sites",
@@ -1026,6 +1120,7 @@
     {
       "id": "wedding-email-nurture", "business": "industry-guides",
       "what": "Dream Wedding free-sample series: the checklist sample at once, then one email every 3 days about one paid product, stopping on purchase, unsubscribe or the last step; a buyer gets one review ask a few days after buying",
+      "name": "Dream Wedding sample series",
       "sender": "The site (no employee)", "owner": "Danielle",
       "from": "Dream Wedding Builder <hello@mail.weddingchecklistpdf.com>", "to": "A person who typed their address for the free sample; a buyer for the one review ask",
       "when": "Due steps checked every hour; at most 60 a day",
@@ -1036,6 +1131,7 @@
     {
       "id": "creator-login-link", "business": "spry",
       "what": "A one-time sign-in link to the photo upload page of a creator's own site",
+      "name": "Creator sign-in link",
       "sender": "The site (no employee)", "owner": "Danielle",
       "from": "The site's own studio address (its EMAIL_FROM setting)", "to": "The site's owner only (nobody else can be sent one)",
       "when": "When the owner asks for a link on the upload page; at most 5 an hour, 20 a day",
@@ -1046,6 +1142,7 @@
     {
       "id": "friends-horse-approved-content", "business": "friends",
       "what": "Horse Legal Guide: links to newly approved pages and ready-to-post social copy",
+      "name": "Horse Legal Guide: approved pages",
       "sender": "The site (no employee)", "owner": "Danielle",
       "from": "Horse Legal Guide's own mail account (a repo secret)", "to": "Claire (her address is a repo secret)",
       "when": "Daily at 9:17 AM, and after an approval or publish run, only when something new was approved",
@@ -1056,6 +1153,7 @@
     {
       "id": "friends-hicks-published", "business": "friends",
       "what": "Hicks Consulting: what the site published on its own, why, and an optional request to double-check it",
+      "name": "Hicks: what the site published",
       "sender": "The site (no employee)", "owner": "Danielle",
       "from": "Hicks Consulting's sender (a repo secret)", "to": "Monika (her address is a repo secret)",
       "when": "After a publishing run that published something",
@@ -1066,6 +1164,7 @@
     {
       "id": "search-loop-stops", "business": "industry-guides",
       "what": "Search Loop's stops (no free model, a hung run, a missing key) become rows on Open Loops, not emails",
+      "name": "Search Loop stops",
       "sender": "Nobody", "owner": "Danielle",
       "from": "No email", "to": "Open Loops in Boss OS",
       "when": "After a site's daily Search Loop run that stopped",
@@ -1076,6 +1175,7 @@
     {
       "id": "invitation-answers", "business": "personal",
       "what": "Your answer to an invitation, only when you tap it on its Go? card: Yes accepts a calendar invite or sends your short yes (shown word for word on the card); No declines only when the invitation asks for an answer. Event sites' RSVP pages are never opened for you.",
+      "name": "Your RSVP replies",
       "sender": "Simone", "owner": "Simone",
       "from": "The inbox the invitation came to (never Spry Ventures)", "to": "The person who invited you",
       "when": "Only when you tap Yes, go or No",

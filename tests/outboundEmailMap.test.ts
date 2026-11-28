@@ -1,3 +1,5 @@
+import { installerJobs, slotTimes } from "../scripts/ops/lib/schedule.mjs";
+import schedule from "../src/shared/boss/schedule/manifest.json";
 import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -359,26 +361,134 @@ describe("every outreach sender and every Memphis Senior Care Homes path is on t
   });
 });
 
-/*
- * 22 Oct 2026 repairs, pinned: the KDP surface row says what the installer schedules (monthly, the
- * 1st at 09:30 since 0285 — it said "daily"), and Porch & Party's senders are on the map with the
- * sender they really use. A schedule written in prose next to a different one in code is the drift
- * this map exists to prevent, so the row is read against the installer, not against itself.
- */
+// The map’s trigger times come from the job that runs, including KDP’s monthly 1st.
+describe("the outbound inventory agrees with its sending jobs", () => {
+  const readInstaller = (name: string) => readFileSync(path.join(ROOT, "scripts/ops", name), "utf8");
+  const agentInstaller = readInstaller("install-agent-launchd.sh");
+  const movedLabels = new Set(Array.from(agentInstaller.matchAll(/^cloud_moved (.+)$/gm), ([, argument = ""]) => {
+    const ref = argument.match(/^"\$(\w+)"$/)?.[1];
+    if (!ref) return argument;
+    const label = agentInstaller.match(new RegExp(`^${ref}="([^"]+)"$`, "m"))?.[1];
+    if (!label) throw new Error(`Cannot resolve cloud_moved argument ${argument}`);
+    return label;
+  }));
+
+  // These installers build the calendar XML in nested loops before writing the plist.
+  const expandCalendar = (source: string, variable: string) => {
+    const loops = source.match(/for H in ([\d ]+); do\s+for M in ([\d ]+); do/);
+    const entry = source.match(/<dict><key>Hour<\/key><integer>\$H<\/integer><key>Minute<\/key><integer>\$M<\/integer><\/dict>/)?.[0];
+    if (!loops?.[1] || !loops[2] || !entry) throw new Error(`Cannot read the calendar loop for ${variable}`);
+    const hours = loops[1].split(" ").map(Number);
+    const minutes = loops[2].split(" ").map(Number);
+    const cutoff = source.match(/\[ "\$H" = (\d+) \] && \[ "\$M" -gt (\d+) \] && continue/)?.slice(1).map(Number);
+    const entries = hours.flatMap((hour) => minutes
+      .filter((minute) => !cutoff || hour !== cutoff[0] || minute <= (cutoff[1] ?? 0))
+      .map((minute) => entry.replace("$H", String(hour)).replace("$M", String(minute))));
+    return source.replace(`$${variable}  </array>`, entries.join("\n") + "</array>");
+  };
+
+  const jobs = {
+    ...installerJobs(expandCalendar(agentInstaller, "RC_INTERVALS")),
+    ...installerJobs(expandCalendar(readInstaller("install-simone-commands.sh"), "INTERVALS")),
+    ...installerJobs(readInstaller("install-boss-mail-tail.sh")),
+  };
+  const externalJobs = new Map(schedule.rows.flatMap((row) =>
+    ("launchd" in row.trigger ? row.trigger.launchd ?? [] : []).map((label) => [label, row.slots] as const)));
+  const workerJobs = new Map(schedule.rows.flatMap(({ trigger }) =>
+    "clock" in trigger && trigger.clock === "worker" && trigger.repo === "boss-os"
+      ? Object.entries(trigger.ticks ?? {}).map(([file, slots]) => [path.basename(file), slots] as const)
+      : []));
+  const page = new Map(readManifest(ROOT).rows.map((row: { id: string; runs: string }) => [row.id, row.runs]));
+  const runsWhere: Record<string, string> = {
+    "Mac launchd": "mac",
+    "Mac launchd (folded)": "folded",
+    "Folded into morning email": "folded",
+    "Folded into Spry Labs weekly": "spry-weekly",
+    "GitHub Actions": "github",
+    "GitHub Actions (inert)": "inert",
+    "Cloudflare cron": "cloud-cron",
+    "Cloudflare on event": "cloud-event",
+    "Claude session": "session",
+    "Not email": "not-email",
+  };
+  const labels = /com\.seq\.[a-z0-9.-]+/g;
+  const rows = inventoryRows(MAP);
+  const rowOf = (id: string) => MAP.split("\n").find((line) => line.startsWith(`| \`${id}\` |`)) ?? "";
+  const labelProblems = (line: string) => [...new Set(line.match(labels) ?? [])].flatMap((label) => {
+    if (movedLabels.has(label)) return [`${label} moved to the cloud`];
+    if (label in jobs || cells(line)[9]?.includes("~/bin")) return [];
+    return [`${label} has no Boss OS installer`];
+  });
+  const runsProblems = (id: string, line: string) => {
+    const where = cells(line)[7] ?? "";
+    const runs = page.get(id);
+    return runs === undefined || runsWhere[where] === runs ? [] : [`${where} disagrees with manifest runs=${runs}`];
+  };
+  const timeProblems = (line: string) => {
+    const columns = cells(line);
+    const trigger = columns[6] ?? "";
+    const sources = [...trigger.matchAll(labels)];
+    const workflow = trigger.match(/\b[\w-]+\.yml\b/)?.[0];
+    const check = (text: string, slots: string[], source: string) => {
+      const stated = Array.from(text.matchAll(/\b(\d\d):(\d\d)\b/g), ([time, h, m]) => ({ time, mins: Number(h) * 60 + Number(m) }));
+      if (!stated.length && slots.some((slot) => /^[a-z0-9,]+ \d\d:\d\d/.test(slot))) {
+        return [`${source} has calendar times missing from the Trigger cell`];
+      }
+      const allowed = new Set(slots.flatMap((slot) => {
+        const monthly = slot.match(/^day(\d+) (\d\d):(\d\d)$/);
+        if (monthly) return text.match(/\b(\d+)(?:st|nd|rd|th)\b/)?.[1] === monthly[1]
+          ? [Number(monthly[2]) * 60 + Number(monthly[3])] : [];
+        return slotTimes(slot).map(({ mins }) => mins);
+      }));
+      return stated.filter(({ mins }) => !allowed.has(mins))
+        .map(({ time }) => `${source} does not run at ${time} Central`);
+    };
+    if (workflow && columns[9]?.startsWith("boss-os ")) {
+      const slots = workerJobs.get(workflow);
+      return slots ? check(trigger, slots, workflow) : [`${workflow} is missing from the Boss OS Worker schedule`];
+    }
+    return sources.flatMap(({ 0: label, index }, i) => {
+      const slots = jobs[label] ?? (columns[9]?.includes("~/bin") ? externalJobs.get(label) : undefined);
+      return slots ? check(trigger.slice(i === 0 ? 0 : index, sources[i + 1]?.index), slots, label) : [];
+    });
+  };
+
+  const problemsByRow = (check: (id: string, line: string) => string[]) =>
+    rows.flatMap(({ id }) => check(id, rowOf(id)).map((problem) => `${id}: ${problem}`));
+
+  it("names installed launchd labels and leaves retired labels out", () => {
+    expect(problemsByRow((_, line) => labelProblems(line))).toEqual([]);
+  });
+
+  it("agrees with the Email Map page on where each path runs", () => {
+    expect(problemsByRow(runsProblems)).toEqual([]);
+  });
+
+  it("uses trigger times carried by the installers and the Worker clock", () => {
+    expect(problemsByRow((_, line) => timeProblems(line))).toEqual([]);
+  });
+
+  it("rejects planted label, location and time drift", () => {
+    expect(labelProblems(rowOf("errand-reminders").replace("job-errand-reminders.yml", "com.seq.boss-errand-reminders")))
+      .toEqual(["com.seq.boss-errand-reminders moved to the cloud"]);
+    expect(labelProblems(rowOf("repo-change").replaceAll("com.seq.boss-repo-change", "com.seq.boss-imaginary-job")))
+      .toEqual(["com.seq.boss-imaginary-job has no Boss OS installer"]);
+    expect(runsProblems("repo-change", rowOf("repo-change").replace("Mac launchd", "GitHub Actions")))
+      .toEqual(["GitHub Actions disagrees with manifest runs=mac"]);
+    expect(timeProblems(rowOf("repo-change").replace("21:40", "21:41")))
+      .toEqual(["com.seq.boss-repo-change does not run at 21:41 Central"]);
+    expect(timeProblems(rowOf("simone-your-day").replace("06:40", "06:41")))
+      .toEqual(["job-your-day.yml does not run at 06:41 Central"]);
+    expect(timeProblems(rowOf("kdp-surface-report").replace("monthly, 1st", "daily")))
+      .toContain("com.seq.kdp-surface does not run at 10:30 Central");
+    expect(timeProblems(rowOf("kdp-surface-report").replace(" at 10:30", "")))
+      .toContain("com.seq.kdp-surface has calendar times missing from the Trigger cell");
+  });
+});
+
 describe("the 22 Oct 2026 repairs stay repaired", () => {
   const rowOf = (id: string) => MAP.split("\n").find((l) => l.startsWith(`| \`${id}\` |`)) ?? "";
   const installer = readFileSync(path.join(ROOT, "scripts/ops/install-agent-launchd.sh"), "utf8");
-
-  it("the KDP surface row matches the installer's schedule", () => {
-    const row = rowOf("kdp-surface-report");
-    expect(row, "kdp-surface-report row missing").not.toBe("");
-    const at = installer.indexOf("duty-run.sh kdp-surface.sh");
-    expect(at).toBeGreaterThan(-1);
-    const cal = installer.slice(at, at + 600);
-    expect(cal).toMatch(/<key>Day<\/key><integer>1<\/integer><key>Hour<\/key><integer>10<\/integer><key>Minute<\/key><integer>30<\/integer>/);
-    expect(row).toMatch(/monthly, 1st at 10:30/);
-    expect(row).not.toMatch(/\bdaily 10:30\b/);
-  });
 
   it("Porch & Party's five paths are on the map, from hello@porchandparty901.com through Cloudflare Email Service", () => {
     const ids = ["pnp-valerie-todo", "pnp-new-request", "pnp-invoices", "pnp-hold-reminders", "pnp-customer-reminders"];
@@ -424,7 +534,7 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
   it("one morning email (23 Oct 2026): Zora's audit and Toni's locks send nothing; Toni sends only money at risk", () => {
     expect(rowOf("zora-archive-audit")).toMatch(/NO EMAIL since 23 Oct 2026/);
     expect(rowOf("toni-risk-watch")).toMatch(/^\| `toni-risk-watch` \| Boss OS \(personal\) \| Money at risk now/);
-    expect(rowOf("simone-your-day")).toMatch(/ONE morning email.*07:45 Central at the latest/);
+    expect(rowOf("simone-your-day")).toMatch(/ONE morning email.*Waits for Camille.s briefing until 07:45 Central/);
     for (const f of ["scripts/ops/archive-audit.mjs", "scripts/ops/outside-locks.mjs"]) {
       expect(readFileSync(path.join(ROOT, f), "utf8"), f).not.toMatch(/\bsendAs\(|employeeMail\(|sendAsEmployee\(/);
     }
@@ -485,6 +595,8 @@ describe("the Email Map page's manifest covers every sender", () => {
     expect(uncovered([{ file: "tests/x.test.ts", source: "sendAsEmployee(" }], manifest, "boss-os")).toEqual([]);
     expect(addressProblems({ rows: [{ to: "someone@gmail.com" }] })).toHaveLength(1);
     expect(shapeProblems({ ...manifest, rows: [...manifest.rows, { ...manifest.rows[0]!, pause: "" }] }).length).toBeGreaterThan(0);
+    expect(shapeProblems({ ...manifest, rows: [...manifest.rows, { ...manifest.rows[0]!, id: "probe-noname", name: "" }] }).join(" ")).toMatch(/probe-noname: name is empty/);
+    expect(shapeProblems({ ...manifest, rows: [...manifest.rows, { ...manifest.rows[0]!, id: "probe-long", name: "x".repeat(41) }] }).join(" ")).toMatch(/probe-long: name is \d+ characters/);
     // A sender from her own mailbox that does not say so would be filed under "leave on" in the Succession Book.
     const fromHer = { ...manifest.rows[0]!, id: "probe-her", from: "Your personal Gmail", as_her: undefined };
     expect(shapeProblems({ ...manifest, rows: [...manifest.rows, fromHer] }).join(" ")).toMatch(/probe-her: sends from her own mailbox/);

@@ -48,9 +48,9 @@ export const MORNING_SECTION_SPECS = Object.freeze([
   },
   { name: "catchups", label: "Catch up with", expect: DAILY, catchUpWhy: "moved to the cloud (job-catchups.yml, 1 Nov 2026); not a Mac script to re-run" },
   { name: "eightraise", label: "the 8Raise credits", expect: DAILY, catchUpWhy: "written by the Worker hourly tick, with live balance supplied separately; not a Mac producer to re-run" },
-  // risk-watch.mjs daily 08:20 (Mac), so the next morning's email; posts an empty all clear.
+  // risk-watch.mjs daily 10:35 (Mac), so the next morning's email; posts an empty all clear.
   { name: "risk", label: "Toni's money and mail check", expect: DAILY, catchUpWhy: "risk-watch.mjs can send an alert when money is at risk (sendAs); never re-run blind" },
-  // archive-audit.mjs Fridays 08:40 (Mac), so Saturday's email; posts an empty all clear. No email: safe to catch up.
+  // archive-audit.mjs Fridays 10:35 (Mac), so Saturday's email; posts an empty all clear. No email: safe to catch up.
   { name: "archive", label: "Zora's archive check", expect: Object.freeze(["Saturday"]), catchUp: "archive:audit" },
   // One line per email she sent Boss OS (boss-mail-tail-report.mjs): event-driven.
   { name: "tail", label: "Your email jobs", expect: null },

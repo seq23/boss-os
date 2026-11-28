@@ -77,7 +77,6 @@ export function parseOutboundMap(doc: string): MapRow[] {
 
 /** Inert paths look like senders and send nothing; "Not email" is listed so nobody hunts for it. */
 export const isInert = (r: MapRow) => /inert/i.test(r.runsWhere) || /^already (inert|off)/i.test(r.pause);
-const isOnEvent = (r: MapRow) => /on event|session|external/i.test(r.runsWhere);
 
 /** Where it runs, in the six words the owner asked for. */
 export function whereItRuns(r: MapRow): string {
@@ -157,21 +156,28 @@ export function nextRunFrom(r: MapRow, now: number): NextRun {
   const text = trigger.replace(/\([^)]*Chicago\)/gi, "");
   const zone = /UTC/.test(text) ? "UTC" : OWNER_TIMEZONE;
   const times = [...text.matchAll(/\b(\d{2}):(\d{2})\b/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
-  if (times.length === 0) return { at: null, label: isOnEvent(r) ? "on event" : "on event" };
+  if (times.length === 0) return { at: null, label: foldedLabel(r) ?? "on event" };
   const days = new Set<number>();
   for (const m of text.matchAll(/\b(Sun|Mon|Tue|Wed|Thu|Fri|Sat)\b/g)) days.add(DOW[m[1]!.toLowerCase()]!);
   const monthly = /\b1st\b/.test(text);
   for (let k = 0; k < 40; k++) {
     const day = wallClock(now + k * 86_400_000, zone);
-    if (monthly && day.d !== 1) continue;
-    if (!monthly && days.size && !days.has(day.dow)) continue;
+    // "the 1st and Mon" is either day; "1st" alone is the 1st; weekdays alone are those weekdays.
+    if ((monthly || days.size) && !((monthly && day.d === 1) || days.has(day.dow))) continue;
     const fires = times
       .map(([h, mi]) => zonedTime(day.y, day.m, day.d, h, zone, mi))
       .filter((t) => t > now)
       .sort((a, b) => a - b);
     if (fires.length) return { at: fires[0]!, label: "" };
   }
-  return { at: null, label: "on event" };
+  return { at: null, label: foldedLabel(r) ?? "on event" };
+}
+
+/** A line folded into another email has no clock of its own: it goes when that email goes. */
+function foldedLabel(r: MapRow): string | null {
+  if (/folded into morning email/i.test(r.runsWhere)) return "with the morning email";
+  if (/folded into spry labs weekly/i.test(r.runsWhere)) return "with the Spry Labs weekly";
+  return null;
 }
 
 /** What the Worker knows today, from the ledgers that exist (GET /api/employees/operations). */

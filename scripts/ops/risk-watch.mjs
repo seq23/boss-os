@@ -2,7 +2,7 @@
 /**
  * TONI'S DAILY RISK WATCH — money and mail, quiet unless something moves (owner, 22 Oct 2026).
  *
- * duty_risk_watch (migration 0288), daily 08:20 CT on her Mac through duty-run.sh. Toni is the Chief
+ * duty_risk_watch (migration 0288), daily 10:35 CT on her Mac through duty-run.sh. Toni is the Chief
  * Risk Officer; her trading lane is untouched — this duty lives in the `ops` lane and never trades,
  * never spends (R32), never touches `trading_authority`.
  *
