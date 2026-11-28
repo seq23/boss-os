@@ -62,6 +62,12 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   list mail by date and read full threads. Each job holds its window on failure and reuses successful
   verdicts in its existing duty state. Personal mail requires a direct Gmail read-only OAuth grant
   (`TONI_GMAIL_CLIENT_ID`, `TONI_GMAIL_CLIENT_SECRET`, `TONI_GMAIL_REFRESH_TOKEN` in the Mac vault).
+  Toni's billing and lock jobs keep each day's listed and handled message counts in their own state
+  files (`counts` in `~/.boss-os/duties/risk-watch.json` and `outside-locks.json`), which the daily worker
+  check reads (`"count": "mail-listed"` / `"mail-handled"` in the Schedule's `workerJobs`); a mailbox left
+  unread that day reads "couldn't check". Danielle's Ahrefs digest reads personal Gmail through the same
+  grant (`scripts/ops/ahrefs-digest.mjs`), and jobs in other repos reach the client through
+  `scripts/ops/free-read.mjs`. The seats that stay, and why: OPERATIONS.md, "Seats that stay".
   Danielle's page-quality review reads complete sampled pages and carries unread URLs into the next audit.
   Zora's comparison reads complete skills and house rules, with unavailable or confidential files marked unchecked.
   The CI model boundary checks imports and calls in the worker-job directories and reads the named

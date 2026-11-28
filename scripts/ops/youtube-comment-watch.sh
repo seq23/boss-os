@@ -12,8 +12,9 @@
 # act half runs on every slot so her reply is applied the same day, never a week later. A slot
 # with nothing pending and no sweep due prints NOTHING_PENDING and exits 0: named, not silent.
 #
-# NO MODEL RUNS HERE. Classification happens inside how-we-know's own routed lane; this script
-# invokes that repo's CLI and reads the JSON it writes. The channel's credentials never leave that
+# NO MODEL RUNS HERE. Classification happens inside how-we-know's comment lane, which reads through
+# Boss OS's shared free reader (scripts/ops/free-read.mjs, handed in by the .mjs as $BOSS_OS_FREE_READ);
+# this script invokes that repo's CLI and reads the JSON it writes. The channel's credentials never leave that
 # repo's .secrets/.
 set -uo pipefail
 

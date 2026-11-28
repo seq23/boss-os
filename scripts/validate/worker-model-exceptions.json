@@ -1,6 +1,6 @@
 {
   "scripts/ops/ahrefs-audit-fix.sh": {
-    "reason": "Danielle: Section D preserves the code repair runner. The separate digest uses the personal Gmail connector and is a documented Step 5 gap.",
+    "reason": "Danielle: Seats that stay (code edit). The Ahrefs and Search Readiness repairs edit code in a tool loop and keep their runtime for the edit. The Ahrefs digest reads through scripts/ops/ahrefs-digest.mjs on the free reader; its connector step runs only while personal Gmail has no read-only grant (NAMED STOP [HER_ACCOUNT]).",
     "edges": [
       "command $AI_RUN",
       "command $AI_RUN"
@@ -83,14 +83,14 @@
     ]
   },
   "scripts/ops/pnp-corporate-outreach.mjs": {
-    "reason": "Camille's discovery requires live public web search. The available free inference adapters do not provide that capability.",
+    "reason": "Camille: Seats that stay (public web search). Corporate prospect discovery needs live public web search, and the free Gemini tier lacks Search grounding.",
     "edges": [
       "import ../sync-agent/runner.mjs",
       "import ../lib/codex-seat.mjs"
     ]
   },
   "scripts/ops/repo-change.mjs": {
-    "reason": "Danielle's repository editing and landing tool loop, retained under Section D.",
+    "reason": "Danielle: Seats that stay (code edit). Repository editing and landing (the lane.mjs repo-change prompt) is a tool loop and keeps its runtime for the edit.",
     "edges": [
       "import ../lib/codex-seat.mjs",
       "command claude",
@@ -128,7 +128,7 @@
     ]
   },
   "scripts/sync-agent/runner.mjs": {
-    "reason": "Shared agent seat executor for Simone (#582), Noelle (#581), and retained Section D code editing.",
+    "reason": "Shared agent seat executor for Simone (#582) and Noelle (#581). Seats that stay (code edit): the agent-claim code duties run through it and keep their runtime for the edit.",
     "edges": [
       "call defaultExecutor"
     ]

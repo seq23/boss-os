@@ -33,7 +33,7 @@ import {
 import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
 import { repairReport } from "../../src/shared/boss/repoChange/repairReport.mjs";
 import { execFileSync } from "node:child_process";
-import { nameToniHeld, readToniMail, reconcileToniReadings } from "./lib/toni-mail.mjs";
+import { countsLine, mailCounts, nameToniHeld, readToniMail, reconcileToniReadings } from "./lib/toni-mail.mjs";
 
 /** Moved lock readings → `{ decide, lines, fixes }`. Pure; tested. */
 export function planLocks(moved) {
@@ -134,7 +134,7 @@ async function main() {
   const checkpoints = Object.fromEntries(mail.map((box) => [box.id, box.checkpoint]));
   const stop = readNothingStop(readings, "LOCKS_READ_NOTHING");
   if (stop) {
-    if (!DRY) saveState("outside-locks", { ...prev, mail: checkpoints });
+    if (!DRY) { const counts = mailCounts(mail, prev.counts); saveState("outside-locks", { ...prev, mail: checkpoints, counts }); console.log(countsLine("outside-locks", counts)); }
     console.error(stop);
     process.exitCode = 3;
     return;
@@ -171,7 +171,9 @@ async function main() {
       console.error("state not saved."); process.exit(8);
     }
   }
-  saveState("outside-locks", { at: new Date().toISOString(), states, mail: checkpoints, ci_handed: ciHanded });
+  const counts = mailCounts(mail, prev.counts);
+  saveState("outside-locks", { at: new Date().toISOString(), states, mail: checkpoints, ci_handed: ciHanded, counts });
+  console.log(countsLine("outside-locks", counts));
   if (mail.some((box) => box.why)) {
     console.error("NAMED STOP [LOCKS_MAIL_UNREAD] At least one source will be retried");
     process.exitCode = 3;
