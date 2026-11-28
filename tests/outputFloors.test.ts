@@ -53,6 +53,15 @@ describe("the floor check (A)", () => {
   it("never alarms a job that only checks (floor 0)", () => {
     expect(floorVerdict({ ...DUTY, output_floor: 0 }, [run("ok", 0, 1), run("ok", 0, 2), run("ok", 0, 3)]).alarm).toBe(false);
   });
+  it.each([
+    [13, "13 interests read, and then the run failed"],
+    [null, "an unknown number of interests read (the run failed before it said)"],
+  ] as const)("reports the observed count %s for a failed extraction", (count, words) => {
+    const duty = { ...DUTY, name: "Inbound supply extraction", output_metric: "interests read" };
+    const verdict = floorVerdict(duty, [run("failed", count, day("28")), run("failed", null, day("27"))]);
+    expect(verdict.alarm).toBe(true);
+    expect(floorAlarmText(duty, verdict)).toContain(words);
+  });
 
   /*
    * THE REPLAY: P&P corporate outreach's real runs, production duty_runs + its run logs

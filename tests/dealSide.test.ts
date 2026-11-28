@@ -1,8 +1,9 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { extractCandidates } from "../scripts/ops/interest-extract.mjs";
+import { extractCandidates, extractVerdict } from "../scripts/ops/interest-extract.mjs";
 import { buildGrid } from "../scripts/ops/interest-grid.mjs";
 import type { readWorkerSource } from "../src/worker/boss/router/freeModel.ts";
 
@@ -46,6 +47,47 @@ function fixture(batches: unknown[][]) {
 
 afterEach(() => {
   for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
+});
+
+describe("extraction exit verdict", () => {
+  it("exits cleanly when extraction is complete", () => {
+    expect(extractVerdict({ status: "complete", checked: 0 })).toEqual({ exitCode: 0, line: null });
+  });
+
+  it("exits cleanly after reading candidates and reports what is retained", () => {
+    expect(extractVerdict({ status: "unavailable", checked: 13 })).toEqual({
+      exitCode: 0,
+      line: "NOTE [CANDIDATES_RETAINED] Read 13 candidate(s). Unread candidates stay for the next run.",
+    });
+  });
+
+  it.each([
+    ["unavailable", "EXTRACTION_NEVER_RAN"],
+    ["allowance-exhausted", "FREE_ALLOWANCE_EXHAUSTED"],
+  ] as const)("names the stop when extraction is %s before any read", (status, stop) => {
+    expect(extractVerdict({ status, checked: 0 })).toEqual({
+      exitCode: 9,
+      line: expect.stringContaining(`NAMED STOP [${stop}]`),
+    });
+  });
+
+  it("reports the crash location without exposing the unread candidate", () => {
+    const { directory, folder } = fixture([[]]);
+    const batch = path.join(folder, "0.json");
+    const malformed = '{"messages":[SYNTHETIC_PRIVATE_MARKER]}';
+    fs.writeFileSync(batch, malformed);
+    const result = spawnSync(process.execPath, ["scripts/ops/interest-extract.mjs"], {
+      env: { ...process.env, BOSS_OS_CAPITAL_DIR: directory },
+      encoding: "utf8",
+      timeout: 5_000,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr.trim()).toMatch(
+      /^NAMED STOP \[CAPITAL_EXTRACT_FAILED\] SyntaxError scripts\/ops\/interest-extract\.mjs:\d+:\d+$/,
+    );
+    expect(result.stdout).not.toContain("SYNTHETIC_PRIVATE_MARKER");
+    expect(fs.readFileSync(batch, "utf8")).toBe(malformed);
+  });
 });
 
 describe("brokerage interest extraction through the full-thread reader", () => {
@@ -113,7 +155,9 @@ describe("brokerage interest extraction through the full-thread reader", () => {
       ? { status: "uncertain" } : ok([deal(offer)]));
     const run = () => extractCandidates({ directory: files.directory, identity, read });
     // Runs 1 and 2: the next message is read and recorded; the batch stays for the uncertain one.
-    expect(await run()).toMatchObject({ status: "unavailable", checked: 1, added: 1, held_now: [] });
+    const first = await run();
+    expect(first).toMatchObject({ status: "unavailable", checked: 1, added: 1, held_now: [] });
+    expect(extractVerdict(first).exitCode).toBe(0);
     expect(await run()).toMatchObject({ status: "unavailable", checked: 0, held_now: [] });
     expect(fs.readdirSync(files.folder)).toEqual(["0.json"]);
     // Run 3: held for her, never recorded as read, and the batch is done.

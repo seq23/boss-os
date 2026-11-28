@@ -8,6 +8,8 @@ export function extractCandidates(options?: {
   limit?: number;
 }): Promise<{ status: "complete" | "unavailable" | "allowance-exhausted"; checked: number; added: number; remaining: boolean; held_now?: string[] }>;
 export const loadWrong: any;
+export function extractVerdict(result: Pick<Awaited<ReturnType<typeof extractCandidates>>, "status" | "checked">):
+  { exitCode: 0 | 9; line: string | null };
 export function senderOf(...args: any[]): any;
 export function normalise(...args: any[]): any;
 export function admissible(...args: any[]): any;
