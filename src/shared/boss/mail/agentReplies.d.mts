@@ -1,0 +1,10 @@
+export type StoredReply = { id: string; email: string; kind: string; at: string; subject?: string | null; from_name?: string | null;
+  message_id?: string | null; text?: string | null; auth?: string; unread?: string; forward_handed_at?: string | null };
+export type ReplyCard = { key: string; title: string; body: string; details: string[]; buttons: { label: string; url: string }[]; priority: number; fresh_at: number | null };
+export const SYSTEM_SENDER: RegExp;
+export function orgOf(email: string): string;
+export function replyKey(source: string, r: { id: string; message_id?: string | null }): string;
+export function realReplies<T extends StoredReply>(replies: T[] | null | undefined): T[];
+export function theirWords(text: string | null | undefined): string;
+export function replyUrl(r: { email: string; subject?: string | null }): string;
+export function replyCards(replies: StoredReply[] | null | undefined, o?: { source?: string; agent?: string; fromAddress?: string; tz?: string }): ReplyCard[];

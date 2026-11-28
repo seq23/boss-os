@@ -1,3 +1,4 @@
+// @ts-nocheck -- Mac ESM runner (imports scripts/ops/pnp-corporate-outreach.mjs, which has no declarations); injected effects never reach live services.
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";

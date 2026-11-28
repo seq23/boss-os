@@ -36,7 +36,7 @@ function fixture(resend = vi.fn(async () => "delivered"), replyFeed: unknown = f
     readSite: async () => ({ state: "verified", evidence: "Public HTML served." }),
     readScore: async () => ({ state: "verified", evidence: "Two booking records read." }),
     readOutreach: async () => (await receipts).replies,
-    readSender: async (row: unknown) => (await receipts).forSender(row),
+    readSender: async (row: { runs?: string; from?: string }) => (await receipts).forSender(row),
     day,
   };
 }
@@ -73,7 +73,7 @@ it("a reply carried on a morning email that arrived is proven; one before any mo
   const proven = await readArrivals({ arrivals: carried, feed, resend: async () => "delivered", now: NOW });
   expect(proven.replies).toMatchObject({ state: "verified" });
   // The morning that carried it bounced: not arrived, whatever the forward said.
-  const bounced = await readArrivals({ arrivals: carried, feed, resend: async (row: { message_id: string }) => (String(row.message_id).includes("2026-11-22") ? "bounced" : "delivered"), now: NOW });
+  const bounced = await readArrivals({ arrivals: carried, feed, resend: async (row: { message_id?: string | null }) => (String(row.message_id).includes("2026-11-22") ? "bounced" : "delivered"), now: NOW });
   expect(bounced.replies).toMatchObject({ state: "missing" });
   const fresh = { replies: [{ ...feed.replies[0], at: "2026-11-23T14:00:00Z" }] };
   expect((await readArrivals({ arrivals, feed: fresh, resend: async () => "delivered", now: NOW })).replies).toMatchObject({ state: "nothing_due" });

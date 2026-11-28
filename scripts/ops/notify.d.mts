@@ -42,3 +42,4 @@ export function postErrandMail(payload: Record<string, any>, fetchImpl?: typeof 
 
 export function archiveSentMail(payload: Record<string, any>, id: string, fetchImpl?: typeof fetch, opts?: { commandId?: string | null; key?: string | null; trackErrandThread?: boolean }): Promise<boolean>;
 export function flushSentMail(fetchImpl?: typeof fetch, directory?: string, opts?: { errandKey?: string | null }): Promise<boolean>;
+export function resendRecord(id: string, key: string | null | undefined, fetchImpl?: typeof fetch): Promise<{ message_id?: string; last_event?: string } & Record<string, unknown>>;

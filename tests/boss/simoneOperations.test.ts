@@ -68,7 +68,7 @@ it("hands the arrival check yesterday's agent mail and the reply cards each kept
     .bind(dayIdInZone(yesterday + 3_600_000), payload, yesterday + 3_600_000 + 30_000, yesterday + 3_500_000, yesterday + 3_600_000).run();
   const got = await arrivalInputs(env.DB, now);
   // Only what was recorded as sent yesterday: never a refused send, never today's.
-  expect(got.sent.map((r: { message_id: string }) => r.message_id)).toEqual(["<y1@example.test>"]);
+  expect((got.sent as { message_id: string }[]).map((r) => r.message_id)).toEqual(["<y1@example.test>"]);
   const kept = got.mornings.find((m: { day: string }) => m.day === dayIdInZone(yesterday + 3_600_000))!;
   expect(kept.keys).toEqual(["reply:pnp:<r1@example.test>", "reply:pnp:<r0@example.test>"]);
   expect(kept.mail).toMatchObject({ id: "aaaaaaaa-1111-4222-8333-444455556666", layout: "digest", from_addr: "simone@sequoiataylor.com" });
