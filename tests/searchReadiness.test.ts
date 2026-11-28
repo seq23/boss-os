@@ -1277,7 +1277,7 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
       "aplayermode.com", "approvalprep.com", "billionairehighperformancecoach.com", "cynthiabrowndds.com", "dentistryguides.com", "detoxdenver.org",
       "heygetonmylevel.com", "hicksconsulting.org", "hormonesivhair.com", "horselegalguide.com", "keepmyproof.com", "memphisseniorcarehomes.com", "neuroevalguides.com", "peacebestillapp.com",
       "porchandparty901.com", "theaccidentguides.com", "theindustryguides.com", "time-2-read.com", "uscisexam.com",
-      "virtualagency-os.com", "weddingbudgetspreadsheet.com", "weddingchecklistpdf.com", "weddingseatingchartmaker.com", "weddingtimelinetemplate.com",
+      "virtualagency-os.com", "weddingbudgetspreadsheet.com", "weddingchecklistpdf.com", "weddingseatingchartmaker.com", "weddingtimelinetemplate.com", "wekeepyouspry.com",
     ]);
     for (const s of sites.grid_repos.filter((x: any) => x.search_loop)) expect([1, 2, 3], s.domain).toContain(s.search_loop.wave);
     const by = Object.fromEntries(sites.grid_repos.map((x: any) => [x.domain, x]));

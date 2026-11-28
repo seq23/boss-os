@@ -17,7 +17,9 @@ describe("Search Readiness groups (7 Nov 2026)", () => {
     expect(rows.length).toBeGreaterThan(0);
     // Owner, 10 Nov 2026: Time-2-Read is one business with two apps; heygetonmylevel is not a business of its own.
     // Owner, 18 Nov 2026: the Divine 9 became the Divine 10 with Peace Be Still (the key stays divine_9).
-    expect(groups.divine_9).toHaveLength(9);
+    // Owner, 27 Nov 2026 (wkys brain): We Keep You Spry is her 11th offering, under Spry Labs; it joins this group.
+    expect(groups.divine_9).toHaveLength(10);
+    expect(rows.find((r) => r.domain === "wekeepyouspry.com")).toMatchObject({ group: "divine_9", business: "We Keep You Spry", entity_parent: "spry-labs" });
     expect(rows.find((r) => r.domain === "peacebestillapp.com")).toMatchObject({ group: "divine_9", business: "Peace Be Still", entity_parent: "spry-labs" });
     expect(groups.divine_9).not.toContain("heygetonmylevel");
     expect(rows.filter((r) => r.business === "Time-2-Read").map((r) => r.domain).sort()).toEqual(["heygetonmylevel.com", "time-2-read.com"]);
