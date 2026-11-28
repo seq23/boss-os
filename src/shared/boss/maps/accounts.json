@@ -762,9 +762,10 @@
         "boss-os"
       ],
       "vault_keys": [
-        "ANTHROPIC_API_KEY"
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_CLAUDE_CODE_OAUTH_TOKEN"
       ],
-      "used_by": "Claude plans, reviews and writes the brains.",
+      "used_by": "Claude plans, reviews and writes the brains. The one-year Claude sign-in (setup-token, 28 Nov 2026, renew by Nov 2027) keeps unattended claude -p jobs on her plan.",
       "security": "not known yet",
       "login": "not known yet"
     },
