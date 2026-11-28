@@ -75,7 +75,7 @@ export function cadenceOf(channel) {
 export function readGrid(roster, measures) {
   const out = [];
   for (const e of roster) {
-    if (e.tier === "search-watch") continue;
+    if (e.tier === "search") continue; // client sites: their numbers never feed her own grid
     for (const c of e.channels) for (const lang of (e.languages.length ? e.languages : ["en"])) {
       const m = measures.find((x) => x.business === e.key && x.channel === c.channel && (x.language ?? "en") === lang);
       out.push({ business: e.key, channel: c.channel, language: lang, cadence: cadenceOf(c), value: m && m.value != null ? m.value : null, read: m && m.value != null ? "read" : `not read${m?.unread ? `: ${m.unread}` : ""}` });

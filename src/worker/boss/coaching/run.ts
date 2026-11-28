@@ -8,7 +8,7 @@ import { FORWARDED_TURNS } from "./session";
  *
  * NOT A SECOND PATH TO A MODEL. It would have been shorter to call a provider directly from the
  * route — and it would have put the one conversation carrying her interior life outside the cost
- * mode, the spend lever, the privacy screen, the risk ceiling and the decision log that govern
+ * mode, the spend lever, the risk ceiling and the decision log that govern
  * everything else. The router is the only door, and this is not the feature that gets a side one.
  *
  * NOTHING IS PERSISTED HERE. The router writes its own usage and decision rows, which record that a

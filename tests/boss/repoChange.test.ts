@@ -12,6 +12,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { apiJson, row } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
+import { claimSimone, finishSimoneHandoff } from "../../src/worker/boss/agents/simone";
 import { handleTask } from "../../src/worker/boss/queue/consumer";
 import { admitTask } from "../../src/worker/boss/tasks/admit";
 import { repoNamedIn, canEnterBuild, canLand, claimablePhase, parseRepoChange, tokenIn, changeToken, readReply, needsPreview, isForced, APPROVED_DEFAULTS_TEXT, systemRepoChange } from "../../src/shared/boss/repoChange/lane.mjs";
@@ -33,6 +34,21 @@ function mail(opts: { from?: string; subject?: string; body?: string; dmarc?: st
     from: from.replace(/.*<|>.*/g, ""), to: "boss@sequoiataylor.com", headers,
     raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length,
   };
+}
+
+async function freshDanielleMail(options: Parameters<typeof mail>[0], delivery: "repository" | "ordinary" = "repository") {
+  const arrival = await handleBossInboundMail(mail(options), env);
+  if (!arrival.taskId || arrival.outcome !== "SIMONE_QUEUED") return arrival;
+  const call = await claimSimone(env);
+  expect(call?.id).toBe(arrival.taskId);
+  const { id, lease, message } = call!;
+  const result = await finishSimoneHandoff(env, { id, lease, assignments: [{ employee: "emp_repo", words: message.body, delivery }] });
+  expect(result.replied).toBe(true);
+  const handoff = await row<{ id: string }>(`SELECT id FROM tasks WHERE json_extract(input, '$.simone_handoff') = ?`, id);
+  const notice = await row<{ body: string }>(`SELECT body FROM boss_task_notices WHERE task_id = ? AND kind = 'simone_result'`, id);
+  expect(notice?.body).toBeTruthy();
+  expect(result.refused).toBe(!handoff);
+  return { ...arrival, taskId: handoff?.id ?? null, reply: notice?.body ?? null };
 }
 
 const DEVICE = "mac-test";
@@ -70,8 +86,8 @@ describe("her sentence, read as a repo change", () => {
 
 describe("the mail opens a repo change, and only for her", () => {
   it("her #danielle mail becomes a queued repository task with a plan-phase row", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle site refresh", body: `Please update WPP-llm using the package at ${FOLDER}. Swap the hero and add the new team section.` }), env as never);
-    expect(res.outcome).toBe("ROUTED");
+    const res = await freshDanielleMail({ subject: "#danielle site refresh", body: `Please update WPP-llm using the package at ${FOLDER}. Swap the hero and add the new team section.` });
+    expect(res.outcome).toBe("SIMONE_QUEUED");
     expect(res.taskId).toBeTruthy();
     const task = await row<any>(`SELECT status, intake_kind, employee_id, input FROM tasks WHERE id = ?`, res.taskId);
     expect(task.status).toBe("queued");
@@ -88,7 +104,7 @@ describe("the mail opens a repo change, and only for her", () => {
 
   it("SCOOTER CANNOT USE THIS LANE: a perfect #danielle mail from anyone else is refused and opens nothing", async () => {
     const before = (await row<any>(`SELECT COUNT(*) AS n FROM tasks`)).n;
-    const res = await handleBossInboundMail(mail({ from: "Scooter <scooter@example.com>", subject: "#danielle site refresh", body: `Update WPP-llm from ${FOLDER}` }), env as never);
+    const res = await freshDanielleMail({ from: "Scooter <scooter@example.com>", subject: "#danielle site refresh", body: `Update WPP-llm from ${FOLDER}` });
     expect(res.outcome).toBe("REFUSED_SENDER");
     expect(res.taskId).toBeNull();
     expect(res.reply).toBeNull();
@@ -97,29 +113,47 @@ describe("the mail opens a repo change, and only for her", () => {
   });
 
   it("her address WITHOUT a DMARC pass is refused the same way", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}`, dmarc: "mx.cloudflare.net; dmarc=fail" }), env as never);
+    const res = await freshDanielleMail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}`, dmarc: "mx.cloudflare.net; dmarc=fail" });
     expect(res.outcome).toBe("REFUSED_SENDER");
     expect((await row<any>(`SELECT COUNT(*) AS n FROM repo_changes`)).n).toBe(0);
   });
 
   it("a West Peek repo is refused with the reason, and no work opens", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle hero", body: "Change the hero on join-west-peek-main please." }), env as never);
-    expect(res.outcome).toBe("NOT_ADMITTED");
+    const res = await freshDanielleMail({ subject: "#danielle hero", body: "Change the hero on join-west-peek-main please." });
+    expect(res.outcome).toBe("SIMONE_QUEUED");
+    expect(res.reply).not.toMatch(/I handed this/);
     expect(res.taskId).toBeNull();
     expect(res.reply).toMatch(/out of scope for Danielle/);
     expect(res.reply).toMatch(/West Peek/);
   });
 
+  it("an original mail with two repo handoffs gives Simone the follow-up without choosing a repo", async () => {
+    const original = "<two-repos@example.test>";
+    const asks = [
+      "In how-we-know, update the tagline in the heading.",
+      "In creator-studios, update the landing page hero.",
+    ];
+    const arrival = await handleBossInboundMail(mail({ messageId: original, subject: "#danielle two changes", body: asks.join("\n") }), env);
+    const call = (await claimSimone(env))!;
+    expect(call.id).toBe(arrival.taskId);
+    expect(await finishSimoneHandoff(env, {
+      id: call.id, lease: call.lease, assignments: asks.map((words) => ({ words, delivery: "repository", employee: "emp_repo" })),
+    })).toEqual({ replied: true, refused: false });
+    const reply = await handleBossInboundMail(mail({ subject: "Re: #danielle two changes", body: "Try again.", references: original }), env);
+    expect(reply.outcome).toBe("SIMONE_QUEUED");
+    expect(await row("SELECT COUNT(*) AS n FROM repo_changes WHERE phase = 'plan' AND mail_id = ?", arrival.mailId)).toEqual({ n: 2 });
+  });
+
   it("an ordinary #danielle instruction is ordinary work, exactly as before", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle question", body: "Which of my sites is slowest to build these days?" }), env as never);
-    expect(res.outcome).toBe("ROUTED");
+    const res = await freshDanielleMail({ subject: "#danielle question", body: "Which of my sites is slowest to build these days?" }, "ordinary");
+    expect(res.outcome).toBe("SIMONE_QUEUED");
     expect((await row<any>(`SELECT COUNT(*) AS n FROM repo_changes`)).n).toBe(0);
   });
 });
 
 describe("the queue parks it for her Mac", () => {
   it("handleTask leaves the task queued and writes the parked event; no cloud rung runs", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}` }), env as never);
+    const res = await freshDanielleMail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}` });
     await handleTask(env as never, { taskId: res.taskId!, lane: "ops" } as never);
     const task = await row<any>(`SELECT status FROM tasks WHERE id = ?`, res.taskId);
     expect(task.status).toBe("queued");
@@ -131,7 +165,7 @@ describe("the queue parks it for her Mac", () => {
 
 describe("the phases, and the two facts every landing rests on", () => {
   async function open() {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}. New hero.` }), env as never);
+    const res = await freshDanielleMail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}. New hero.` });
     const rc = await row<any>(`SELECT id FROM repo_changes WHERE task_id = ?`, res.taskId);
     return { taskId: res.taskId!, id: rc.id as string };
   }
@@ -332,7 +366,7 @@ describe("the phases, and the two facts every landing rests on", () => {
 
 describe("a package that is not publish-ready lands only after she has seen the preview", () => {
   async function open() {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}. New team section.` }), env as never);
+    const res = await freshDanielleMail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}. New team section.` });
     const rc = await row<any>(`SELECT id FROM repo_changes WHERE task_id = ?`, res.taskId);
     return { taskId: res.taskId!, id: rc.id as string };
   }
@@ -513,16 +547,17 @@ describe("a package that is not publish-ready lands only after she has seen the 
   });
 
   it("how-we-know is on the grid: her first real job — the banner — is admitted as a repo change", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle how-we-know banner", body: "In how-we-know, regenerate the YouTube banner in visuals/brand.py with the new tagline (deep sea + materials) and after landing push it to the channel and attach the proof." }), env as never);
-    expect(res.outcome).toBe("ROUTED");
+    const res = await freshDanielleMail({ subject: "#danielle how-we-know banner", body: "In how-we-know, regenerate the YouTube banner in visuals/brand.py with the new tagline (deep sea + materials) and after landing push it to the channel and attach the proof." });
+    expect(res.outcome).toBe("SIMONE_QUEUED");
     const rc = await row<any>(`SELECT repo, property_key FROM repo_changes WHERE task_id = ?`, res.taskId);
     expect(rc.repo).toBe("how-we-know");
     expect(rc.property_key).toBe("youtube");
   });
 
   it("creator-network is parked, off the grid (owner, 10 Nov 2026): a #danielle mail naming it is not admitted as a repo change", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle creator-network", body: "In creator-network, add the runbook link to the README." }), env as never);
-    expect(res.outcome).toBe("NOT_ADMITTED");
+    const res = await freshDanielleMail({ subject: "#danielle creator-network", body: "In creator-network, add the runbook link to the README." });
+    expect(res.outcome).toBe("SIMONE_QUEUED");
+    expect(res.reply).not.toMatch(/I handed this/);
     const rc = await row<any>(`SELECT COUNT(*) AS n FROM repo_changes WHERE repo = 'creator-network'`);
     expect(rc.n).toBe(0);
   });
@@ -532,7 +567,7 @@ describe("pre-approval in the request: she said pick everything", () => {
   const READY = { publish_ready: true };
   const NOT_READY = { publish_ready: false, placeholders: ["Team bios for two of four people are not in the package"] };
   async function open(body: string, from?: string) {
-    const res = await handleBossInboundMail(mail({ from, subject: "#danielle refresh", body }), env as never);
+    const res = await freshDanielleMail({ from, subject: "#danielle refresh", body });
     const rc = res.taskId ? await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId) : null;
     return { res, rc };
   }
@@ -549,7 +584,7 @@ describe("pre-approval in the request: she said pick everything", () => {
 
   it("PRE-APPROVED + READY: the plan files as approved by her, BUILD parks with no reply, and it lands on green", async () => {
     const { res, rc } = await open(`Update WPP-llm from ${FOLDER}. New hero — your call, no need to ask.`);
-    expect(res.outcome).toBe("ROUTED");
+    expect(res.outcome).toBe("SIMONE_QUEUED");
     expect(rc.pre_approved_phrase).toBe("your call");
     expect(rc.pre_approved_by).toBe("seq.taylor@gmail.com");
     const finding = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'repo_change_pre_approved'`, res.taskId);
@@ -660,7 +695,7 @@ describe("pre-approval in the request: she said pick everything", () => {
 
 describe("retry is her door for a failed row", () => {
   it("a failed change goes back to plan, keeps her instruction and pre-approval, and is claimable again; a live one cannot be retried", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}. Your call.` }), env as never);
+    const res = await freshDanielleMail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}. Your call.` });
     const rc = await row<any>(`SELECT id, task_id FROM repo_changes WHERE task_id = ?`, res.taskId);
     expect((await apiJson(`/api/repo-changes/${rc.id}/retry`, { method: "POST", body: {} })).status).toBe(409);
     await claim(rc.id);
@@ -681,7 +716,7 @@ describe("retry is her door for a failed row", () => {
 
 describe("her answer to a stopped change, on the change's page (combined boss fix)", () => {
   it("Try again with what to change carries her words into the instruction; Drop it cancels for good; a live change can do neither", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle page answer", body: `Update WPP-llm from ${FOLDER}.` }), env as never);
+    const res = await freshDanielleMail({ subject: "#danielle page answer", body: `Update WPP-llm from ${FOLDER}.` });
     const rc = await row<any>(`SELECT id, task_id FROM repo_changes WHERE task_id = ?`, res.taskId);
     expect((await apiJson(`/api/repo-changes/${rc.id}/drop`, { method: "POST", body: {} })).status).toBe(409);
     await claim(rc.id);
@@ -705,7 +740,7 @@ describe("her answer to a stopped change, on the change's page (combined boss fi
 describe("a retry is a resume of her original instruction, never a new one", () => {
   it("\"try again\" on the ORIGINAL thread of a failed pre-approved change keeps the row, its pre-approval, repo and folder; opens nothing; the fresh plan is FYI-only", async () => {
     const originalId = `<orig-${Date.now()}@mail.gmail.com>`;
-    const res = await handleBossInboundMail(mail({ messageId: originalId, subject: "#danielle how-we-know banner", body: `In how-we-know, regenerate the YouTube banner with the new tagline. Your call, pick everything, no options. Package: ${FOLDER}` }), env as never);
+    const res = await freshDanielleMail({ messageId: originalId, subject: "#danielle how-we-know banner", body: `In how-we-know, regenerate the YouTube banner with the new tagline. Your call, pick everything, no options. Package: ${FOLDER}` });
     const rc = await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId);
     expect(rc.pre_approved_phrase).toBe("your call");
     expect(rc.drive_folder).toBe("1AbCdEfGhIjKlMnOpQrStUv");
@@ -747,7 +782,7 @@ describe("a retry is a resume of her original instruction, never a new one", () 
 
   it("a reply that says MORE than try again is appended as her follow-up; a hold leaves it stopped", async () => {
     const originalId = `<orig2-${Date.now()}@mail.gmail.com>`;
-    const res = await handleBossInboundMail(mail({ messageId: originalId, subject: "#danielle hero", body: `Update WPP-llm from ${FOLDER}. New hero.` }), env as never);
+    const res = await freshDanielleMail({ messageId: originalId, subject: "#danielle hero", body: `Update WPP-llm from ${FOLDER}. New hero.` });
     const rc = await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId);
     await claim(rc.id);
     await apiJson(`/api/repo-changes/${rc.id}/failed`, { method: "POST", body: { failure: "NAMED STOP [X] y", notified_message_id: "re_f" } });
@@ -767,7 +802,7 @@ describe("a retry is a resume of her original instruction, never a new one", () 
      * pre-approval — asks the same questions again. So a failed build resumes at build.
      */
     const originalId = `<orig3-${Date.now()}@mail.gmail.com>`;
-    const res = await handleBossInboundMail(mail({ messageId: originalId, subject: "#danielle tags", body: `In how-we-know, add hashtags per episode. Package: ${FOLDER}` }), env as never);
+    const res = await freshDanielleMail({ messageId: originalId, subject: "#danielle tags", body: `In how-we-know, add hashtags per episode. Package: ${FOLDER}` });
     const rc = await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId);
     await claim(rc.id);
     await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan\nAfter landing, push the About text.", decided: ["x"], asks: [{ question: "Both domains?", default: "yes" }], publish_ready: true, ask_message_id: "re_p", post_land_step: { command: ".venv/bin/python loop/channel_about.py", proof: "channels.list shows the new text" } } });
@@ -797,7 +832,7 @@ describe("a retry is a resume of her original instruction, never a new one", () 
   });
 
   it("a failed LAND with a green PR and her approval resumes at land — the merge is not redone and nothing is re-asked; a plan step without a command is refused", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle widen", body: `In how-we-know, widen the channel. Package: ${FOLDER}` }), env as never);
+    const res = await freshDanielleMail({ subject: "#danielle widen", body: `In how-we-know, widen the channel. Package: ${FOLDER}` });
     const rc = await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId);
     await claim(rc.id);
     const prose = await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: ["x"], asks: [], publish_ready: true, ask_message_id: "re_p", post_land_step: { proof: "the About text" } } });
@@ -821,7 +856,7 @@ describe("a retry is a resume of her original instruction, never a new one", () 
   });
 
   it("A FAILED POST-LAND STEP IS DANIELLE'S REWORK, NOT HER EMAIL: the row goes back to build with the output as the brief, the plan and her answer kept, the merge recorded; past MAX_REWORKS it is refused and only then stops to the owner", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "#danielle widen", body: `In how-we-know, widen the channel. After landing run the About push. Package: ${FOLDER}` }), env as never);
+    const res = await freshDanielleMail({ subject: "#danielle widen", body: `In how-we-know, widen the channel. After landing run the About push. Package: ${FOLDER}` });
     const rc = await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId);
     await claim(rc.id);
     await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: ["x"], asks: [], publish_ready: true, ask_message_id: "re_p", post_land_step: { command: ".venv/bin/python loop/channel_about.py", proof: "the About text read back" } } });

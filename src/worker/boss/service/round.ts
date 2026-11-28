@@ -63,12 +63,13 @@ export async function roundTasks(env: Env, round: string): Promise<RoundTask[]> 
 }
 
 /** The round her reply's thread names: the newest email of hers in the chain that opened work. */
-async function roundForChain(env: Env, chain: string[]): Promise<string | null> {
+async function roundForChain(env: Env, chain: string[], owner?: string): Promise<string | null> {
   if (!chain.length) return null;
   const marks = chain.map(() => "?").join(",");
   const rows = (await env.DB.prepare(
-    `SELECT id FROM boss_inbound_mail WHERE message_id IN (${marks}) ORDER BY received_at DESC LIMIT 20`,
-  ).bind(...chain).all<{ id: string }>()).results ?? [];
+    `SELECT id FROM boss_inbound_mail WHERE message_id IN (${marks})
+      AND (? IS NULL OR (authorised = 1 AND from_addr = ?)) ORDER BY received_at DESC LIMIT 20`,
+  ).bind(...chain, owner ?? null, owner ?? null).all<{ id: string }>()).results ?? [];
   for (const r of rows) {
     const t = await env.DB.prepare(
       `SELECT input FROM tasks WHERE json_extract(input, '$.mail_id') = ? LIMIT 1`,
@@ -96,8 +97,10 @@ export type SteerOutcome =
  * Her reply on a job's thread while that round is still open. Null when the round has finished (its
  * answer went): then the email starts a new round, as before.
  */
-export async function steerRound(env: Env, m: { chain: string[]; own: string; mailId: string; now: number }): Promise<SteerOutcome | null> {
-  const round = await roundForChain(env, m.chain);
+export async function steerRound(env: Env, m: {
+  chain: string[]; own: string; mailId: string; now: number; owner?: string; decision?: "hold" | "resume" | "amend";
+}): Promise<SteerOutcome | null> {
+  const round = await roundForChain(env, m.chain, m.owner);
   if (!round) return null;
   const tasks = await roundTasks(env, round);
   const held = tasks.filter((t) => t.input.held_by_her);
@@ -105,7 +108,7 @@ export async function steerRound(env: Env, m: { chain: string[]; own: string; ma
   if (!open.length && !held.length) return null;
   const titles = (ts: RoundTask[]) => ts.map((t) => `"${t.title}"`).join(", ");
 
-  const hold = holdIn(m.own);
+  const hold = m.decision ? (m.decision === "hold" ? m.own.slice(0, 200) : null) : holdIn(m.own);
   if (hold) {
     for (const t of open) {
       await writeInput(env, t, { ...t.input, held_by_her: { words: hold, at: m.now, mail_id: m.mailId } });
@@ -115,32 +118,44 @@ export async function steerRound(env: Env, m: { chain: string[]; own: string; ma
     return { outcome: "HELD", taskId: all[0]!.id, note: `Held: ${titles(all)}. Nothing more runs and nothing is sent until you reply "go".` };
   }
 
+  const resume = m.decision ? m.decision === "resume" : goIn(m.own);
+  const reschedule = async (t: RoundTask) => {
+    if (t.input.agent !== "simone") await env.TASKS.send({ taskId: t.id, lane: t.lane });
+  };
   const release = async (t: RoundTask, input: Record<string, any>) => {
     const { held_by_her: _h, ...rest } = input;
     // A job that finished while held runs again with everything she said; one still queued just goes.
-    await writeInput(env, t, rest, "queued");
-    await env.TASKS.send({ taskId: t.id, lane: t.lane });
+    await writeInput(env, t, resume ? { ...rest, resumed_from_mail: m.mailId } : rest, "queued");
+    await reschedule(t);
   };
 
-  if (goIn(m.own) && held.length) {
+  const alreadyResumed = resume ? open.filter((t) => t.input.resumed_from_mail === m.mailId) : [];
+  if (resume && (held.length || alreadyResumed.length)) {
     for (const t of held) { await release(t, t.input); await event(env, t.id, "released_by_her", { mail_id: m.mailId }); }
-    return { outcome: "RELEASED", taskId: held[0]!.id, note: `Carrying on with ${titles(held)}. You'll get one answer when it's done.` };
+    for (const t of alreadyResumed.filter((task) => task.status === "queued")) await reschedule(t);
+    const resumed = [...held, ...alreadyResumed];
+    return { outcome: "RELEASED", taskId: resumed[0]!.id, note: `Carrying on with ${titles(resumed)}. You'll get one answer when it's done.` };
   }
+  if (m.decision === "resume") return null;
 
   const live = [...open, ...held];
   if (live.length !== 1) return { outcome: "JOIN", round };
   const t = live[0]!;
   const words = m.own.trim().slice(0, 8000);
+  const note = `Added to "${t.title}", which is already in progress. You'll get one answer covering both emails.`;
+  const readMails: string[] = Array.isArray(t.input.steered_mail_ids) ? t.input.steered_mail_ids : [];
+  if (readMails.includes(m.mailId)) return { outcome: "STEERED", taskId: t.id, note };
   const body = typeof t.input.body === "string" ? t.input.body : "";
   const input = {
     ...t.input,
     body: `${body}${body ? "\n\n" : ""}Her next email, while this was in progress (answer it with the rest, in the same reply): ${words}`,
+    steered_mail_ids: [...readMails, m.mailId],
     ...(t.status === "running" ? { steer_pending: true } : {}),
   };
   if (t.input.held_by_her) await release(t, input);
   else await writeInput(env, t, input);
   await event(env, t.id, "steered_by_reply", { mail_id: m.mailId, running: t.status === "running" });
-  return { outcome: "STEERED", taskId: t.id, note: `Added to "${t.title}", which is already in progress. You'll get one answer covering both emails.` };
+  return { outcome: "STEERED", taskId: t.id, note };
 }
 
 /**
@@ -164,7 +179,7 @@ export async function roundWaits(env: Env, taskId: string, text: string): Promis
   }
   const round = roundOf(input);
   if (!round) return false;
-  const tasks = await roundTasks(env, round);
+  const tasks = (await roundTasks(env, round)).filter((t) => t.input.agent !== "simone");
   if (tasks.length < 2) return false;
   await event(env, taskId, "round_part", { round, text: text.slice(0, 20_000) });
   if (tasks.some((t) => t.id !== taskId && (OPEN.has(t.status) || t.input.held_by_her))) return true;
@@ -174,7 +189,7 @@ export async function roundWaits(env: Env, taskId: string, text: string): Promis
 
 /** ONE email for the whole round, once every job in it has finished. Safe to call from any ending. */
 export async function flushRound(env: Env, round: string, o: { force?: boolean } = {}): Promise<string | null> {
-  const tasks = await roundTasks(env, round);
+  const tasks = (await roundTasks(env, round)).filter((t) => t.input.agent !== "simone");
   if (tasks.length < 2) return null;
   if (tasks.some((t) => OPEN.has(t.status) || t.input.held_by_her)) return null;
   const parts: string[] = [];

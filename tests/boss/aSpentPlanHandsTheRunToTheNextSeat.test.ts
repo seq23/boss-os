@@ -147,15 +147,18 @@ describe("a Codex limit UNDER a run waits for the reset — never Claude (owner,
     expect((await row<any>(`SELECT status FROM backend_runs WHERE id = ?`, runId)).status).toBe("succeeded");
   });
 
-  it("never releases a run whose ladder does not name a later seat — a laddered-less run fails as it always did", async () => {
-    // A Claude-only task (an LP draft) is the one ladder with no seat after Claude's.
-    const taskId = await insertTask({ status: "queued", title: "No ladder", input: JSON.stringify({ backend_id: "bk_claude_code", delivers: "tool_suggestions", draft_kind: "lp_reply", lp_committed: true }), intake_kind: "research" });
-    await handleTask(env as any, { taskId, lane: "ops" });
-    const runId = (await claim("bk_claude_code")).data.run.run_id as string;
-    const rep = await api("/api/backends/report", { method: "POST", body: spentPacket(runId, taskId, "bk_claude_code") });
+  it("records a spent run as failed when its ladder has no later seat", async () => {
+    const taskId = await insertTask({
+      status: "queued", title: "Single-seat deliverable", intake_kind: "research",
+      input: JSON.stringify({ backend_id: "bk_codex", cloud_fallback: false, delivers: "tool_suggestions" }),
+    });
+    await handleTask(env, { taskId, lane: "ops" });
+    const run = (await claim("bk_codex")).data.run;
+    expect(run).toMatchObject({ task_id: taskId, run_id: expect.any(String) });
+    const rep = await api("/api/backends/report", { method: "POST", body: spentPacket(run.run_id, taskId, "bk_codex") });
     expect(rep.status).toBe(200);
     expect(((await rep.json() as any).data).released).not.toBe(true);
-    expect((await row<any>(`SELECT status FROM backend_runs WHERE id = ?`, runId)).status).toBe("failed");
+    expect(await row(`SELECT status FROM backend_runs WHERE id = ?`, run.run_id)).toEqual({ status: "failed" });
   });
 
   it("never releases a run that also broke a rule: a violation is a person's problem, not a queue's", async () => {

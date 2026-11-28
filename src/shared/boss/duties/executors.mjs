@@ -204,6 +204,10 @@ export const TASK_EXECUTORS = Object.freeze({
     who: "the on-demand hunter on her Mac (launchd com.seq.boss-hunt-ondemand)",
     file: "scripts/ops/buyer-hunt.mjs", marker: "--from-boss", command: "npm run capital:hunts",
   }),
+  simone_agent: Object.freeze({
+    who: "Simone’s Mac launcher through POST /simone/claim, with the Worker’s mail reader when the Mac is down",
+    file: "scripts/ops/simone.mjs", marker: 'api("POST", "/claim")',
+  }),
   grid_fix: Object.freeze({
     who: "the CI sweep (~/bin/ci-sweep.sh, Wed+Sat 08:00): grid-watch writes each open fix to its inbox, and the sweep's probe works it as a lane until it is gone",
     file: "scripts/ops/grid-watch.mjs", marker: "GRID_INBOX", command: "npm run grid:post",
@@ -217,6 +221,7 @@ export const TASK_CREATORS = Object.freeze({
   "src/worker/boss/routes/backends.ts": Object.freeze(["backend_run"]),
   "src/worker/boss/routes/commentWatch.ts": Object.freeze(["her_answer"]),
   "src/worker/boss/routes/grid.ts": Object.freeze(["grid_fix"]),
+  "src/worker/boss/agents/simone.ts": Object.freeze(["simone_agent"]),
 });
 
 /**

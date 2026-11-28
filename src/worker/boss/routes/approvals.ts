@@ -462,7 +462,7 @@ export async function runExpirySweep(env: Env): Promise<{ expired: number; execu
       env.DB.prepare(`UPDATE tasks SET sensitivity = ?, model_access = ? WHERE id = ? AND sensitivity = 'restricted'`)
         .bind(axes.sensitivity, axes.modelAccess, t.id),
       env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake_overruled',?)`)
-        .bind(newId("tev"), t.id, at, JSON.stringify({ reason: "The overruled guess's restricted label is re-read from the text; model access is kept.", was: { sensitivity: "restricted", modelAccess: t.model_access }, now: axes })),
+        .bind(newId("tev"), t.id, at, JSON.stringify({ reason: "The overruled guess's restricted label is re-read and the current Boss OS model label is applied.", was: { sensitivity: "restricted", modelAccess: t.model_access }, now: axes })),
     ]);
   }
   /*

@@ -1698,6 +1698,31 @@
       "macWindow": "HEAVY"
     },
     {
+      "id": "chatgpt-searches",
+      "name": "ChatGPT hidden searches",
+      "what": "Each night asks the week's buyer questions for the sites due that night in ChatGPT Temporary Chats (her Chrome), records the searches ChatGPT ran, what it read and cited and whether her site showed up, and sends each site's gaps to its search pages as new searches; a limit or sign-out moves the rest to the next night.",
+      "business": "spry",
+      "brand": "Spry Labs",
+      "system": "mac",
+      "slots": [
+        "daily 22:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.chatgpt-searches"
+        ]
+      },
+      "output": {
+        "metric": "questions_checked",
+        "floor": 1,
+        "runs": 2,
+        "reason": "A night with sites due that checks 0 questions is FAIL (exit 1) or COULDNT-CHECK with its reason (exit 75), each a Notices line; a night with nothing left due says so."
+      },
+      "macWindow": "HEAVY"
+    },
+    {
       "id": "ci-sweep-resume",
       "name": "CI sweep resume",
       "what": "Resumes a sweep the Mac's sleep interrupted.",
@@ -5156,7 +5181,7 @@
     {
       "id": "growth-director",
       "name": "Noelle: Director of Growth (Claude Code)",
-      "what": "Noelle, the Director of Growth: full Claude Code with her persona on your Mac, in ~/Work/noelle. Once a day at a slot between 10:00 and 20:58 (never on the hour; Thursdays after 14:00 her weekly look back) she reads the growth ledgers and queues, builds and posts her businesses' growth work through her own PRs (a fresh reviewer per PR, landed with land-after), and posts one Notices line per new thing she publishes. Your email to boss@ naming her, or your message on her Boss OS page, is answered within 30 minutes from 10:00 to 22:59 (outside that: \"Noelle is on it at 10:00 Central\"). Never spends, opens an account or uses a paid API (her guard).",
+      "what": "Noelle, the Director of Growth: full Claude Code with her persona on your Mac, in ~/Work/noelle. Once a day at a slot between 10:00 and 20:58 (never on the hour; Thursdays after 14:00 her weekly look back) she reads the growth ledgers and queues, builds and posts her businesses' growth work through her own PRs (a fresh reviewer per PR, landed with land-after), and posts one Notices line per new thing she publishes. The weekly wake also refreshes niche research and reviews live bets when that month's review is due. Your email to boss@ naming her, or your message on her Boss OS page, is answered within 30 minutes from 10:00 to 22:59 (outside that: \"Noelle is on it at 10:00 Central\"). Never spends, opens an account or uses a paid API (her guard).",
       "business": "spry",
       "brand": "Spry Labs",
       "system": "mac",

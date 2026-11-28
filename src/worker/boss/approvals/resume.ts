@@ -178,7 +178,7 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
      * `approval_events.executed` rows for apb_m2x9y0t8yq0tfpe0 says "No new letter … word-for-word".
      *
      * So a send-back with a note no longer calls the composer. It queues a REWRITE
-     * (`wealth/rewrite.ts`): a model on the Worker's own queue, private-model-only, given the letter
+     * (`wealth/rewrite.ts`): a model on the Worker's own queue, given the letter
      * she sent back and every note she has written on the firm, checked against the rules in code,
      * and raised as attempt N+1 with her note beside it. The request that recorded her verdict
      * drains the queue after the response, so it lands in minutes rather than on the Mac's next

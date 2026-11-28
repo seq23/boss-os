@@ -113,12 +113,12 @@ describe("Phase 2 — intake admits work through the right door", () => {
     expect(t!.execution_assignment).not.toBe("USER_ONLY");
     // 16 Nov 2026: the guess's `restricted` is re-read from the text (it asked for a routing card nothing
     // raises), while model access stays tighten-only.
-    expect(t).toMatchObject({ sensitivity: "internal", model_access: "private_model_only" });
+    expect(t).toMatchObject({ sensitivity: "internal", model_access: "public_model_approved" });
     // A sensitivity someone declared is a fact and stays.
     const declaredRestricted = await admitTask(env, { title: "Monthly quality read", sensitivity: "restricted", input: { prompt: quoted, duty_id: "duty_quality_read" } });
     expect((await row(`SELECT sensitivity FROM tasks WHERE id = ?`, declaredRestricted.task_id))!.sensitivity).toBe("restricted");
     expect(overruledAxes({ modelAccess: "private_model_only" }, { sensitivity: "internal", modelAccess: "public_model_approved" }))
-      .toEqual({ sensitivity: "internal", modelAccess: "private_model_only" });
+      .toEqual({ sensitivity: "internal", modelAccess: "public_model_approved" });
     const events = (await all(`SELECT event FROM task_events WHERE task_id = ?`, duty.task_id)).map((e) => e.event);
     expect(events).toContain("intake_overruled");
 

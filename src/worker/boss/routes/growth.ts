@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { AppError, ok, badRequest } from "../lib/http";
+import { operatingStopped } from "../lib/operatingStop";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import manifest from "../../../shared/boss/scorecard/manifest.json";
 import { readingProblems, summarize } from "../../../shared/boss/growth/scoreboard.mjs";
@@ -102,6 +103,7 @@ export async function readBacklinkOrders(db: D1Database, now = Date.now()) {
 // Noelle's run (growth/noelle.ts): the machine token only, as the backlink network's read.
 growthRoutes.get("/noelle/context", async (c) => {
   if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  if (await operatingStopped(c.env.DB)) throw new AppError(409, "Boss OS operations are paused by the owner.");
   return ok(c, await noelleContext(c.env));
 });
 growthRoutes.post("/noelle/done", async (c) => {
@@ -144,6 +146,7 @@ growthRoutes.post("/noelle/message", async (c) => {
 // A #noelle call (growth/noelle.ts claimCall): her Mac claims one waiting email, replies once, or releases it.
 growthRoutes.post("/noelle/call/claim", async (c) => {
   if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
+  if (await operatingStopped(c.env.DB)) return ok(c, { call: null });
   const body = await c.req.json<any>().catch(() => ({}));
   return ok(c, { call: await claimCall(c.env, String(body?.device_id ?? "mac")) });
 });

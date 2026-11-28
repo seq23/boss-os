@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  readErrandReply, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, errandDateIn,
+  readErrandReply, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, refreshErrandSignature, errandDateIn,
   bookingAt, reminderDueAt, bookingWhen, partyIn, REMINDER_LEAD_MS,
 } from "../src/shared/boss/commands/parse.mjs";
 import { OPTIONS_REPLY, PHONE } from "./fixtures/errandReplyOptions.mjs";
@@ -77,16 +77,24 @@ describe("her answer becomes the follow-up, word for word; a card never goes", (
       "Hello Jamie,", "",
       `Thank you. Sequoia would like the 11:00 pm DJ set on Thursday, October 29, for a party of 2. Her phone number is ${PHONE}. Noted on the dress code and the 24-hour cancellation policy.`, "",
       "Could you please confirm the reservation?", "",
-      "Thank you,", "Simone", "Assistant to Sequoia Taylor",
+      "Thank you,", "Simone", "Chief of Staff to Sequoia Taylor",
     ].join("\n"));
     expect(followUpProblems(text)).toEqual([]);
+  });
+  it("updates a saved follow-up without editing the body or admitting an unsigned letter", () => {
+    const body = "Could you confirm the reservation?";
+    const saved = `${body}\r\n\r\nThank you,\r\nSimone\r\nAssistant to Sequoia Taylor`;
+    const refreshed = refreshErrandSignature(saved);
+    expect(refreshed).toBe(`${body}\r\n\r\nThank you,\r\nSimone\r\nChief of Staff to Sequoia Taylor`);
+    expect(followUpProblems(refreshed)).toEqual([]);
+    expect(followUpProblems(refreshErrandSignature(`${body}\nAssistant to Sequoia Taylor`))).toContain("it is not signed by Simone");
   });
   it("NEGATIVE: a missing time or number is asked for, and card details are refused", () => {
     expect(errandAnswerIn(`my number is ${PHONE}`, offer).missing[0]).toMatch(/^which time/);
     expect(errandAnswerIn("11pm", offer).missing).toEqual(["your phone number"]);
     expect(errandAnswerIn(`11pm, ${PHONE}, card 4111 1111 1111 1111`, offer).card).toBe(true);
     expect(errandAnswerIn(`11pm, ${PHONE}, use my visa`, offer).card).toBe(true);
-    expect(followUpProblems("Her card is 4111 1111 1111 1111.\nAssistant to Sequoia Taylor")).toContain("it carries card details");
+    expect(followUpProblems("Her card is 4111 1111 1111 1111.\nChief of Staff to Sequoia Taylor")).toContain("it carries card details");
   });
   it("a cancellation in their thread is a fixed letter", () => {
     expect(errandCancelText({ greet: "Jamie", what: "the 11:00 pm DJ set", when: "Thursday, October 29", party: 2 }))

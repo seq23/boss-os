@@ -12,7 +12,7 @@
  *   2. HER OWN NAME IS NEVER A COUNTERPARTY. "Unnamed buyer of Sequoia Taylor" becomes a Yours row
  *      from "You"; her firm address by local part is hers.
  *   3. NO ABSURD PRICE. "$ 1,484,000 M" prints as "—".
- *   4. THE N-PORT READ CAN READ A FILING. `positionFromXml` once called an import that did not
+ *   4. THE N-PORT READ CAN READ A FILING. `positionsFromXml` once called an import that did not
  *      exist, inside a try, so every filing was "unreadable" and every hunt said nobody.
  *   5. THE ~6-MONTH WINDOW IS ONE CONSTANT, and every reader of the inbox ledger uses it.
  *   6. NO NAME FROM HER LISTS IN THE REPO. The lists live in D1; the validator knows only hashes of
@@ -60,7 +60,7 @@ export function checkWeeklyHunt(src, build) {
 export function checkHerself(lib) {
   const id = { names: ["Sequoia Taylor"], addresses: ["owner@example-own.com"] };
   const lists = { same_firm: [], do_not_suggest: [] };
-  const g = lib.gridRow({ principal: "Unnamed buyer of Sequoia Taylor", side: "buy", asset: "Acme", size_usd: 1e7, source_message: "x", date: "2026-10-01" }, { identity: id, lists });
+  const g = lib.gridRow({ principal: "your client", hers: true, side: "buy", asset: "Acme", size_usd: 1e7, source_message: "x", date: "2026-10-01" }, { identity: id, lists });
   const out = [];
   if (g.side !== "yours" || g.from_text !== "You") out.push(`her own name was read as a counterparty (side ${g.side}, from ${g.from_text})`);
   if (!lib.isHerAddress("owner@rainmakersecurities.com", id)) out.push("her firm address (her local part on her firm's domain) is not recognised as hers");
@@ -78,10 +78,10 @@ export function checkPrice(lib) {
 export function checkNport(hunt) {
   const xml = "<genInfo><seriesName>Fund</seriesName></genInfo><totAssets>100</totAssets><invstOrSec><name>Acme Inc</name><valUSD>5</valUSD></invstOrSec>";
   try {
-    const p = hunt.positionFromXml(xml, "Acme");
-    return p?.valUSD === 5 ? [] : ["positionFromXml read no position from a filing that holds one"];
+    const p = hunt.positionsFromXml(xml)[0];
+    return p?.valUSD === 5 ? [] : ["positionsFromXml read no position from a filing that holds one"];
   } catch (e) {
-    return [`positionFromXml throws (${e.message}) — every filing would be swallowed as unreadable`];
+    return [`positionsFromXml throws (${e.message}) — every filing would be swallowed as unreadable`];
   }
 }
 
@@ -128,7 +128,7 @@ async function main() {
       ["a hunt email with a Decide item is caught", checkWeeklyHunt('const EMAIL = ARGS.includes("--email"); if (EMAIL) {} sendAsEmployee(a)', (x) => ({ layout: { decide: ["match"] } })).length === 2],
       ["her name as a counterparty is caught", checkHerself({ ...lib, gridRow: (r, c) => ({ ...lib.gridRow(r, c), side: "buy", from_text: "Sequoia Taylor" }) }).length >= 1],
       ["an absurd price printed is caught", checkPrice({ priceWords: (s) => s }).length === 3],
-      ["a filing reader that throws is caught", checkNport({ positionFromXml: () => { throw new ReferenceError("assetKey is not defined"); } }).length === 1],
+      ["a filing reader that throws is caught", checkNport({ positionsFromXml: () => { throw new ReferenceError("assetKey is not defined"); } }).length === 1],
       ["a shorter window is caught", checkWindow({}, 89).length === 1],
       ["a longer window is caught", checkWindow({}, 91).length === 1],
       ["the old six-month window is caught", checkWindow({}, 183).length === 1],

@@ -363,8 +363,6 @@ export function overridesFrom(text) {
   if (day !== null) { out.weekday = day; if (!out.cadence) out.cadence = "weekly"; }
   const hour = hourIn(t);
   if (hour) { out.local_hour = hour.hour; out.local_minute = hour.minute; }
-  if (/\b(sonnet|better model|the good model|stronger model)\b/i.test(t)) out.model = "claude-sonnet-4-5-20250929";
-  else if (/\b(haiku|cheap(er|est)? model|small model)\b/i.test(t)) out.model = "claude-haiku-4-5-20251001";
   if (/\b(on my mac|local job|from my mac|launchd)\b/i.test(t)) out.executor = "local_job";
   else if (/\b(as an agent|agent duty|in the cloud)\b/i.test(t)) out.executor = "agent";
   const script = scriptIn(t);

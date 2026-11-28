@@ -31,9 +31,9 @@
  * People's names and addresses live in D1 only (`outreach_campaigns.spec`, `outreach_prospects`).
  */
 import type { Env } from "../env";
-import { newId } from "../lib/id";
+import { newId, sha256Hex } from "../lib/id";
 import { logEvent } from "../lib/log";
-import { audit } from "../lib/audit";
+import { audit, auditOfPrevious } from "../lib/audit";
 import { chicagoParts, DAY_MS } from "./brakes";
 import { randomToken } from "./lists";
 import { normaliseEmail } from "./suppression";
@@ -158,7 +158,11 @@ export async function buildCampaign(env: Env, input: {
   thread: string[]; subject: string; mailId: string | null; source: "owner_email" | "research"; now: number;
 }): Promise<CampaignRow> {
   const { business: b, now } = input;
-  const id = newId("cmp");
+  const byMail = input.source === "owner_email" && input.mailId;
+  const existing = byMail && await env.DB.prepare(`SELECT * FROM outreach_campaigns WHERE mail_id = ? AND source = 'owner_email' ORDER BY created_at, id LIMIT 1`)
+    .bind(input.mailId).first<CampaignRow>();
+  if (existing) return existing;
+  const id = byMail ? `cmp_${(await sha256Hex(byMail)).slice(0, 32)}` : newId("cmp");
   const today = await readCapabilities(b);
   const threadSubject = input.subject.replace(/^((re|fwd?)\s*:\s*)+/i, "").trim() || `${input.org} partnership campaign`;
   // No email of hers to answer: every note of Monique's on this campaign references one root id, so they thread.
@@ -166,19 +170,22 @@ export async function buildCampaign(env: Env, input: {
   // A person she named starts on the address she gave; research comes first (`campaignResearched`).
   const contacts = input.contacts.map((c) => (c.how ? c : { ...c, how: "her email" as const, given: c.email }));
   const spec: CampaignSpec = { contacts, skipped: input.skipped, thread, subject: input.subject, thread_subject: threadSubject, today, today_read_at: today.length ? now : undefined };
-  await env.DB.prepare(
-    `INSERT INTO outreach_campaigns (id, business_key, org_name, org_domain, mail_id, source, state, spec, page_token, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,'verifying',?,?,?,?)`,
-  ).bind(id, b.key, input.org, input.orgDomain, input.mailId, input.source, JSON.stringify(spec), randomToken(), now, now).run();
-  // The organisation is now the business's active one: a row of its own list, or a new one on top.
-  const listed = await env.DB.prepare(`SELECT id FROM outreach_partner_orgs WHERE business_key = ? AND lower(org_name) = lower(?)`).bind(b.key, input.org).first<{ id: string }>();
-  if (listed) await env.DB.prepare(`UPDATE outreach_partner_orgs SET state = 'active', campaign_id = ?, updated_at = ? WHERE id = ?`).bind(id, now, listed.id).run();
-  else {
-    const top = await env.DB.prepare(`SELECT MIN(position) AS p FROM outreach_partner_orgs WHERE business_key = ?`).bind(b.key).first<{ p: number | null }>();
-    await env.DB.prepare(`INSERT INTO outreach_partner_orgs (id, business_key, org_name, position, state, campaign_id, created_at, updated_at) VALUES (?,?,?,?,'active',?,?,?)`)
-      .bind(newId("pog"), b.key, input.org, (top?.p ?? 1) - 1, id, now, now).run();
-  }
-  await audit(env.DB, { actor: "boss", lane: "ops", entityType: "outreach_campaign", entityId: id, action: "campaign_built", detail: { business_key: b.key, source: input.source, people: input.contacts.length } });
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO outreach_campaigns (id, business_key, org_name, org_domain, mail_id, source, state, spec, page_token, created_at, updated_at)
+      VALUES (?,?,?,?,?,?,'verifying',?,?,?,?) ON CONFLICT(id) DO NOTHING`)
+      .bind(id, b.key, input.org, input.orgDomain, input.mailId, input.source, JSON.stringify(spec), randomToken(), now, now),
+    // Only a newly filed campaign changes the active organisation. A retry may arrive after another campaign has started.
+    env.DB.prepare(`INSERT INTO outreach_partner_orgs (id, business_key, org_name, position, state, campaign_id, created_at, updated_at)
+      SELECT COALESCE((SELECT id FROM outreach_partner_orgs WHERE business_key = ?1 AND lower(org_name) = lower(?2) ORDER BY position, id LIMIT 1), ?3),
+        ?1, ?2, COALESCE((SELECT MIN(position) FROM outreach_partner_orgs WHERE business_key = ?1), 1) - 1, 'active', ?4, ?5, ?5
+      WHERE changes() = 1
+      ON CONFLICT(id) DO UPDATE SET state = 'active', campaign_id = excluded.campaign_id, updated_at = excluded.updated_at`)
+      .bind(b.key, input.org, newId("pog"), id, now),
+    auditOfPrevious(env.DB, {
+      actor: "boss", lane: "ops", entityType: "outreach_campaign", entityId: id, action: "campaign_built",
+      detail: { business_key: b.key, source: input.source, people: input.contacts.length },
+    }, "campaigns", { onlyIfChanged: true }),
+  ]);
   return (await env.DB.prepare(`SELECT * FROM outreach_campaigns WHERE id = ?`).bind(id).first<CampaignRow>())!;
 }
 
@@ -195,15 +202,18 @@ export async function holdOrgs(env: Env, b: Business, orgs: string[], after: str
   let pos = anchor ? anchor.position : (rows.at(-1)?.position ?? 0);
   // Make room after the anchor: everything behind it moves back by the number added.
   const fresh = orgs.filter((o) => !rows.some((r) => r.org_name.toLowerCase() === o.toLowerCase()));
-  if (anchor && fresh.length) await env.DB.prepare(`UPDATE outreach_partner_orgs SET position = position + ? WHERE business_key = ? AND position > ?`).bind(fresh.length, b.key, anchor.position).run();
   if (after && !anchor) {
     // The organisation she named first is not on the list yet: it goes first, as done-or-active elsewhere.
     pos = rows.at(-1)?.position ?? 0;
   }
-  for (const o of fresh) {
-    pos += 1;
-    await env.DB.prepare(`INSERT INTO outreach_partner_orgs (id, business_key, org_name, position, state, created_at, updated_at) VALUES (?,?,?,?,'waiting',?,?)`)
-      .bind(newId("pog"), b.key, o.slice(0, 120), pos, now, now).run();
+  if (fresh.length) {
+    await env.DB.batch([
+      ...(anchor ? [env.DB.prepare(`UPDATE outreach_partner_orgs SET position = position + ? WHERE business_key = ? AND position > ?`)
+        .bind(fresh.length, b.key, anchor.position)] : []),
+      ...fresh.map((org, offset) => env.DB.prepare(`INSERT INTO outreach_partner_orgs
+        (id, business_key, org_name, position, state, created_at, updated_at) VALUES (?,?,?,?,'waiting',?,?)`)
+        .bind(newId("pog"), b.key, org.slice(0, 120), pos + offset + 1, now, now)),
+    ]);
   }
   return { added: fresh, already: orgs.filter((o) => !fresh.includes(o)) };
 }

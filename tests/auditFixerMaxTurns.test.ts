@@ -11,6 +11,12 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync, existsS
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+/** A scoped pass reads its briefs from the queue before the worker starts (the pass packet): one brief for test-repo. */
+function writeQueue(home: string) {
+  mkdirSync(join(home, ".boss-os/search-readiness"), { recursive: true });
+  writeFileSync(join(home, ".boss-os/search-readiness/fix-queue.json"), JSON.stringify({ written_at: "2026-11-27T00:00:00Z", briefs: [{ id: "sr-test.example-b1", repo: "test-repo", domain: "test.example", item_id: "b1", failure: "a title is 81 chars" }] }));
+}
+
 function runFixer(extra: Record<string, string>) {
   const home = mkdtempSync(join(tmpdir(), "audit-turns-"));
   const bin = join(home, "bin");
@@ -22,6 +28,7 @@ printf 'role=%s args=%s\\n' "$role" "\${AI_RUN_CLAUDE_ARGS-<unset>}" >> "${calls
   w("gh", "exit 0");
   w("curl", "printf 200");
   writeFileSync(join(home, "prompt.md"), "Do the thing.\n");
+  writeQueue(home);
   const repoRoot = process.cwd();
   const r = spawnSync("/bin/bash", [join(repoRoot, "scripts/ops/ahrefs-audit-fix.sh")], {
     env: { ...(process.env as Record<string, string>), HOME: home, PATH: `${bin}:${process.env.PATH}`, BOSS_OS_REPO: repoRoot, AHREFS_AUDIT_PROMPT: join(home, "prompt.md"), SR_SCOPE_REPO: "test-repo", ...extra },
@@ -35,7 +42,8 @@ printf 'role=%s args=%s\\n' "$role" "\${AI_RUN_CLAUDE_ARGS-<unset>}" >> "${calls
 it("the repair call carries --max-turns (default 250, override honoured); a bad value never reaches the worker", () => {
   const dflt = runFixer({});
   expect(dflt.worker.length, dflt.out).toBe(1);
-  const perms = `--permission-mode dontAsk --setting-sources= --settings ${process.cwd()}/scripts/ops/sr-fix-permissions.json`;
+  // 27 Nov 2026: only the tools the allow list names are loaded (--tools), in the allow list's own order.
+  const perms = `--tools Read,Glob,Grep,Edit,Write,Bash --permission-mode dontAsk --setting-sources= --settings ${process.cwd()}/scripts/ops/sr-fix-permissions.json`;
   const sid = "--session-id [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   expect(dflt.worker[0]).toMatch(new RegExp(`^role=worker args=--max-turns 250 ${sid} ${esc(perms)}$`));
@@ -57,9 +65,13 @@ it("the repair call carries --max-turns (default 250, override honoured); a bad 
 it("sr-fix's permissions: every allow rule is one well-formed rule, and pushes to main, force pushes and merges are denied", () => {
   const p = JSON.parse(readFileSync("scripts/ops/sr-fix-permissions.json", "utf8")).permissions;
   for (const r of [...p.allow, ...p.deny]) {
-    expect(r, r).toMatch(/^(Read|Glob|Grep|Edit|Write|mcp__[a-z-]+|Bash\([^()]+\))$/);
-    if (p.allow.includes(r)) expect(r.replace(/:\*\)$/, ")"), `${r} mixes * with :*`).not.toMatch(/\*.*\)$|,/);
+    expect(r, r).toMatch(/^((Read|Glob|Grep|Edit|Write)(\(~\/[^()\s]+\))?|mcp__[a-z-]+|Bash\([^()]+\))$/);
+    // 27 Nov 2026: a wildcard anywhere is real CLI syntax now (proven by sr-fix-permissions-probe.mjs); mixing it
+    // with the legacy trailing :* is not, and a comma is two rules in one string.
+    if (p.allow.includes(r)) expect(r.endsWith(":*)") ? r.slice(0, -3) : r, `${r} mixes * with :*, or holds a comma`).not.toMatch(r.endsWith(":*)") ? /\*|,/ : /,/);
   }
+  // Edit and Write reach only the worker's worktrees and its own pass folder (a bare Edit/Write could empty any file of hers).
+  expect(p.allow.filter((r: string) => /^(Edit|Write)/.test(r)).sort()).toEqual(["Edit(~/.boss-os/site-audit/**)", "Edit(~/GitHub/.wt-danielle-*/**)", "Write(~/.boss-os/site-audit/**)", "Write(~/GitHub/.wt-danielle-*/**)"]);
   const prefix = (rule: string) => rule.replace(/^Bash\(/, "").replace(/(:\*)?\)$/, "");
   const denied = (cmd: string) => p.deny.some((r: string) => cmd.startsWith(prefix(r)));
   for (const cmd of ["git push origin HEAD:main", "git push origin HEAD:refs/heads/main", "gh api -X POST repos/x/y/merges", "npx wrangler r2 bucket delete x", "wrangler d1 execute db --remote", "git push --force origin x", "git push origin HEAD --force", "gh pr merge 12 --squash", "wrangler deploy", "rm -rf /", "gh secret set X"]) {
@@ -114,6 +126,7 @@ echo "AHREFS-AUDIT-COMPLETE: projects=1 fixed=0"; exit 0`);
   w("curl", "printf 200");
   w("npm", "exit 0");
   writeFileSync(join(home, "prompt.md"), "Do the thing.\n");
+  writeQueue(home);
   const repoRoot = process.cwd();
   const r = spawnSync("/bin/bash", [join(repoRoot, "scripts/ops/ahrefs-audit-fix.sh")], {
     env: { ...(process.env as Record<string, string>), HOME: home, PATH: `${bin}:${process.env.PATH}`, BOSS_OS_REPO: repoRoot, AHREFS_AUDIT_PROMPT: join(home, "prompt.md"), SR_SCOPE_REPO: "test-repo", BOSS_OS_SITE_AUDIT_DIR: join(home, "sa") },
@@ -150,8 +163,12 @@ it("every helper command the prompt hands the worker matches an allow rule", () 
   const allowed = (cmd: string) => p.allow.some((r: string) => r.startsWith("Bash(") && (r.endsWith(":*)") ? cmd.startsWith(prefix(r)) : cmd === prefix(r)));
   const prompt = readFileSync("scripts/ops/ahrefs-audit-fix-prompt.md", "utf8");
   const cmds = [...prompt.matchAll(/^(bash ~\/\S+.*)$/gm)].map((m) => (m[1] ?? "").trim());
-  expect(cmds.length).toBeGreaterThanOrEqual(2);
+  // 27 Nov 2026: the runner, not the worker, now crawls for the row and the next cut prunes, so the
+  // worktree cut is the one helper the prompt still hands over by `bash`; it must be found and allowed.
+  expect(cmds).toContain("bash ~/.boss-os/runtime/scripts/ops/audit-worktree.sh <repo>");
   for (const c of cmds) expect(allowed(c), c).toBe(true);
+  // The packet's fallback when GitHub would not give the open work: the in-flight check by hand.
+  expect(allowed("node ~/GitHub/boss-os/scripts/ops/site-audit-lib.mjs inflight keepmyproof oregon"), "inflight").toBe(true);
   for (const c of ["grep -o x file.html", "git worktree list", "curl -s https://example.com/", "curl -sL https://example.com/", "gh run list --repo seq23/x", "gh pr diff 1 --repo seq23/x", "git ls-files aplayermode", "git remote -v"]) {
     expect(allowed(c), c).toBe(true);
   }

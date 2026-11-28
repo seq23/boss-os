@@ -28,13 +28,9 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync,
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { HER_REPOS, MAX_PRS } from "./noelle-guard.mjs";
+import { CLIENT_FOOTERS, HER_REPOS, MAX_PRS } from "./noelle-guard.mjs";
 
 export const BODY_MAX = 60000;
-export const LAND_REPOS = Object.freeze([
-  "p-n-p", "approvalprep", "aplayer-mode", "sprylabs-hpc-site", "peace-be-still",
-  "creator-studios", "dream-wedding-builder", "keepmyproof",
-]);
 export const TITLE_MAX = 256; // GitHub's own limit
 
 class Stop extends Error {
@@ -97,7 +93,7 @@ function ghLoggedIn(run) {
 }
 
 /** Check the external boundary before a push or PR creates a GitHub Actions run. */
-function requireIsolation(repo, opts, run) {
+export function requireIsolation(repo, opts, run) {
   const env = opts.env ?? process.env;
   const guards = opts.guardDir ?? env.NOELLE_GUARD_DIR ?? join(homedir(), ".boss-os", "noelle", "guard");
   const stop = (why) => refuse("REPO_SETTINGS", `seq23/${repo}: ${why}`);
@@ -190,7 +186,9 @@ export function openPr(repo, branch, title, bodyFile, opts = {}) {
   const t = String(title ?? "");
   if (!t.trim() || t.length > TITLE_MAX || /[\0-\x1f\x7f]/.test(t)) refuse("TITLE_SHAPE", `a PR title is one line of 1 to ${TITLE_MAX} characters`);
   const body = readHerFile(bodyFile, env).split(/\r?\n/)
-    .filter((line) => !/^[\s>*_-]*(?:ship-ready|launch-ready|owner override)\s*:/i.test(line)).join("\n");
+    .filter((line) => !/^[\s>*_-]*(?:ship-ready|launch-ready|owner override)\s*:/i.test(line)).join("\n")
+    // A client site's rule reaches every reviewer by code, never by Noelle's own words (sites.md, "Client sites").
+    + (Object.hasOwn(CLIENT_FOOTERS, r) ? `\n\n---\n${CLIENT_FOOTERS[r]}\n` : "");
   const gdir = opts.guardDir ?? env.NOELLE_GUARD_DIR ?? join(homedir(), ".boss-os", "noelle", "guard");
   const lock = join(gdir, "open-pr.lock");
   try { writeFileSync(lock, "", { flag: "wx" }); }
@@ -229,7 +227,6 @@ export function openPr(repo, branch, title, bodyFile, opts = {}) {
 /** Internal to the land-after wrapper. Only persistent broker receipts grant merge eligibility. */
 export function checkLand(repo, number, opts = {}) {
   const r = checkRepo(repo);
-  if (!LAND_REPOS.includes(r)) refuse("PROPOSAL_ONLY_REPO", `seq23/${r} accepts proposals only`);
   if (!/^[1-9][0-9]{0,5}$/.test(number ?? "")) refuse("LAND_SHAPE", "give the pull request number");
   const env = opts.env ?? process.env;
   const gdir = opts.guardDir ?? env.NOELLE_GUARD_DIR ?? join(homedir(), ".boss-os", "noelle", "guard");
@@ -253,7 +250,7 @@ export function cli(argv, opts = {}) {
   try {
     if (verb === "check-land" && a.length === 2) {
       checkLand(a[0], a[1], opts);
-      console.log(`OUTPUT verified proposal seq23/${a[0]}#${a[1]}`);
+      console.log(`OUTPUT verified opening receipt seq23/${a[0]}#${a[1]}`);
       return 0;
     }
     if (verb === "push-branch" && a.length === 2) {

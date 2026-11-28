@@ -14,7 +14,6 @@ import { admitTask } from "../tasks/admit";
 import { newId } from "../lib/id";
 import { parseFirmScan, scanReport } from "../research/firmScan";
 import { routeCompletion } from "../router";
-import { privateLexicon, scanForModelAccess } from "../router/modelAccess";
 import { groundedSearchPrompt, writeFromPagesPrompt, keepGroundedFacts, guestPages } from "../../../shared/boss/meetingPrep/prep.mjs";
 import { browsePage } from "../../effects/browserClient";
 import { braveSearch, type BraveResult } from "../../effects/braveSearchClient";
@@ -180,10 +179,6 @@ export async function realLinks(json: any, sources: { title: string; url: string
   return { json: out, sources: sources.map((s) => (to.has(s.url) ? { ...s, url: to.get(s.url)! } : s)) };
 }
 
-/** Each page's text exactly as the prompt quotes it, so the router can find it verbatim. */
-export function publicSpans(prompt: string, pages: { text: string }[]): string[] {
-  return pages.map((p) => String(p.text ?? "").slice(0, 6000)).filter((t) => t.length && prompt.includes(t));
-}
 const sourcedCount = (j: any) => (j && j.found !== false ? ["title", "firm", "background", "focus"].filter((k) => j[k]).length + (j.upcoming?.length ?? 0) + Object.values(j.money ?? {}).filter(Boolean).length : 0);
 
 /**
@@ -201,9 +196,7 @@ const sourcedCount = (j: any) => (j && j.found !== false ? ["title", "firm", "ba
  *   3. else meeting_prep_write — their company site and public pages fetched with the Cloudflare
  *      browser binding, and a free Gemini 3 Flash writes ONLY from that text, citing each page.
  *   4. else `{ ok: false, stop, why }`: the prep says "Couldn't research <name>: <why>".
- * A committed LP is private-model-only (owner ruling, 4 Nov 2026) and never reaches Gemini: the answer
- * says `private: true` and the Mac researches on her own seat. Prospects are public.
- *   POST { name, email?, firm?, domain?, today? } → { ok: true, json, sources, via } | { ok: false, stop, why, private? }
+ *   POST { name, email?, firm?, domain?, today? } → { ok: true, json, sources, via } | { ok: false, stop, why }
  */
 export async function researchPerson(
   env: Env,
@@ -214,10 +207,6 @@ export async function researchPerson(
 ): Promise<any> {
   const name = b.name ?? null, email = b.email ?? null, firm = b.firm ?? null, domain = b.domain ?? null, institution = b.institution === true;
   const today = b.today ?? new Date().toISOString().slice(0, 10);
-  const access = scanForModelAccess([{ role: "user", content: [name, email, firm].filter(Boolean).join(" ") }], await privateLexicon(env.DB));
-  if (access.access === "private_model_only") {
-    return { ok: false, private: true, stop: "RESEARCH_PRIVATE", why: "they are a committed LP, so their name stays off free models" };
-  }
   const base = { routeId: "rt_ops_default", lane: "ops", sensitivity: "private", risk: "low", employeeId: "emp_chief", intakeKind: "research" } as const;
   const reasons: string[] = [];
 
@@ -243,8 +232,6 @@ export async function researchPerson(
     const w = await routeCompletion(env, {
       ...base, jobKey: "meeting_prep_write", maxOutputTokens: 1200,
       messages: [{ role: "user", content }],
-      // The pages are public web text; deal-term patterns skip them, committed-LP names do not.
-      publicWebText: publicSpans(content, pages),
     });
     const sources = pages.map((p) => ({ title: p.url, url: p.url }));
     return { json: keepGroundedFacts(jsonIn(w.text), sources), sources };

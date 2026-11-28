@@ -329,19 +329,19 @@ export function resumePhase(row: RepoChangeRow): "plan" | "build" | "landing" | 
  * earlier reply on that change. Her mail client keeps the chain in References, so "try again" on
  * the original thread lands on the original row.
  */
-export async function changeFromReplyChain(env: Env, messageIds: string[]): Promise<RepoChangeRow | null> {
+export async function changeFromReplyChain(env: Env, messageIds: string[], sender?: string): Promise<RepoChangeRow | null> {
   if (messageIds.length === 0) return null;
   const marks = messageIds.map(() => "?").join(",");
-  const row = await env.DB
+  const { results } = await env.DB
     .prepare(
-      `SELECT r.* FROM repo_changes r
+      `SELECT DISTINCT r.* FROM repo_changes r
          JOIN boss_inbound_mail m ON m.id = r.mail_id OR m.id = r.answer_mail_id OR m.id = r.forced_mail_id OR m.id = r.land_approval_mail_id
-        WHERE m.message_id IN (${marks})
-        ORDER BY r.created_at DESC LIMIT 1`,
+        WHERE m.message_id IN (${marks}) ${sender ? "AND m.authorised = 1 AND m.from_addr = ?" : ""}
+        ORDER BY r.created_at DESC LIMIT ?`,
     )
-    .bind(...messageIds)
-    .first<RepoChangeRow>();
-  return row ?? null;
+    .bind(...messageIds, ...(sender ? [sender, 2] : [1]))
+    .all<RepoChangeRow>();
+  return results.length === 1 ? results[0]! : null;
 }
 
 export function describePhase(row: { phase: string; pr_url?: string | null; preview_url?: string | null }): string {

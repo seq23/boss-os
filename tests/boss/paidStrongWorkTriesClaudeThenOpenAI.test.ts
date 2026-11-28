@@ -32,6 +32,7 @@ describe("the comparator", () => {
 describe("the router, with a marker", () => {
   beforeEach(async () => {
     await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled', exhausted_until = NULL WHERE id = 'bk_openrouter'`).run();
+    await env.DB.prepare(`UPDATE models SET enabled = 0 WHERE provider_id = 'prv_openrouter' AND slug LIKE '%:free'`).run();
     await env.DB.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('spend_lever','OPEN',?) ON CONFLICT(key) DO UPDATE SET value = 'OPEN'`).bind(Date.now()).run();
   });
   afterEach(async () => { await env.DB.prepare(`DELETE FROM settings WHERE key = 'spend_lever'`).run(); });
@@ -40,10 +41,10 @@ describe("the router, with a marker", () => {
     const hosts: string[] = [];
     restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("ok", 10, 10); });
     const e = Object.create(env) as any; e.OPENROUTER_API_KEY = "k";
-    // Deal wording reads as private, so the training-permitting free rungs are refused and only paid rungs survive.
+    // The paid ordering check pins one provider and disables its free models in the fixture.
     const r = await routeCompletion(e, {
       routeId: "rt_ops_default", lane: "ops", sensitivity: "private", risk: "low", intakeKind: "research",
-      preferStrongVendors: prefer,
+      preferStrongVendors: prefer, onlyProviderId: "prv_openrouter",
       messages: [{ role: "user", content: "Summarise the LP commitment, valuation and allocation schedule for the fund." }],
     } as any);
     const d = await row<any>(`SELECT chosen_model_id FROM routing_decisions WHERE id = (SELECT id FROM routing_decisions ORDER BY ts DESC LIMIT 1)`);

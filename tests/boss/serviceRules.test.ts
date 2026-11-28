@@ -7,6 +7,8 @@ import { deferFromResult } from "../../src/worker/boss/service/deferred";
 import { afterResult } from "../../src/worker/boss/service/afterResult";
 import { WAIT_SHAPE } from "../../src/shared/boss/service/waits.mjs";
 import { SERVICE_PRACTICES_HEADING } from "../../src/shared/boss/service/practices.mjs";
+import { claimSimone } from "../../src/worker/boss/agents/simone";
+import { simoneTool } from "../../src/worker/boss/agents/simoneTools";
 
 /**
  * THE SERVICE RULES, END TO END THROUGH THE REAL DOORS (docs/SERVICE_RULES.md, 6 Oct 2026).
@@ -166,8 +168,17 @@ describe("R14 — a dated deferral is its own task, and the duplicate check is e
 
 describe("R19 — the practices and her constraints are in front of every run", () => {
   it("a `Never:` line she sends is registered once and appears in buildPrompt", async () => {
-    await handleBossInboundMail(mail({ subject: "#simone note", body: "Never: email anyone at my old firm\nthanks" }), env as never);
-    await handleBossInboundMail(mail({ subject: "#simone note", body: "Never: email anyone at my old firm" }), env as never);
+    const quote = "Never: email anyone at my old firm";
+    for (const [i, body] of [`${quote}\nthanks`, quote].entries()) {
+      const intake = await handleBossInboundMail(mail({ subject: "#simone note", body }), env);
+      expect(intake.outcome).toBe("SIMONE_QUEUED");
+      const run = await claimSimone(env);
+      expect(run?.id).toBe(intake.taskId);
+      expect(run?.constraints).toEqual(i === 0 ? [] : [quote]);
+      const record = (text: string) => simoneTool(env, { ...run!, tool: "record_constraint", task: JSON.stringify({ quote: text }) });
+      await expect(record("Always: email anyone at my old firm")).resolves.toEqual({ ok: false, code: "OWNER_INSTRUCTION_REQUIRED" });
+      await expect(record(quote)).resolves.toMatchObject({ ok: true, added: i === 0 ? 1 : 0 });
+    }
     expect((await all(`SELECT * FROM boss_operator_constraint`)).length).toBe(1);
     const prompt = await buildPrompt(env as never, { id: "tsk_x", title: "t", template_id: null }, { body: "do a thing" });
     expect(prompt).toContain(SERVICE_PRACTICES_HEADING);

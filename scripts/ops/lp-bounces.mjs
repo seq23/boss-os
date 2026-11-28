@@ -55,7 +55,7 @@ const get = async (url, tok) => {
 const sheet = async (tok, range) => (await get(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET}/values/${encodeURIComponent(range)}`, tok)).values ?? [];
 
 /** Headers and every text / delivery-status part of a Gmail message, decoded. */
-function noticeText(msg) {
+export function noticeText(msg) {
   const parts = (msg.payload?.headers ?? []).map((h) => `${h.name}: ${h.value}`);
   const walk = (p) => {
     if (p?.body?.data && /text|delivery-status|rfc822-headers/i.test(p.mimeType ?? "")) parts.push(Buffer.from(p.body.data, "base64").toString("utf8"));

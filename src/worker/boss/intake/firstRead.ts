@@ -31,7 +31,7 @@ import { claimFreeSearch, centralDay } from "../research/searchQuota";
 import { freeDayStartedAt, recordOutcome } from "../router/experience";
 import { READ_MODES, REPLY_MODES, COMMANDS, COMMAND_KINDS, COMMENT_ACTIONS, CHECK_MEANINGS, type ReplyMode, type CommandKind, type CheckMeaning } from "../../../shared/boss/intake/intents.mjs";
 import { readJsonObject, type JsonOutput } from "../router/types";
-import { privateLexicon, scanForModelAccess } from "../router/modelAccess";
+import { stripConfidential } from "../../../shared/boss/brains/brain.mjs";
 import { INTAKE_KINDS, type IntakeKind, type RiskLevel } from "../../../shared/boss/governance";
 import { quoteStands } from "../../../shared/boss/text/wholeSentence.mjs";
 
@@ -427,27 +427,17 @@ export interface Ladder<T> { value: T | null; reader: string | null; tried: stri
  * and its own check. `read` turns an answer into a value, or says why it was passed over. `dry` reads
  * without claiming a Workers AI slot. Never throws.
  *
- * PRIVATE TEXT NEVER REACHES A FREE RUNG, BY DEFAULT (private-data-routing; fresh review of #510, F3). Every
- * rung may train on what it reads, so a prompt the router's own content scan would hold to a private
- * model is not sent at all: the ladder answers nothing and its stop says why, and the caller's keywords
- * read it. A lexicon that cannot be built counts as a hit (fail closed). A caller turns the scan off only
- * by naming the ruling that lets it (`privateScanOff`); the first read is the one that does.
  */
 export async function freeLadder<T>(
   env: Env,
-  input: { prompt: string; json: JsonOutput; read: (text: string) => T | string; budgetMs?: number; now?: number; dry?: boolean; onlyRung?: string | null; privateScanOff?: string },
+  input: { prompt: string; json: JsonOutput; read: (text: string) => T | string; budgetMs?: number; now?: number; dry?: boolean; onlyRung?: string | null; workersFirst?: boolean },
   rungs?: Rung[],
 ): Promise<Ladder<T>> {
   const now = input.now ?? Date.now();
   const budget = input.budgetMs ?? FIRST_READ_BUDGET_MS;
   const out: Ladder<T> = { value: null, reader: null, tried: [], stop: null };
-  const { prompt, json } = input;
-  if (!input.privateScanOff?.trim()) {
-    const scan = await privateLexicon(env.DB)
-      .then((lex) => scanForModelAccess([{ role: "user", content: prompt }], lex))
-      .catch(() => ({ privateOnly: true, kinds: ["the private scan could not run"] }));
-    if (scan.privateOnly) { out.stop = `kept off the free models: ${scan.kinds.join(", ")}`; return out; }
-  }
+  const { json } = input;
+  const prompt = stripConfidential(input.prompt);
   const started = Date.now();
   let ladder: Rung[];
   try { ladder = rungs ?? rungsOverride ?? await freeRungs(env); } catch { ladder = []; }
@@ -469,21 +459,44 @@ export async function freeLadder<T>(
     else free.push(r);
   }
   const backstop = ladder.filter((x) => x.workersAi);
-  const reserve = backstop.length ? Math.min(WORKERS_AI_RESERVE_MS, Math.floor(budget / 3)) : 0;
-  const freeEnd = started + budget - reserve;
-  const share = free.length
-    ? Math.min(FIRST_READ_ATTEMPT_MS, Math.max(MIN_RUNG_MS, Math.floor(((freeEnd - Date.now()) * Math.min(FREE_AT_ONCE, free.length)) / free.length)))
-    : 0;
-  const results: Array<string | null> = free.map(() => null);
-  const stop = new AbortController();
   let done = false;
-  let next = 0;
   const accept = (rung: Rung, text: string): string => {
     const v = input.read(text);
     if (typeof v === "string") return `${rung.id}: ${v}`;
     out.value = v; out.reader = rung.id; done = true;
     return `${rung.id}: read`;
   };
+  const askWorkers = async () => {
+    for (const rung of backstop) {
+      const left = started + budget - Date.now();
+      if (left < 1500) { out.tried.push(`${rung.id}: out of time`); break; }
+      const cap = input.dry ? await peekCap(env, now) : await claimFreeSearch(env.DB, FIRST_READ_SERVICE, now).catch(() => ({ ok: false, used: 0, cap: 0 }));
+      if (!cap.ok) {
+        out.stop = `NAMED STOP [${FIRST_READ_STOP}] Workers AI's free first reads for today are used (${cap.used} of ${cap.cap}); nothing is paid past them, so the rules read this email.`;
+        out.tried.push(`${rung.id}: at the free cap`);
+        continue;
+      }
+      try {
+        const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, left), (signal) => rung.call(prompt, signal, json));
+        out.tried.push(accept(rung, text));
+        if (done) break;
+      } catch (err) {
+        out.tried.push(`${rung.id}: ${(err instanceof Error ? err.message : String(err)).slice(0, 120)}`);
+      }
+    }
+  };
+  if (input.workersFirst) {
+    await askWorkers();
+    if (done) return out;
+  }
+  const reserve = backstop.length && !input.workersFirst ? Math.min(WORKERS_AI_RESERVE_MS, Math.floor(budget / 3)) : 0;
+  const freeEnd = started + budget - reserve;
+  const share = free.length
+    ? Math.min(FIRST_READ_ATTEMPT_MS, Math.max(MIN_RUNG_MS, Math.floor(((freeEnd - Date.now()) * Math.min(FREE_AT_ONCE, free.length)) / free.length)))
+    : 0;
+  const results: Array<string | null> = free.map(() => null);
+  const stop = new AbortController();
+  let next = 0;
   const ask = async (): Promise<void> => {
     while (!done && next < free.length) {
       const i = next++;
@@ -507,28 +520,9 @@ export async function freeLadder<T>(
   };
   await Promise.all(Array.from({ length: Math.min(FREE_AT_ONCE, free.length) }, ask));
   out.tried.push(...results.filter((r): r is string => r !== null));
-  for (const rung of done ? [] : backstop) {
-    const left = started + budget - Date.now();
-    if (left < 1500) { out.tried.push(`${rung.id}: out of time`); break; }
-    const cap = input.dry ? await peekCap(env, now) : await claimFreeSearch(env.DB, FIRST_READ_SERVICE, now).catch(() => ({ ok: false, used: 0, cap: 0 }));
-    if (!cap.ok) {
-      out.stop = `NAMED STOP [${FIRST_READ_STOP}] Workers AI's free first reads for today are used (${cap.used} of ${cap.cap}); nothing is paid past them, so the rules read this email.`;
-      out.tried.push(`${rung.id}: at the free cap`);
-      continue;
-    }
-    try {
-      const text = await withDeadline(Math.min(FIRST_READ_ATTEMPT_MS, left), (signal) => rung.call(prompt, signal, json));
-      out.tried.push(accept(rung, text));
-      if (done) break;
-    } catch (err) {
-      out.tried.push(`${rung.id}: ${(err instanceof Error ? err.message : String(err)).slice(0, 120)}`);
-    }
-  }
+  if (!done && !input.workersFirst) await askWorkers();
   return out;
 }
-
-/** Why the first read alone skips the private scan: her ruling, quoted in this file's header ("IT IS NOT BLOCKED BY THE PRIVATE-TERM CHECK"). */
-export const FIRST_READ_SCAN_OFF = "owner ruling 15 Nov 2026: Boss OS ignores the private-email rules for its own first read (LP names here are prospects); see firstRead.ts header";
 
 /** Walk the free ladder once for the brief. `dry` reads without claiming a Workers AI slot. Never throws. */
 export async function firstRead(
@@ -540,7 +534,6 @@ export async function firstRead(
   const files = input.files ?? [];
   const walk = await freeLadder(env, {
     prompt: briefPrompt({ subject: input.subject, words: input.words, files, checks: input.checks }), json: BRIEF_JSON, now: input.now, dry: input.dry, onlyRung: input.onlyRung,
-    privateScanOff: FIRST_READ_SCAN_OFF,
     read: (text) => {
       const brief = readBrief(text, input.words, files, input.checks?.length ?? 0, input.checkWords ?? input.words);
       if (typeof brief === "string") return brief;

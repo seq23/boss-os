@@ -4,7 +4,6 @@
  * Every number now comes from `outcomeCounts`, and a day with nothing new sends nothing.
  */
 import { describe, expect, it } from "vitest";
-// @ts-expect-error — plain ESM with no declaration file
 import { outcomeCounts, outcomesMail, worthEmailing } from "../scripts/ops/lp-outcomes.mjs";
 import { sendersFor, employeeMail } from "../scripts/ops/notify.mjs";
 

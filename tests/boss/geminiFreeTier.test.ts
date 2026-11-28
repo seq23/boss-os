@@ -1,17 +1,10 @@
-/**
- * GEMINI FREE TIER + WHAT COUNTS AS PRIVATE (owner, 4 Nov 2026). Google Gemini direct, free tier only
- * (TRAINS_ON_PROMPTS): public work may use it, private-model-only work never does. Private now means
- * the names of LPs who COMMITTED, and deal terms; LP prospects are public. Meeting-prep research runs
- * on it: Google-grounded first, then the guest's own pages, then a named stop. Synthetic names only.
- */
+/** Free Gemini model eligibility and the meeting-prep fallback, using synthetic names. */
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { routeCompletion } from "../../src/worker/boss/router";
 import { routeIsBilled } from "../../src/worker/boss/backends/guard";
 import { GEMINI_FREE_MODELS, GEMINI_HOST } from "../../src/worker/boss/router/backends";
 import { researchPerson } from "../../src/worker/boss/routes/research";
-import { classifyModelAccess } from "../../src/worker/boss/intake/classify";
-import { isConfidentialDraft } from "../../src/worker/boss/duties/seatOrder";
 import { row, stubFetch } from "./helpers";
 
 let restore: (() => void) | null = null;
@@ -75,50 +68,12 @@ describe("4a · Gemini direct, free tier", () => {
     expect(g.calls.length).toBe(1);
   });
 
-  it("private_model_only work never routes to it", async () => {
-    const g = stubGemini(() => geminiAnswer("should never be asked"));
-    await routeCompletion(withKey(), route("Summarise this.", { modelAccess: "private_model_only", taskId: "tsk_gem_private" })).catch(() => null);
-    expect(g.calls).toEqual([]);
-    const cands = JSON.parse((await row<any>(`SELECT candidates FROM routing_decisions WHERE task_id = 'tsk_gem_private'`))!.candidates);
-    const gem = cands.filter((c: any) => String(c.model_id).startsWith("mdl_gemini_"));
-    expect(gem.length).toBeGreaterThan(0);
-    for (const c of gem) expect(c).toMatchObject({ stage: "privacy", verdict: "rejected" });
-  });
 
   it("a grounded call is only ever made on a free-tier model id, never a billed one", async () => {
     const g = stubGemini(() => new Response("quota", { status: 429 }));
     const err = await routeCompletion(withKey(), route("Search for rooftop gardens.", { onlyProviderId: "prv_gemini", webSearch: true, jobKey: "summarise", taskId: "tsk_gem_search_paid" })).catch((e) => e);
     expect(err).toBeTruthy();
     expect(g.calls.filter((c) => c.grounded && !(GEMINI_FREE_MODELS as readonly string[]).includes(c.model))).toEqual([]);
-  });
-});
-
-describe("4b · private means a COMMITTED LP's name, and deal terms; prospects are public", () => {
-  const prospect = async (committed: boolean) => {
-    await env.DB.prepare(`INSERT INTO prospects (id, email, name, firm, source, created_at, updated_at, committed_at) VALUES ('prs_t1', 'pat@familyoffice.example', 'Pat Example', 'Example Family Office', 'test', 0, 0, ?)`).bind(committed ? Date.now() : null).run();
-    await env.DB.prepare(`INSERT INTO lp_reply_drafts (id, address, name, firm, bucket, reply_from, first_seen, created_at, updated_at, committed_at) VALUES ('lpr_t1', 'pat@familyoffice.example', 'Pat Example', 'West Peek Ventures', 'call', 'me@example.com', '2026-11-01', 0, 0, ?)`).bind(committed ? Date.now() : null).run();
-  };
-
-  it("a prospect's meeting prep and research route to a free model", async () => {
-    await prospect(false);
-    const g = stubGemini(() => geminiAnswer("Notes."));
-    const r = await routeCompletion(withKey(), route("Meeting prep: write three questions for Pat Example of Example Family Office.", { jobKey: "summarise", taskId: "tsk_prospect_prep" }));
-    expect(r.providerId).toBe("prv_gemini");
-    expect(g.calls.length).toBe(1);
-    expect(classifyModelAccess({ text: "Research LP prospect Pat Example before the intro call", intakeKind: "research" }).access).toBe("public_model_approved");
-    expect(isConfidentialDraft({ draft_kind: "lp_reply" })).toBe(false);
-  });
-
-  it("a committed LP's name still never reaches a training route", async () => {
-    await prospect(true);
-    const g = stubGemini(() => geminiAnswer("should never be asked"));
-    await routeCompletion(withKey(), route("Meeting prep: write three questions for Pat Example of Example Family Office.", { jobKey: "summarise", taskId: "tsk_committed_prep" })).catch(() => null);
-    expect(g.calls).toEqual([]);
-    expect((await row<any>(`SELECT model_access FROM routing_decisions WHERE task_id = 'tsk_committed_prep'`))!.model_access).toBe("private_model_only");
-    expect(isConfidentialDraft({ draft_kind: "lp_reply", lp_committed: true })).toBe(true);
-    expect(isConfidentialDraft({ draft_kind: "deal_terms" })).toBe(true);
-    expect(classifyModelAccess({ text: "Quarterly update for our LPs", intakeKind: "drafting" }).access).toBe("private_model_only");
-    expect(classifyModelAccess({ text: "Send the term sheet to the prospect", intakeKind: "drafting" }).access).toBe("private_model_only");
   });
 });
 
@@ -194,12 +149,12 @@ describe("meeting-prep research: Google-grounded, then their pages, then a named
     for (const m of or) expect(m).toMatch(/:free$/);
   });
 
-  it("a committed LP never reaches Gemini: the answer says private", async () => {
+  it("the same free research route serves a committed LP with verified sources", async () => {
     await env.DB.prepare(`INSERT INTO prospects (id, email, name, firm, source, created_at, updated_at, committed_at) VALUES ('prs_t2', 'pat@familyoffice.example', 'Pat Example', 'Example Family Office', 'test', 0, 0, ?)`).bind(Date.now()).run();
-    const g = stubGemini(() => geminiAnswer(GROUNDED));
-    const r = await researchPerson(withKey(), who, async () => ({ ok: false, text: null, finalUrl: null }));
-    expect(r).toMatchObject({ ok: false, private: true });
-    expect(g.calls).toEqual([]);
+    const g = stubGemini(() => geminiAnswer(GROUNDED, [{ uri: "https://news.example/pat", title: "News" }]));
+    const r = await researchPerson(withKey(), who, readsPages, undefined, async (url) => url);
+    expect(r).toMatchObject({ ok: true });
+    expect(g.calls.length).toBeGreaterThan(0);
   });
 });
 

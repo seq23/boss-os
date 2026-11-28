@@ -286,14 +286,21 @@ async function main() {
   }
   if (fs.existsSync(SUPPRESS)) for (const a of fs.readFileSync(SUPPRESS, "utf8").split("\n").map((l) => l.trim()).filter(Boolean)) hits.push({ mark: a, reason: "on the suppression list" });
 
-  // Opt-outs: a reply saying "no thanks" or "unsubscribe" stops that person and goes on Blocked for Twin.
+  // The full-thread reader stops this run before sending when a reply is unread.
+  const { readProspectReplies } = await import("./lp-positive.mjs");
+  const watched = Object.entries(state.people).filter(([, person]) => person.sent?.length && !person.optOutLogged);
+  const earliestSend = watched.map(([, person]) => person.sent[0].day).sort()[0];
+  const replies = earliestSend ? await readProspectReplies(watched.map(([email]) => email), earliestSend) : new Map();
   const blockedNow = new Set(hits.filter((h) => h.reason.includes("Blocked")).map((h) => key(h.mark)));
   const optOuts = [];
   for (const [e, p] of Object.entries(state.people)) {
     if (!p.sent?.length || p.optOutLogged) continue;
-    const q = `in:anywhere from:${e} after:${p.sent[0].day.replaceAll("-", "/")} ("no thanks" OR unsubscribe)`;
-    const j = await gmail(readTok, `${GMAIL}/messages?maxResults=1&q=${encodeURIComponent(q)}`).catch((err) => { throw named(`NAMED STOP [MAILBOX_UNREAD] the opt-out search failed (${err.message}); nothing sent. The next weekday run retries.`, 9); });
-    if (!j.messages?.length) continue;
+    const reply = replies.get(e);
+    if (!reply || reply.kind === "ooo") continue;
+    if (reply.kind !== "opt_out" && reply.kind !== "complaint") {
+      hits.push({ mark: e, reason: "replied to the outreach", only: true });
+      continue;
+    }
     hits.push({ mark: e, reason: "opted out", only: true });
     const row = rows.find((r) => key(r.email) === e);
     optOuts.push({ e, needsRow: !blockedNow.has(e) && row, row });

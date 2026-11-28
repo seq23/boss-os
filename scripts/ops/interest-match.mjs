@@ -71,6 +71,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { issuerKey, resolveIssuers } from "./lib/deal-reading.mjs";
 import { namesOnce } from "./notify.mjs";
 import { withinLookback, pairAllowed, isDoNotSuggest, LOOKBACK_DAYS } from "../../src/shared/boss/capital/partyLists.mjs";
 import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
@@ -170,23 +171,13 @@ async function postPointer(kind, crossings, sentAt) {
 /** Five, with reasons. Never a directory. */
 const CAP = Number(process.env.CAPITAL_MATCH_CAP ?? 5);
 /** Below this a pairing is not shown at all. Precision first — silence beats a bad call. */
-const FLOOR = Number(process.env.CAPITAL_MATCH_FLOOR ?? 0.30);
 
 const DAY = 86_400_000;
 
 // ─── Identity and asset keys ─────────────────────────────────────────────────
 
-/**
- * Two spellings of one company are one company. `Bytedance` and `ByteDance` appeared in the first
- * live ledger within three rows of each other.
- *
- * NORMALISED, NEVER FUZZY. Case and punctuation are noise; anything cleverer merges two real firms
- * with similar names, and a match built on a merge like that is precisely the wrong call this file
- * exists to avoid.
- */
-export const assetKey = (a) => String(a ?? "").toLowerCase()
-  .replace(/[^a-z0-9]+/g, "")
-  .replace(/(inc|corp|corporation|ltd|llc|labs?|technologies|holdings)$/, "");
+export const assetKey = issuerKey;
+export const keyOfInterest = (row) => issuerKey(row.issuer ?? row.asset);
 
 export const whoKey = (r) => String(r.principal_email ?? r.principal ?? "").toLowerCase().trim();
 
@@ -309,8 +300,8 @@ export const HER_BROKERAGE_DOMAIN = "rainmakersecurities.com";
 
 /** True when this side of a pairing is reachable through her own broker-dealer. */
 export function atHerBrokerage(r) {
-  const at = new RegExp(`@${HER_BROKERAGE_DOMAIN.replace(/\./g, "\\.")}\\b`, "i");
-  return at.test(String(r?.principal_email ?? "")) || at.test(String(r?.intermediated_by ?? ""));
+  return [r?.principal_email, r?.intermediated_by].some((field) =>
+    String(field ?? "").trim().toLowerCase().replace(/>$/, "").split("@").at(-1) === HER_BROKERAGE_DOMAIN);
 }
 
 /** Two brokers at her own firm, either side of one name. Not a cross she is needed for. */
@@ -323,7 +314,7 @@ export function standingMatches(interests, suppressed, now = Date.now(), lists =
   for (const r of inWindow(interests, now)) {
     if (suppressed.has(whoKey(r))) continue;
     if (lists && isDoNotSuggest(r, lists)) continue;
-    const k = assetKey(r.asset);
+    const k = keyOfInterest(r);
     if (!k) continue;
     if (!byAsset.has(k)) byAsset.set(k, []);
     byAsset.get(k).push(r);
@@ -342,14 +333,6 @@ export function standingMatches(interests, suppressed, now = Date.now(), lists =
         const score = fb.score * fs_.score
           * CONF[b.confidence ?? "low"] * CONF[s.confidence ?? "low"]
           * sizeFit(b, s);
-        if (score < FLOOR) continue;
-        /*
-         * COUNTED AFTER THE FLOOR, ON PURPOSE, because the honest number is "what was taken off
-         * your list" and not "how many internal pairs exist in the ledger". Those are 34 and 416
-         * respectively on the 10 Sep run — and reporting 416 beside "477 considered" would compare
-         * a pre-floor count against a post-floor one and read as though nine tenths of the market
-         * had been hidden from her. A control she cannot audit is a control she stops trusting.
-         */
         /*
          * RAINMAKER ON BOTH SIDES, by her same-firm list (23 Oct 2026): her firm's domain, the people
          * on other domains she has named as Rainmaker, and her own rows — she is Rainmaker too.
@@ -374,7 +357,7 @@ export function standingMatches(interests, suppressed, now = Date.now(), lists =
   const seenSell = new Set();
   const picked = [];
   for (const m of out) {
-    const a = assetKey(m.asset);
+    const a = keyOfInterest(m.sell);
     const kb = `${whoKey(m.buy)}|${a}`;
     const ks = `${whoKey(m.sell)}|${a}`;
     if (seenBuy.has(kb) || seenSell.has(ks)) continue;
@@ -398,7 +381,7 @@ export function standingMatches(interests, suppressed, now = Date.now(), lists =
 export function assignedSearch(interests, asset, side, size, suppressed, now = Date.now()) {
   const k = assetKey(asset);
   // Never her own rows (a search is for the other side of her), and only inside the window.
-  const rows = inWindow(interests, now).filter((r) => assetKey(r.asset) === k && r.side === side
+  const rows = inWindow(interests, now).filter((r) => keyOfInterest(r) === k && r.side === side
     && r.hers !== true && !suppressed.has(whoKey(r)));
   const byWho = new Map();
   for (const r of rows) {
@@ -472,7 +455,7 @@ export function revivals(interests, contacts, suppressed, now = Date.now(), cap 
   const seen = new Set();
   const picked = [];
   for (const x of scored) {
-    const k = `${whoKey(x.row)}|${assetKey(x.row.asset)}`;
+    const k = `${whoKey(x.row)}|${keyOfInterest(x.row)}`;
     if (seen.has(k)) continue;
     seen.add(k);
     picked.push(x);
@@ -562,7 +545,7 @@ export function nudges(interests, contacts, suppressed, now = Date.now(), cap = 
   const picked = [...seen.values()].sort((a, b) => (b.rank - a.rank) || (b.total - a.total)).slice(0, cap);
   const byAsset = new Map();
   for (const n of picked) {
-    const k = assetKey(n.asset);
+    const k = keyOfInterest(n.row ?? n);
     if (!byAsset.has(k)) byAsset.set(k, []);
     byAsset.get(k).push(n);
   }
@@ -672,7 +655,9 @@ async function main() {
   }
   const suppressed = loadSuppressed();
   const wrongRows = loadWrongRows();
-  const usable = interests.filter((r) => !wrongRows.has(r.source_message));
+  const active = inWindow(interests, Date.now()).filter((r) => !wrongRows.has(r.source_message));
+  const issuer = await resolveIssuers([...active.map((row) => row.asset), FIND]);
+  const usable = active.map((row) => ({ ...row, issuer: issuer(row.asset) }));
 
   let body, subject;
   /*
@@ -709,7 +694,7 @@ async function main() {
       : "Nobody worth a note this month";
   } else if (FIND) {
     const side = WANT_SIDE === "sell" ? "sell" : "buy";
-    const hits = assignedSearch(usable, FIND, side, WANT_SIZE, suppressed);
+    const hits = assignedSearch(usable, issuer(FIND), side, WANT_SIZE, suppressed);
     body = renderAssigned(hits, FIND, side, WANT_SIZE);
     subject = `${FIND} — ${hits.length} ${side === "buy" ? "buyer" : "seller"}(s) from your own mail`;
   } else {

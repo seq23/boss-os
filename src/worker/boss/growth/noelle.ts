@@ -29,6 +29,7 @@ import { summarize } from "../../../shared/boss/growth/scoreboard.mjs";
 import { rulingsFor } from "../../../shared/boss/growth/roster.mjs";
 import { privateOnlyTerms, leaksIn, termCount } from "../../../shared/boss/growth/privacy.mjs";
 import { playbookBody } from "../../../shared/boss/growth/playbook.mjs";
+import { AI_SITES } from "../../../shared/boss/growth/aiAnswers.mjs";
 import { readGrid, season, slotFor, didNotRunLine, escalations, noticeLine, scheduleLines, zeroQueued, CHANNEL_NAMES, CHANNEL_OWNERS, LEDGER_STEP } from "../../../shared/boss/growth/noelle.mjs";
 import { appendToSection } from "../../../shared/boss/mail/morningSections.mjs";
 import { MAX_ACTED, cleanActed, floorsFor, measureFor, resultLines, postsWithoutRows, reportDue, fortnightReport, REPORT_KEY, REPORT_EVERY_DAYS } from "../../../shared/boss/growth/ledger.mjs";
@@ -101,12 +102,17 @@ export async function noelleContext(env: Env, now = Date.now()) {
   });
   const measures = summaries.flatMap((s: any) => (s.channels ?? []).map((c: any) => ({ business: s.key, channel: c.channel, language: c.language, value: c.value, unread: c.unread })));
   const runs = await recentRuns(db, today);
-  const misses = (await db.prepare(`SELECT id, site, prompt, lane, fix_attempts, todo_key FROM ai_misses WHERE fixed_week IS NULL ORDER BY site, first_missed_week LIMIT 120`).all<any>()).results ?? [];
+  const month = today.slice(0, 7);
+  const monthly = await db.prepare(`SELECT 1 FROM noelle_runs WHERE day BETWEEN ? AND ? AND kind = 'weekly'
+    AND state = 'done' AND line LIKE ? LIMIT 1`).bind(`${month}-01`, today, `OUTPUT monthly review ${month}:%`).first();
+  const { results: misses } = await db.prepare(`SELECT id, site, prompt, lane, fix_attempts, todo_key, last_missed_week, rivals, cited_sources
+    FROM ai_misses WHERE fixed_week IS NULL AND site IN (SELECT value FROM json_each(?))
+    ORDER BY site, last_missed_week DESC, first_missed_week LIMIT 120`).bind(JSON.stringify(Object.keys(AI_SITES))).all();
   return {
-    today, season: season(today), slot: slotFor(today),
+    today, season: season(today), slot: slotFor(today), monthlyReviewDone: monthly ? month : null,
     businesses, problems, summaries, grid: readGrid(roster, measures), linkedOpen: await linkedOpen(db, roster),
     runs: runs.slice(0, 10).map((r) => ({ day: r.day, kind: r.kind, state: r.state, stops: r.stops, line: r.line })),
-    aiMisses: misses,
+    aiMisses: misses.map((miss) => ({ ...miss, rivals: parse<string[]>(miss.rivals, []), cited_sources: parse<string[]>(miss.cited_sources, []) })),
     results: await ledgerResults(db, today, Object.fromEntries(roster.map((e: any) => [e.key, e.label]))),
   };
 }
@@ -431,7 +437,8 @@ export async function claimCall(env: Env, deviceId: string, now = Date.now()) {
     await db.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'noelle_call_claimed',?)`)
       .bind(newId("tev"), r.id, now, JSON.stringify({ device_id: deviceId.slice(0, 80), try: Number(r.attempts ?? 0) + 1 })).run();
     let input: any = {}; try { input = JSON.parse(r.input ?? "{}"); } catch { input = {}; }
-    return { task_id: String(r.id), slot: `call:${r.id}`, source: String(input.source ?? ""), title: String(r.title ?? ""), subject: String(input.subject ?? r.title ?? ""), body: String(input.body ?? "").slice(0, 20_000), try: Number(r.attempts ?? 0) + 1 };
+    return { task_id: String(r.id), slot: `call:${r.id}`, source: String(input.source ?? ""), title: String(r.title ?? ""), subject: String(input.subject ?? r.title ?? ""), body: String(input.body ?? "").slice(0, 20_000),
+      ...(typeof input.untrusted_context === "string" ? { context: input.untrusted_context.slice(0, 20_000) } : {}), try: Number(r.attempts ?? 0) + 1 };
   }
   return null;
 }

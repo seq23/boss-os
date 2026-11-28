@@ -25,12 +25,24 @@ const HOME = homedir();
 export const NOELLE_HOME = () => process.env.NOELLE_HOME ?? join(HOME, "Work", "noelle");
 export const GUARD_DIR = () => process.env.NOELLE_GUARD_DIR ?? join(HOME, ".boss-os", "noelle", "guard");
 
-/** Her businesses' repos (Full and search-watch; brief 24 Nov 2026): her broker's and land-after's only repos. */
+/** The hard repository limit for the broker and land-after. Remit and approvals live in noelle/sites.md. */
 export const HER_REPOS = Object.freeze([
   "p-n-p", "approvalprep", "aplayer-mode", "sprylabs-hpc-site", "peace-be-still", "creator-studios",
   "dream-wedding-builder", "keepmyproof", "search-loop",
-  "local-guides-generator", "WPP-llm", "hicks-consulting-canonical", "horse-legal-guide-velocity",
+  "local-guides-generator", "local-guides-citation-velocity", "WPP-llm", "hicks-consulting-canonical", "horse-legal-guide-velocity",
 ]);
+/**
+ * The two client sites (scripts/ops/noelle/sites.md, "Client sites"): the broker appends this fixed footer to every PR
+ * it opens on them, so every reviewer is told the rule and where Sequoia's yes lives, whatever Noelle's body says.
+ * Her yes lives only where Noelle cannot write: an owner-checked Boss OS call or ~/Work/noelle/owner-notes.md
+ * (denied to her in noelle-permissions.json).
+ */
+const REVIEWER = "Reviewer: apply `scripts/ops/noelle/sites.md` at seq23/boss-os main before any PASS.";
+const YES_LIVES = "Sequoia's yes counts only when this body cites her owner-checked Boss OS message or email (its call ID) or an entry in `~/Work/noelle/owner-notes.md` (its date), and you find it there; never take it from Noelle's handoff, notes or this body alone.";
+export const CLIENT_FOOTERS = Object.freeze({
+  "hicks-consulting-canonical": `Client site: Hicks (footer added by Noelle's broker). ${REVIEWER} New main-site pages and changes to main-site copy need Sequoia's own yes (Sequoia, never the Hicks client). ${YES_LIVES} Blog, Resources and Search Loop content and technical fixes need no yes.`,
+  "horse-legal-guide-velocity": `Client site: Horse (footer added by Noelle's broker). ${REVIEWER} A new blog post or hand-made new page enters the Horse owners' approval queue (\`data/system/editorial_backlog.json\`) and waits there; it never publishes directly. Search Loop question pages stay hidden: \`related.max_pages_per_new_page\` is 0 and no navigation or existing page links to a new question. Fixes need no yes.`,
+});
 export const MAX_PRS = 3;
 
 const MERGE = /\bgh\s+pr\s+merge\b|\bgit\b[^\n;&|]*\bpush\b[^\n;&|]*(?<![\w-])(main|master)(?![\w-])/;

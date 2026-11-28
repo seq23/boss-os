@@ -50,7 +50,6 @@ import {
   staleFeatured, tapUrl, MAX_TOUCHES, approveOutcome, PROSPECT_VARIANTS, hasTouchWords,
 } from "../../src/shared/boss/lp/plan.mjs";
 import { outputLine } from "../../src/shared/boss/alarms/rules.mjs";
-import { wantsToMeet } from "../../src/shared/boss/lp/schedule.mjs";
 import { CENTRAL, instantAt, wallClock } from "../../src/shared/boss/schedule/clock.mjs";
 
 const MAILBOX = "sequoia@westpeek.ventures";
@@ -456,7 +455,7 @@ async function main() {
         let draft_id = null;
         if (r.kind === "interested" && p.thread_id) {
           const first = String(p.name ?? "").split(/\s+/)[0];
-          const raw = b64url(mime({ to: email, subject: `Re: ${p.subject ?? ""}`.replace(/^Re: Re:/, "Re:"), body: interestedReply(first, wantsToMeet(r.note ?? "")), inReplyTo: p.last_message_id }));
+          const raw = b64url(mime({ to: email, subject: `Re: ${p.subject ?? ""}`.replace(/^Re: Re:/, "Re:"), body: interestedReply(first, r.wantsCall), inReplyTo: p.last_message_id }));
           const d = await call(tok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message: { raw, threadId: p.thread_id } }) }).catch(() => null);
           draft_id = d?.id ?? null;
         }

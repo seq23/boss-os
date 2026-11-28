@@ -9,7 +9,7 @@ import { apiJson } from "./helpers";
 import {
   DEFAULT_PROSPECT_TEMPLATE, PROSPECT_BANNED, canSpend, dueTouch, eightRaiseFooter, excluded, lpDecideItems,
   CALL_ASK, lpReplyBody, lpStatusFrom, namesLine, nameRulesIn, pickCatchups, proposeFeatured, prospectProblems,
-  renderProspect, sideFromReply, staleFeatured, templateHash, wordCount, INBOX_LOOKBACK_DAYS, MAX_TOUCHES, nextTouchAt, PROSPECT_VARIANTS, PROSPECT_COMPLAINT,
+  renderProspect, staleFeatured, templateHash, wordCount, INBOX_LOOKBACK_DAYS, MAX_TOUCHES, nextTouchAt, PROSPECT_VARIANTS,
 } from "../../src/shared/boss/lp/plan.mjs";
 import { startOfCentralDay } from "../../src/shared/boss/outreach/cadence.mjs";
 import { prospectPlan, proposeTemplate, approveTemplate, importProspects, recordProspectEvents, suppressAddresses, prospectsToVerify, recordVerdicts } from "../../src/worker/boss/lp/desk";
@@ -131,12 +131,7 @@ describe("the sequence: the first email and up to THREE follow-ups on day 3, 7 a
       expect(prospectProblems(renderProspect(v, { first: "Alex", names: NAMES, touch }), NAMES), `${v.subject} email ${touch}`).toEqual([]);
     }
   });
-  it("reads the side from a reply", () => {
-    expect(sideFromReply("We might be selling some of our position")).toBe("seller");
-    expect(sideFromReply("Always looking for exposure there")).toBe("buyer");
-    expect(sideFromReply("We could add to it, or trim some")).toBe("both");
-    expect(sideFromReply("Thanks, let's talk")).toBe("unknown");
-  });
+
 });
 
 describe("LP replies: her voice and the Decide item", () => {
@@ -453,7 +448,6 @@ describe("routes and the one-tap links", () => {
     ] as any, WED_10AM);
     expect((await prospectPlan(env.DB, WED_10AM)).sends.map((s: any) => s.email).sort()).toEqual(["complain.p@example.com", "fine.a@example.com", "fine.b@example.com"]);
     // One complaint: nobody gets anything, confirmed valid or not, days later too, and it is a named stop.
-    expect(PROSPECT_COMPLAINT.test("Stop spamming me, I will report this.")).toBe(true);
     await recordProspectEvents(env.DB, [{ email: "complain.p@example.com", kind: "complaint" }] as any, WED_10AM + 1000);
     for (const d of [0, 1, 7, 30]) {
       const plan = await prospectPlan(env.DB, WED_10AM + d * DAY + 2000);

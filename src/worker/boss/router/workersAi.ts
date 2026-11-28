@@ -1,4 +1,6 @@
-import { ProviderCallError, type ProviderAdapter } from "./types";
+import { ProviderCallError, type ProviderAdapter } from "./types.ts";
+
+export const WORKERS_AI_READ_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 /**
  * Resolve the work, or reject the moment the signal fires — whichever happens first.
@@ -24,10 +26,9 @@ async function withDeadline<T>(work: Promise<T>, signal?: AbortSignal): Promise<
 /**
  * Workers AI — the free half of Stage 4.
  *
- * IT IS A BINDING, NOT A CLIENT. Nothing here calls `fetch`, so there is no
- * hostname, no API key, and nothing to add to the egress allowlist. The whole
- * surface is `env.AI.run(model, inputs)`, which is why this file is the cheapest
- * backend to trust as well as the cheapest to run.
+ * The general router uses `env.AI.run(model, inputs)`. Worker reading jobs use
+ * the same input and output handling with the REST transport below. The latter
+ * requires a separate Workers Free account to enforce its daily cutoff.
  *
  * WHAT $0 HONESTLY MEANS HERE. The account carries an included daily allowance;
  * inside it this work genuinely costs nothing. Beyond it Cloudflare bills
@@ -39,7 +40,7 @@ async function withDeadline<T>(work: Promise<T>, signal?: AbortSignal): Promise<
 export const workersAi: ProviderAdapter = {
   id: "prv_workers_ai",
   async complete(req, ctx) {
-    if (!ctx.ai) {
+    if (!ctx.ai && !ctx.workersFreeAccountId) {
       throw new ProviderCallError(
         "The AI binding is not configured on this Worker, so Workers AI cannot run. " +
           "Add an [ai] binding named AI in wrangler.toml.",
@@ -48,6 +49,12 @@ export const workersAi: ProviderAdapter = {
       );
     }
 
+    const inputs = {
+      messages: req.messages,
+      max_tokens: req.maxOutputTokens,
+      temperature: req.temperature,
+      ...(req.json ? { response_format: { type: "json_schema", json_schema: req.json.schema } } : {}),
+    };
     let raw: unknown;
     try {
       /*
@@ -60,16 +67,11 @@ export const workersAi: ProviderAdapter = {
        * always-enabled, always-free backend as the single unbounded call on the path — which is the
        * one most likely to be reached, since it is where every fallback lands.
        */
-      raw = await withDeadline(
-        ctx.ai.run(req.modelSlug, {
-          messages: req.messages,
-          max_tokens: req.maxOutputTokens,
-          temperature: req.temperature,
-          ...(req.json ? { response_format: { type: "json_schema", json_schema: req.json.schema } } : {}),
-        }),
-        req.signal,
-      );
+      raw = ctx.ai
+        ? await withDeadline(ctx.ai.run(req.modelSlug, inputs), req.signal)
+        : await runOnWorkersFree(req, inputs, ctx.workersFreeAccountId!, ctx.apiKey);
     } catch (err) {
+      if (err instanceof ProviderCallError) throw err;
       // A binding failure has no HTTP status. Treat it as retryable once: the
       // usual causes (a cold model, a capacity blip) clear on a second attempt,
       // and the circuit breaker stops it repeating beyond that.
@@ -99,3 +101,31 @@ export const workersAi: ProviderAdapter = {
     };
   },
 };
+
+async function runOnWorkersFree(
+  req: Parameters<ProviderAdapter["complete"]>[0],
+  inputs: Record<string, unknown>,
+  accountId: string,
+  apiKey: string | undefined,
+): Promise<unknown> {
+  if (!apiKey || !/^[a-f0-9]{32}$/i.test(accountId)) {
+    throw new ProviderCallError("Workers Free credentials are missing or invalid", null, false);
+  }
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${req.modelSlug}`, {
+    method: "POST",
+    signal: req.signal,
+    redirect: "manual",
+    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify(inputs),
+  });
+  const body = await response.json().catch(() => null) as {
+    success?: boolean;
+    errors?: { code?: number }[];
+    result?: unknown;
+  } | null;
+  if (!response.ok || body?.success !== true) {
+    const allowanceExhausted = response.status === 429 && body?.errors?.some((error) => error.code === 3036);
+    throw new ProviderCallError("Workers Free inference failed", response.status, false, allowanceExhausted);
+  }
+  return body.result;
+}

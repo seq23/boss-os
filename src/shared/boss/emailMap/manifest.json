@@ -790,7 +790,7 @@
     },
     {
       "id": "simone-errands", "business": "personal",
-      "what": "Errands: a booking or request to the business you named in your email, signed as your assistant",
+      "what": "Errands: a booking or request to the business you named in your email, signed by Simone as Chief of Staff",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "The one business address you wrote",
       "when": "Within 10 minutes of your email",

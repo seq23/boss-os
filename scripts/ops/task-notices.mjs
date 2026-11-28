@@ -35,6 +35,7 @@
 
 import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP, ownerTo } from "./notify.mjs";
 import { vaultLookup } from "../lib/vault-env.mjs";
+import { isOwner } from "../../src/shared/boss/intake/mail.mjs";
 import { legacyParts } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { researchFullEmail, researchPageIdIn } from "../../src/shared/boss/research/doneEmail.mjs";
@@ -63,7 +64,7 @@ export function stillStopped(task) {
 export function mergeNotices(items) {
   const groups = new Map();
   for (const n of items) {
-    const k = `${n.from_name}\u0000${String(n.subject).replace(/\s*\[?tsk_[a-z0-9]+\]?\s*$/i, "").trim().toLowerCase()}`;
+    const k = n.kind === "simone_result" ? `simone:${n.id}` : `${n.from_name}\u0000${String(n.subject).replace(/\s*\[?tsk_[a-z0-9]+\]?\s*$/i, "").trim().toLowerCase()}`;
     if (!groups.has(k)) groups.set(k, { first: n, also: [] });
     else groups.get(k).also.push(n);
   }
@@ -250,6 +251,7 @@ export function noticeOwner(notice) {
   const hers = ["could_not_do", "missing_secret", "drive_empty"].includes(kind);
   const why = legacyParts({ who: notice?.from_name ?? "Simone", subject: notice?.subject ?? "", text: String(notice?.body ?? "") }).happened;
   const ref = /^tsk_[a-z0-9]+$/i.test(String(notice?.task_id ?? "")) ? String(notice.task_id).toLowerCase() : null;
+  if (kind === "simone_result") return { layout, why, ref, act: "Reply here to follow up" };
   return hers ? { layout, why, ref, act: "Reply to this email with what it needs; your reply goes straight back to the job" } : { layout, why, ref };
 }
 
@@ -305,12 +307,17 @@ export async function sendNotice(notice, { fetchImpl = fetch, to = TO, task = nu
   // default is 1): the task read here decides, through the same rule the Worker uses.
   if (repairTask(task) && !needsHer({ kind: notice.kind, repair: true })) return ON_PAGE;
   if (notice.kind === "stopped" && neverStarted(task)) return ON_PAGE;
+  const simoneReply = notice.kind === "simone_result";
+  const input = simoneReply && typeof task?.input === "string" ? JSON.parse(task.input) : task?.input;
+  if (simoneReply && (input?.agent !== "simone" || input.source !== "boss_inbound_mail")) return "The original Simone mail task could not be read";
+  if (simoneReply && !isOwner(input.from)) return "The original message did not come from a recognised owner address";
+  const thread = simoneReply ? [...(input.reply_chain ?? []), input.message_id] : [];
   const senders = sendersFor(notice.from_name);
   if (senders.length === 0) return "no Resend key in the environment (BOSS_OS_MAIL_KEY / BOSS_OS_FALLBACK_MAIL_KEY)";
   const prelaid = notice.kind === "stopped" ? stoppedEmail(notice, task) : (alarmNoticeEmail(notice) ?? researchDoneEmail(notice, page, senders[0]?.name));
   let last = "";
   for (const sender of senders) {
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject: notice.subject, text: notice.body, prelaid, owner: prelaid ? null : noticeOwner(notice) }), fetchImpl);
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: simoneReply ? input.from : to, subject: simoneReply ? `Re: ${notice.subject.replace(/^Re:\s*/i, "")}` : notice.subject, text: notice.body, thread, prelaid, owner: prelaid ? null : noticeOwner(notice) }), fetchImpl, { idempotencyKey: simoneReply ? notice.id : null });
     if (res.ok) {
       say(`sent "${notice.subject}" from ${sender.from}`);
       if (sender.fallback) say(FALLBACK_STOP);

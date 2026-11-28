@@ -146,14 +146,6 @@ describe("the research ladder walks past a spent Codex seat to free Google searc
     expect(q.visible_at, "due after the tick fires").toBeLessThanOrEqual(Math.ceil(Date.now() / 3600_000) * 3600_000);
   });
 
-  it("NEGATIVE: private-model-only research never reaches Gemini and is never parked on a seat", async () => {
-    await spendCodex();
-    const calls = stubGoogle();
-    const taskId = await researchTask({ model_access: "private_model_only" });
-    await handleTask(withKey(), { taskId, lane: "ops" }).catch(() => null);
-    expect(calls, "private research reached a training route").toHaveLength(0);
-    expect(await all(`SELECT 1 FROM backend_runs WHERE task_id = ?`, taskId)).toHaveLength(0);
-  });
 
   it("with Codex free, a bare research ask still goes to free Google search: it needs no Mac", async () => {
     const calls = stubGoogle();
@@ -290,14 +282,6 @@ describe("the chain after a Codex limit: free tiers first, then her seats, then 
     expect((await all<any>(`SELECT backend_id FROM backend_runs WHERE task_id = ?`, taskId)).map((r) => r.backend_id)).toEqual(["bk_codex"]);
   });
 
-  it("NEGATIVE: private research goes to Claude's seat first, never a free tier; Codex is only its backup (13 Nov 2026)", async () => {
-    await spendCodex(); await macSeenNow();
-    const hits = stubFree();
-    const taskId = await researchTask({ model_access: "private_model_only", input: JSON.stringify({ instruction: BRIEF, research_page: { page_id: "rpg_test_private", question: "q" }, delivers: "research_page", backend_id: "bk_claude_code", prompt: BRIEF }) });
-    await handleTask(withAllKeys(), { taskId, lane: "ops" });
-    expect(hits.google + hits.brave + hits.openrouter, "private research reached a free route").toBe(0);
-    expect((await all<any>(`SELECT backend_id FROM backend_runs WHERE task_id = ?`, taskId)).map((r) => r.backend_id)).toEqual(["bk_claude_code"]);
-  });
 });
 
 describe("an empty Google answer is not an answer (Rule 0)", () => {

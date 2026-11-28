@@ -36,6 +36,6 @@ export const OPTIONS_REPLY = [
   "",
   "Thank you,",
   "Simone",
-  "Assistant to Sequoia Taylor",
+  "Chief of Staff to Sequoia Taylor",
 ].join("\r\n");
 export const PHONE = "212-555-0100";

@@ -17,8 +17,6 @@
  *   · the answer-first summary is written by a free model from the kept lines only; a sentence with a
  *     figure and no citation is removed (`sourcedSummary`).
  *
- * The router's privacy screen runs on every call: the Gemini free tier trains on prompts, so
- * private-model-only work is refused before any request exists (policy.ts) — fail closed.
  */
 import type { Env } from "../env";
 import { newId } from "../lib/id";

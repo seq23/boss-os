@@ -20,6 +20,7 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { newId } from "../lib/id";
 import { getSetting } from "../lib/settings";
+import { OPERATIONS_ENABLED, operatingStopped } from "../lib/operatingStop";
 import { classify } from "../intake/classify";
 import { deliverExecutiveReport, deliverSourcingCandidates, deliverLinkProspects, deliverToolSuggestions, deliverPracticeWeek, deliverResearchPage, deliverQualityReads } from "../duties/deliverReport";
 import { buildEnvelope } from "../intake/envelope";
@@ -405,6 +406,7 @@ backends.post("/dispatch", async (c) => {
  * has nowhere to land.
  */
 backends.post("/claim", async (c) => {
+  if (await operatingStopped(c.env.DB)) return ok(c, { run: null, reason: "Boss OS operations are paused by the owner." });
   const b = await c.req.json<any>().catch(() => null);
   const deviceId = optionalText(b?.device_id);
   const backendId = optionalText(b?.backend_id) ?? "bk_claude_code";
@@ -531,7 +533,8 @@ backends.post("/claim", async (c) => {
 
     // Exclusive by construction: exactly one UPDATE changes a row whose claimed_at is still null.
     const claimed = await c.env.DB
-      .prepare(`UPDATE backend_runs SET claimed_at = ?, claimed_by = ?, backend_id = ? WHERE id = ? AND claimed_at IS NULL`)
+      .prepare(`UPDATE backend_runs SET claimed_at = ?, claimed_by = ?, backend_id = ?
+        WHERE id = ? AND claimed_at IS NULL AND ${OPERATIONS_ENABLED}`)
       .bind(Date.now(), deviceId, backendId, run.id)
       .run();
     if ((claimed.meta.changes ?? 0) === 0) continue; // somebody else took it between the read and here

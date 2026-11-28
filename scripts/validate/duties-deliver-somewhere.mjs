@@ -97,6 +97,15 @@ const CALLER = "src/worker/boss/routes/backends.ts";
 const INSTALLER = "scripts/ops/install-agent-launchd.sh";
 const READERS = "src/worker/boss/health/readers.ts";
 const MATERIALISE = "src/worker/boss/duties/materialise.ts";
+const FIXED_FREE_LOCAL_READERS = new Map([
+  ["interest-extract.mjs", /\breadWorkerSource\(/],
+  ["interest-grid.mjs", /\bresolveIssuers\(/],
+  ["interest-match.mjs", /\bresolveIssuers\(/],
+  ["ledger-hunt.mjs", /\bresolveIssuers\(/],
+  ["buyer-hunt.mjs", /\bresolveIssuers\(/],
+  ["seller-hunt.mjs", /\brunHunt\(/],
+  ["filing-hunt.mjs", /\breadDealObject\(/],
+]);
 
 // ─── Parsing ──────────────────────────────────────────────────────────────────
 
@@ -363,18 +372,22 @@ function scan() {
     const readerCode = readerName && existsSync(join(ROOT, READERS))
       ? read(READERS).split("\n").filter((line) => !/^\s*(#|\/\/|\*|\/\*)/.test(line)).join("\n")
       : jobName ? workerJobCode(jobName) : null;
+    const fixedFreeReader = FIXED_FREE_LOCAL_READERS.get(jobScript);
+    if (fixedFreeReader && !fixedFreeReader.test(jobCode)) {
+      problems.push(`${duty.id}: ${jobScript} lost its required call into the fixed free reading route.`);
+    }
     const reachesAModel = readerCode !== null
       ? /\bclaude\b|run_ai|routeCompletion|api\.anthropic|CLAUDE_/.test(readerCode)
       : jobScript === null || /\bclaude\b|run_ai|api\.anthropic|CLAUDE_/.test(jobCode);
 
-    if (reachesAModel && !namesAModel(duty.id, duty.text)) {
+    if (!fixedFreeReader && reachesAModel && !namesAModel(duty.id, duty.text)) {
       problems.push(
         `${duty.id} (${duty.file}): names no model in $.requested.model, so it inherits the default —\n` +
         `      which is the most expensive one available. That is the $3.88 briefing, and it is\n` +
         `      invisible until a bill or a screen says so.`,
       );
     }
-    if (!reachesAModel && namesAModel(duty.id, duty.text)) {
+    if (!fixedFreeReader && !reachesAModel && namesAModel(duty.id, duty.text)) {
       problems.push(
         `${duty.id} (${duty.file}): names a model, but scripts/ops/${jobScript} never reaches one.\n` +
         `      The roster would print a model beside a job that cannot spend a token — a number\n` +
@@ -545,7 +558,7 @@ function scan() {
          * reading only the creating INSERT would pin the script to a model the row no longer asks for.
          */
         const model = effectiveModel(duty.id, duty.text);
-        if (model && !read(`scripts/ops/${job}`).includes(model)) {
+        if (!fixedFreeReader && model && !read(`scripts/ops/${job}`).includes(model)) {
           problems.push(
             `${duty.id} (${duty.file}): asks for model '${model}' and scripts/ops/${job} does not name it.\n` +
             `      A duty row that says Haiku while the script runs the default is how one run cost $3.88.`,

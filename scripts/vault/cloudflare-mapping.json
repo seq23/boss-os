@@ -5,9 +5,14 @@
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
     "GEMINI_API_KEY",
+    "CF2_ACCOUNT_ID",
+    "CF2_WORKERS_AI_TOKEN",
     "PERPLEXITY_API_KEY",
     "OPENROUTER_API_KEY",
     "BOSS_PASSCODE",
+    "BOSS_SIMONE_GOOGLE_CLIENT_ID",
+    "BOSS_SIMONE_GOOGLE_CLIENT_SECRET",
+    "BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT",
     "BOSS_EXTRA_OWNER_SENDERS",
     "BOSS_OS_MAIL_KEY",
     "CF_ACCESS_CLIENT_ID",
@@ -21,11 +26,15 @@
     "GITHUB_SEQ23_PAT"
   ],
   "optional_secret_names": [
+    "BOSS_SIMONE_GOOGLE_CLIENT_ID",
+    "BOSS_SIMONE_GOOGLE_CLIENT_SECRET",
+    "BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT",
     "BOSS_EXTRA_OWNER_SENDERS"
   ],
   "not_synced": {
     "BOSS_NOTIFY_TO": "Where the Mac and cloud jobs send her mail (scripts/ops/notify.mjs ownerTo). The repo is public, so the address lives here and in the repo's secrets, never in a file. The Worker sends her nothing by address: it only replies to her own email.",
     "CLOUDFLARE_API_TOKEN": "The credential this sync authenticates WITH. Uploading it to the Worker would put the key that can rewrite every secret inside the thing it rewrites.",
+    "CLOUDFLARE_AI_SEARCH_TOKEN": "Cloudflare AI Search token for the seq-bin agent-search tool, run on her Mac through vault:run. No Boss OS Worker route reads it (git grep in src/ finds nothing).",
     "RUNWAY_API_KEY": "Video generation, driven from her Mac by the slate tooling. No Worker route reaches it.",
     "CAL_ICS_SEQ_TAYLOR": "Calendar feed URL read by the local calendar:sync job, not by the Worker.",
     "CAL_ICS_WESTPEEK": "Calendar feed URL read by the local calendar:sync job, not by the Worker.",
@@ -80,8 +89,6 @@
     "BUFFER_APPROVALPREP_ACCESS_TOKEN": "Buffer (ApprovalPrep) key for approvalprep. ApprovalPrep Instagram (moved in from the brands Buffer 18 Nov 2026) and ApprovalPrep Threads (live, 7:30 PM CT daily) (free plan, 2 of 3, 1 free). Peace Be Still moved to its own Buffer (18 Nov 2026). Not read by the Boss OS Worker (no reference under src/worker or in wrangler.toml, checked 21 Nov 2026).",
     "BUFFER_BRANDS_ACCESS_TOKEN": "Buffer (brands) key for dream-wedding-builder, approvalprep. Dream Wedding TikTok and Instagram (free plan, 2 of 3, 1 free); Dream Wedding's weekly brand social job queues here. ApprovalPrep Instagram moved out to the ApprovalPrep Buffer (18 Nov 2026). ApprovalPrep's scorecard metrics and weekly job still read this key until its switch lands in approvalprep. Not read by the Boss OS Worker (no reference under src/worker or in wrangler.toml, checked 21 Nov 2026).",
     "BUFFER_PEACEBESTILL_ACCESS_TOKEN": "Buffer (Peace Be Still) key for peace-be-still. Peace Be Still Threads (nightly 9:30 PM CT), the Facebook Page and Instagram (pictures Sun, Tue, Thu 8 PM CT) (free plan, 3 of 3, none free); made 18 Nov 2026 on the brand's own address, so faith posts never share a Buffer with another brand. Not read by the Boss OS Worker (no reference under src/worker or in wrangler.toml, checked 21 Nov 2026).",
-    "CF2_ACCOUNT_ID": "The second Cloudflare account's id and Workers AI token, used by the side businesses' apps. Not read by the Boss OS Worker (no reference under src/worker or in wrangler.toml, checked 21 Nov 2026).",
-    "CF2_WORKERS_AI_TOKEN": "The second Cloudflare account's id and Workers AI token, used by the side businesses' apps. Not read by the Boss OS Worker (no reference under src/worker or in wrangler.toml, checked 21 Nov 2026).",
     "CLOUDFLARE_ACCOUNT_ID": "Cloudflare (main account) key for west-peek-os, westpeek-live, dailystory, dream-wedding-builder, local-guides-generator, west-peek-pitch-lab, join-west-peek-main. Holds 92 of your domains, every Pages site and Worker, D1, Stream and Workers AI (Workers Paid since 16 Sep 2026). Not read by the Boss OS Worker (no reference under src/worker or in wrangler.toml, checked 21 Nov 2026).",
     "CLOUDFLARE_ALL_ZONES_TOKEN_A": "Cloudflare (main account) key for west-peek-os, westpeek-live, dailystory, dream-wedding-builder, local-guides-generator, west-peek-pitch-lab, join-west-peek-main. Holds 92 of your domains, every Pages site and Worker, D1, Stream and Workers AI (Workers Paid since 16 Sep 2026). Not read by the Boss OS Worker (no reference under src/worker or in wrangler.toml, checked 21 Nov 2026).",
     "CLOUDFLARE_ALL_ZONES_TOKEN_B": "Cloudflare (main account) key for west-peek-os, westpeek-live, dailystory, dream-wedding-builder, local-guides-generator, west-peek-pitch-lab, join-west-peek-main. Holds 92 of your domains, every Pages site and Worker, D1, Stream and Workers AI (Workers Paid since 16 Sep 2026). Not read by the Boss OS Worker (no reference under src/worker or in wrangler.toml, checked 21 Nov 2026).",
@@ -300,6 +307,9 @@
     "WPL_TURNSTILE_SITE_KEY": "westpeek.live's own Turnstile form keys. Not read by the Boss OS Worker (no reference under src/worker or in wrangler.toml, checked 23 Nov 2026)."
   },
   "synced_reasons": {
+    "BOSS_SIMONE_GOOGLE_CLIENT_ID": "OAuth client for connecting Simone’s Google accounts.",
+    "BOSS_SIMONE_GOOGLE_CLIENT_SECRET": "The matching server-side OAuth secret for Simone’s Google account consent.",
+    "BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT": "The account bound to Simone’s existing personal Google connector. Used to enforce the same account switch on that connector.",
     "GSC_SERVICE_ACCOUNT_JSON": "Moved from not_synced on 19 Sep 2026. Owner: \"it should never send — the green button should be to create the draft.\" The Worker creates a Gmail DRAFT in her own mailbox on her press (src/worker/boss/wealth/gmailDraft.ts), which needs the gsc-bot service account under the gmail.compose scope she granted the same day. One scope, one endpoint (drafts.create); spry-vc-never-sends.mjs and the-inbox-draft-never-sends.mjs fail the build if a send scope or send endpoint appears on that path. Until this is synced the card prints the NAMED STOP \"the Worker holds no Google key\".",
     "BOSS_OS_SECRET_HANDOFF_KEY": "Added 6 Oct 2026 (docs/SERVICE_RULES.md R3). The AES-256 key the Worker encrypts a key she emails as `SECRET NAME=value` under, until her Mac moves it into the vault. Without it on the Worker the secret door fails closed.",
     "BRAVE_SEARCH_API_KEY": "Added 5 Nov 2026 (owner: Brave Search, the second meeting-research route). Read only by src/worker/effects/braveSearchClient.ts, at most 20 searches a day; without it the route is skipped and research moves to the guest's own pages.",

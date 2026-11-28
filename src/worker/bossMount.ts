@@ -14,6 +14,7 @@
  */
 import type { Env } from "./env";
 import bossApp, { runScheduled as runBossNightly, runDuties as runBossDuties, runDutyClock as runBossDutyClock, runReaper as runBossReaper, runOutreach as runBossOutreach, runOpenLoops as runBossOpenLoops, runEightraise as runBossEightraise, runKendra as runBossKendra } from "./boss/index";
+import { OPERATIONS_ENABLED, operatingStopped } from "./boss/lib/operatingStop";
 import type { Env as BossEnv, TaskMessage } from "./boss/env";
 import { handleTask, handleDeadLetter } from "./boss/queue/consumer";
 
@@ -101,6 +102,9 @@ export function toBossEnv(env: Env): BossEnv {
     GSC_SERVICE_ACCOUNT_JSON: env.GSC_SERVICE_ACCOUNT_JSON,
     // R3: the secret door's key. Omitted here, the door would be declared and fail closed forever.
     BOSS_OS_SECRET_HANDOFF_KEY: env.BOSS_OS_SECRET_HANDOFF_KEY,
+    BOSS_SIMONE_GOOGLE_CLIENT_ID: env.BOSS_SIMONE_GOOGLE_CLIENT_ID,
+    BOSS_SIMONE_GOOGLE_CLIENT_SECRET: env.BOSS_SIMONE_GOOGLE_CLIENT_SECRET,
+    BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT: env.BOSS_SIMONE_PERSONAL_GOOGLE_ACCOUNT,
     /*
      * THE TWO FRONTIER KEYS (26 Oct 2026). Set on the Worker since 17 Sep and never passed through
      * here, so Boss OS's Anthropic and OpenAI backends were "enabled" with no key they could reach,
@@ -112,6 +116,9 @@ export function toBossEnv(env: Env): BossEnv {
     // OpenRouter too, the same seam's same gap (bk_openrouter enabled 17 Sep with its own cap).
     OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
     GEMINI_API_KEY: env.GEMINI_API_KEY,
+    // Worker reading (freeModel.ts): the second Cloudflare account's Workers AI, never the main account.
+    CF2_ACCOUNT_ID: env.CF2_ACCOUNT_ID,
+    CF2_WORKERS_AI_TOKEN: env.CF2_WORKERS_AI_TOKEN,
     BRAVE_SEARCH_API_KEY: env.BRAVE_SEARCH_API_KEY,
     // Boss OS's own clock (21 Nov 2026): GitHub's schedule event stopped being a clock.
     GITHUB_SEQ23_PAT: env.GITHUB_SEQ23_PAT,
@@ -227,6 +234,7 @@ export async function drainBossTasks(
 ): Promise<{ ran: number; failed: number; dead: number; reaped?: number }> {
   const bossEnv = toBossEnv(env);
   const db = env.WP_OS_DB;
+  if (await operatingStopped(db)) return { ran: 0, failed: 0, dead: 0 };
   const reaped = await reapOrphanedRuns(bossEnv, db, now.getTime());
   /*
    * ─── A HUNT IS NOT A DRAFTING JOB, AND THE MODEL MUST NOT EAT IT ──────────
@@ -285,7 +293,7 @@ export async function drainBossTasks(
      * zero rows changed and moves on.
      */
     const claimed = await db
-      .prepare(`UPDATE boss_task_queue SET state = 'running' WHERE id = ? AND state = 'pending'`)
+      .prepare(`UPDATE boss_task_queue SET state = 'running' WHERE id = ? AND state = 'pending' AND ${OPERATIONS_ENABLED}`)
       .bind(row.id)
       .run();
     if (!claimed.meta || claimed.meta.changes === 0) continue;

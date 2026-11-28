@@ -8,6 +8,7 @@ import { editDuty, repoInstructions, OWNER_TZ, type OwnedDuty } from "./ownerEdi
 import { localDate } from "../../../shared/boss/duties/ownerEdits.mjs";
 import { dutyChangeBody, dutyChangeStands, dutyCodeHome, dutyEditRequestIn, editedInstructions } from "../../../shared/boss/duties/editByMail.mjs";
 import type { LaneSeat } from "../../../shared/boss/duties/lane.mjs";
+import { REPO_CHANGE_SEAT } from "../../../shared/boss/repoChange/lane.mjs";
 
 /**
  * HER RULING ON A DUTY SHE ALREADY HAS (owner incident, 1 Nov 2026) — the Worker half.
@@ -42,6 +43,27 @@ export type DutyEditFound = NonNullable<Awaited<ReturnType<typeof findDutyEdit>>
 
 /** The check the first read answers for a duty edit. */
 export const dutyCheckWords = (name: string) => `change the standing duty "${name}"`;
+
+export async function routeFixedDutyChange(env: Env, duty: OwnedDuty, words: string, options: {
+  source: "boss_inbound_mail" | "employee_page" | "boss_page";
+  mailId?: string; sender?: string; preApproved?: string | null; taskId?: string; seatName?: string;
+}) {
+  const body = dutyChangeBody(duty, words, {
+    source: options.source === "boss_inbound_mail" ? "by email" : "on her duty page",
+    preApproved: options.preApproved,
+  });
+  return admitTask(env, {
+    title: options.seatName ? `Change ${options.seatName}'s duty: ${duty.name}`.slice(0, 160)
+      : `Change how the duty "${duty.name}" works`.slice(0, 200),
+    lane: "ops",
+    employee_id: REPO_CHANGE_SEAT,
+    ...(options.taskId ? { cost_mode: "FREE_ONLY" as const } : {}),
+    input: {
+      source: options.source, mail_id: options.mailId, from: options.sender, build_ask: true, duty_id: duty.id, body,
+      ...(options.seatName ? { routing: `Her ruling changes the existing duty ${duty.id}, whose steps are fixed in code, so it went to Danielle's repo lane.` } : {}),
+    },
+  }, options.taskId ? { id: options.taskId } : undefined);
+}
 
 export async function editDutyFromMail(env: Env, input: {
   roster: LaneSeat[]; subject: string; text: string; mailId: string; now: number; sender: string;
@@ -125,14 +147,8 @@ export async function editDutyFromMail(env: Env, input: {
 
   // Fixed steps: the code that runs the duty changes, so it goes to the seat that changes code.
   const home = dutyCodeHome(d);
-  const body = dutyChangeBody(d, req.phrase, { source: "by email", preApproved: req.preApproved });
-  const admitted = await admitTask(env, {
-    title: `Change ${seatName}'s duty: ${d.name}`.slice(0, 160), lane: "ops", employee_id: "emp_repo",
-    input: {
-      source: "boss_inbound_mail", mail_id: input.mailId, from: input.sender, build_ask: true,
-      routing: `Her ruling changes the existing duty ${d.id}, whose steps are fixed in code, so it went to Danielle's repo lane.`,
-      duty_id: d.id, body,
-    },
+  const admitted = await routeFixedDutyChange(env, d, req.phrase, {
+    source: "boss_inbound_mail", mailId: input.mailId, sender: input.sender, preApproved: req.preApproved, seatName,
   });
   if (!admitted.created || !admitted.task_id) {
     return {
