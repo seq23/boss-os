@@ -1,78 +1,136 @@
 {
   "scripts/ops/ahrefs-audit-fix.sh": {
     "reason": "Danielle: Section D preserves the code repair runner. The separate digest uses the personal Gmail connector and is a documented Step 5 gap.",
-    "edges": ["command $AI_RUN", "command $AI_RUN"]
+    "edges": [
+      "command $AI_RUN",
+      "command $AI_RUN"
+    ]
   },
   "scripts/ops/ai-visibility.sh": {
     "reason": "Noelle: boss-os #574 and #581.",
-    "edges": ["command $AI_RUN"]
+    "edges": [
+      "command $AI_RUN"
+    ]
   },
   "scripts/ops/boss-mail-tail-run.sh": {
     "reason": "Monique tail: owner kept Steps 1–4 as built. This tool session carries out owner assignments.",
-    "edges": ["command $CLAUDE", "command $CLAUDE"]
+    "edges": [
+      "command $CLAUDE",
+      "command $CLAUDE"
+    ]
   },
   "scripts/ops/credential-check.mjs": {
     "reason": "Kendra: probes the specific Claude Gmail connector. A completion on another model cannot test this connector.",
-    "edges": ["command claude"]
+    "edges": [
+      "command claude"
+    ]
   },
   "scripts/ops/kdp-kmp-draft.mjs": {
     "reason": "Simone's KDP lane: boss-os #577 and #582.",
-    "edges": ["command ai-run", "endpoint https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "endpoint https://openrouter.ai/api/v1/chat/completions", "command ai-run"]
+    "edges": [
+      "command ai-run",
+      "endpoint https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      "endpoint https://openrouter.ai/api/v1/chat/completions",
+      "command ai-run"
+    ]
   },
   "scripts/ops/kdp-signin.mjs": {
     "reason": "Simone's KDP lane: boss-os #577 and #582.",
-    "edges": ["command claude"]
+    "edges": [
+      "command claude"
+    ]
   },
   "scripts/ops/kdp-surface.sh": {
     "reason": "Simone's KDP lane: boss-os #577 and #582.",
-    "edges": ["command $AI_RUN"]
+    "edges": [
+      "command $AI_RUN"
+    ]
   },
   "scripts/ops/kdp-watch.sh": {
     "reason": "Simone's KDP lane: boss-os #577 and #582.",
-    "edges": ["command $CLAUDE"]
+    "edges": [
+      "command $CLAUDE"
+    ]
   },
   "scripts/ops/lib/duty-kit.mjs": {
     "reason": "Existing connector transport for Simone (#582) and the recorded personal Gmail calls.",
-    "edges": ["command claude"]
+    "edges": [
+      "command claude"
+    ]
   },
   "scripts/ops/lib/simone-tools.mjs": {
     "reason": "Simone's tools: boss-os #582.",
-    "edges": ["call askClaudeJson"]
+    "edges": [
+      "call askClaudeJson"
+    ]
+  },
+  "scripts/ops/lib/toni-mail.mjs": {
+    "reason": "Toni: her personal Gmail has no read-only grant in the vault yet (#584 review F2), so until TONI_GMAIL_* exist it is read through the Claude Gmail connector exactly as before #584; spry.vc uses the free reader.",
+    "edges": [
+      "call askClaudeJson"
+    ]
   },
   "scripts/ops/mailbox-sweep.sh": {
     "reason": "Monique sweep: owner kept Steps 1–4 as built. This existing job gets its data through personal Gmail's seat connector.",
-    "edges": ["command $AI_RUN"]
+    "edges": [
+      "command $AI_RUN"
+    ]
   },
   "scripts/ops/noelle.sh": {
     "reason": "Noelle: boss-os #574 and #581.",
-    "edges": ["command $AI_RUN"]
+    "edges": [
+      "command $AI_RUN"
+    ]
   },
   "scripts/ops/pnp-corporate-outreach.mjs": {
     "reason": "Camille's discovery requires live public web search. The available free inference adapters do not provide that capability.",
-    "edges": ["import ../sync-agent/runner.mjs", "import ../lib/codex-seat.mjs"]
+    "edges": [
+      "import ../sync-agent/runner.mjs",
+      "import ../lib/codex-seat.mjs"
+    ]
   },
   "scripts/ops/repo-change.mjs": {
     "reason": "Danielle's repository editing and landing tool loop, retained under Section D.",
-    "edges": ["import ../lib/codex-seat.mjs", "command claude", "command codex", "command codex"]
+    "edges": [
+      "import ../lib/codex-seat.mjs",
+      "command claude",
+      "command codex",
+      "command codex"
+    ]
   },
   "scripts/ops/ship-review.mjs": {
     "reason": "Separate delivery review tool for images and audio. The shared text reader cannot accept these inputs.",
-    "edges": ["endpoint https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "command ai-run"]
-  },
-  "scripts/ops/sr-fix-permissions-probe.mjs": {
-    "reason": "Danielle: boss-os #601 probes the retained Section D code-editing seat permissions.",
-    "edges": ["command claude", "command claude"]
+    "edges": [
+      "endpoint https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      "command ai-run"
+    ]
   },
   "scripts/ops/simone-commands.mjs": {
     "reason": "Simone: boss-os #577 and #582.",
-    "edges": ["call askClaudeJson", "call askClaudeJson", "call askClaudeJson"]
+    "edges": [
+      "call askClaudeJson",
+      "call askClaudeJson",
+      "call askClaudeJson"
+    ]
+  },
+  "scripts/ops/sr-fix-permissions-probe.mjs": {
+    "reason": "Danielle: boss-os #601 probes the retained Section D code-editing seat permissions.",
+    "edges": [
+      "command claude",
+      "command claude"
+    ]
   },
   "scripts/ops/t2r-groups.mjs": {
     "reason": "Monique outreach: owner kept Steps 1–4 as built. Its existing research uses web tools.",
-    "edges": ["import ../sync-agent/runner.mjs", "import ../lib/codex-seat.mjs"]
+    "edges": [
+      "import ../sync-agent/runner.mjs",
+      "import ../lib/codex-seat.mjs"
+    ]
   },
   "scripts/sync-agent/runner.mjs": {
     "reason": "Shared agent seat executor for Simone (#582), Noelle (#581), and retained Section D code editing.",
-    "edges": ["call defaultExecutor"]
+    "edges": [
+      "call defaultExecutor"
+    ]
   }
 }

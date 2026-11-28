@@ -33,7 +33,7 @@ import {
 import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
 import { repairReport } from "../../src/shared/boss/repoChange/repairReport.mjs";
 import { execFileSync } from "node:child_process";
-import { readToniMail, reconcileToniReadings } from "./lib/toni-mail.mjs";
+import { nameToniHeld, readToniMail, reconcileToniReadings } from "./lib/toni-mail.mjs";
 
 /** Moved lock readings → `{ decide, lines, fixes }`. Pure; tested. */
 export function planLocks(moved) {
@@ -55,6 +55,7 @@ const DRY = process.argv.includes("--dry");
 export const LOCK_MAIL = {
   days: 8,
   kinds: ["lock", "github_ci", "other"],
+  connectorQuery: 'newer_than:8d subject:(restricted OR restriction OR suspended OR suspension OR locked OR disabled OR "under review" OR policy OR violation OR blocked OR terminated OR limited OR "action required" OR appeal)',
   instruction: "Identify actual restrictions, suspensions, appeals or platform policy reviews affecting the recipient’s accounts or listings. Routine login alerts, generic marketing policy updates and billing reminders are other. GitHub repository, issue, PR, dependency or build notices are github_ci; a real GitHub account suspension is lock.",
 };
 
@@ -145,6 +146,7 @@ async function main() {
   const ci = planCiNotices(ciNotices, live, { handed: prev.ci_handed ?? {} });
   console.log(`github notices: ${ciNotices.length} (${Object.entries(live).map(([r, s]) => `${r} ${s}`).join(", ") || "none"}), ${ci.fixes.length} repair(s).`);
   if (DRY) { console.log("OUTSIDE-LOCKS-COMPLETE: dry"); return; }
+  await nameToniHeld(mail, "account lock or restriction emails");
   const ciHanded = { ...(prev.ci_handed ?? {}) };
   if (ci.fixes.length) {
     let api = null;

@@ -45,7 +45,7 @@ import {
 import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
 import { ownerEmail } from "../../src/shared/boss/mail/ownerLayout.mjs";
 import { dayOf } from "../../src/shared/boss/schedule/clock.mjs";
-import { readToniMail, reconcileToniReadings } from "./lib/toni-mail.mjs";
+import { nameToniHeld, readToniMail, reconcileToniReadings } from "./lib/toni-mail.mjs";
 
 const DRY = process.argv.includes("--dry");
 const DAY = 86_400_000;
@@ -398,8 +398,24 @@ async function readRenewals(domains, now) {
 export const BILLING_MAIL = {
   days: 14,
   kinds: ["receipt", "payment_failed", "renewal", "personal", "other"],
+  // Her personal Gmail, while it is read through the connector (no read-only grant yet), is searched with the
+  // same query it used before #584; the model then reads what each one is.
+  connectorQuery: '(newer_than:2d subject:(receipt OR invoice OR "payment received" OR "your order" OR "you were charged" OR "payment confirmation" OR renewal)) OR (newer_than:14d -from:notifications@github.com subject:(payment OR billing OR declined OR "past due" OR overdue OR "payment failed" OR "unable to charge" OR suspended))',
   instruction: "Distinguish business receipts or invoices, failed or overdue business payments, upcoming business renewals, household/personal bills, and other mail. For a failed payment name the business that could not take payment (a processor may be sending for it), and quote the payment detail and retry attempt if stated. A security restriction or a CI failure is not a payment failure.",
 };
+
+/** The saved charge and billing keys an unread mailbox cannot clear. Pure. */
+export function unreadKeys(states = {}, owners = {}, unreadBoxes = new Set()) {
+  if (!unreadBoxes.size) return [];
+  return Object.keys(states ?? {}).filter((key) => /^(charge|billing-problem):/.test(key)
+    && (owners?.[key] ? unreadBoxes.has(owners[key]) : true));
+}
+
+/** Which mailbox each live charge key came from, kept only for keys still in the state. Pure. */
+export function keepOwners(states = {}, previous = {}, now = {}) {
+  const all = { ...(previous ?? {}), ...now };
+  return Object.fromEntries(Object.entries(all).filter(([key]) => Object.hasOwn(states, key)));
+}
 
 /** A charge notice's reading: failed payments are gathered by vendor later; the rest are notices. Pure. */
 export function chargeReading(m, where) {
@@ -584,11 +600,13 @@ async function main() {
   const domains = [...new Set([...GRID.flatMap((p) => p.domains ?? []), ...senderDomains])].sort();
   readings.push(...(await readRenewals(domains, now)));
   const mail = await readToniMail(BILLING_MAIL, prev.mail, now);
+  const owners = {};
   for (const box of mail) {
     const key = `charges:${box.id}`;
     const rows = noticeReadings(box.notices, box.label, key, now, prev.mail?.[box.id]?.through);
     const status = `${box.label}: checked ${box.handled} of ${box.count} listed messages`;
     rows[rows.length - 1] = { key, state: box.why ? "stop" : "ok", line: box.why ? `${status}. ${box.why}.` : `${status} through the full-thread reader.` };
+    for (const r of rows) if (/^(charge|billing-problem):/.test(r.key)) owners[r.key] = box.id;
     readings.push(...rows);
   }
 
@@ -596,11 +614,16 @@ async function main() {
   const stop = readNothingStop(readings, "RISK_WATCH_READ_NOTHING");
   if (stop) { console.error(stop); process.exit(3); }
 
-  const unread = mail.some((box) => box.why) ? ["billing-problem:", "charge:"] : [];
+  // Only the mailbox that went unread holds its alerts (#584 review F2): a spry.vc problem still clears when
+  // spry.vc was read, whatever happened to personal Gmail. A key saved before mailboxes were recorded is held
+  // whenever any mailbox is unread, as before.
+  const unreadBoxes = new Set(mail.filter((box) => box.why).map((box) => box.id));
+  const unread = unreadKeys(prev.states, prev.owners, unreadBoxes);
   const { moved, states } = reconcileToniReadings(readings, prev.states, unread);
   console.log(`OUTPUT ${readings.filter((r) => r.state !== "stop").length} readings`);
   console.log(`risk watch: ${readings.length} readings, ${readings.filter((r) => r.state === "alert").length} alerting, ${readings.filter((r) => r.state === "stop").length} unreadable, ${moved.length} moved since the last run.`);
   if (DRY) { console.log("RISK-WATCH-COMPLETE: dry"); return; }
+  await nameToniHeld(mail, "charge or billing emails");
 
   let reported = false;
   if (moved.length) {
@@ -616,8 +639,8 @@ async function main() {
     }
   }
   // Nothing moved: an empty "all clear", so the morning email can tell a quiet day from a run that never reported in.
-  if (!reported && !unread.length && !toMorning("risk", {})) { console.error("state not saved."); process.exit(8); }
-  saveState("risk-watch", { at: new Date(now).toISOString(), states, mail: Object.fromEntries(mail.map((box) => [box.id, box.checkpoint])), openrouter_usage: or.usage ?? prev.openrouter_usage ?? null });
+  if (!reported && !unreadBoxes.size && !toMorning("risk", {})) { console.error("state not saved."); process.exit(8); }
+  saveState("risk-watch", { at: new Date(now).toISOString(), states, owners: keepOwners(states, prev.owners, owners), mail: Object.fromEntries(mail.map((box) => [box.id, box.checkpoint])), openrouter_usage: or.usage ?? prev.openrouter_usage ?? null });
   if (mail.some((box) => box.why)) {
     console.error("NAMED STOP [BILLING_MAIL_UNREAD] At least one source will be retried");
     process.exitCode = 3;

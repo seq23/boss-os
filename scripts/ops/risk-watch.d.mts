@@ -35,3 +35,5 @@ export function planRisk(moved: Array<{ key: string; state: string; line: string
   lines: Array<string | { text: string; links: Button[] }>;
   fixes: Array<{ title: string; prompt: string }>;
 };
+export function unreadKeys(states?: Record<string, string>, owners?: Record<string, string>, unreadBoxes?: Set<string>): string[];
+export function keepOwners(states?: Record<string, string>, previous?: Record<string, string>, now?: Record<string, string>): Record<string, string>;
