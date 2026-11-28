@@ -1,22 +1,30 @@
 import { expect, it, vi } from "vitest";
-import { checkOperations, outreachReceipt } from "../scripts/ops/lib/simone-operations.mjs";
+import { checkOperations, readArrivals, receiptFor, rowAddresses } from "../scripts/ops/lib/simone-operations.mjs";
 import { buildDay } from "../scripts/ops/your-day.mjs";
 
 const day = "2026-11-23";
+const NOW = Date.parse("2026-11-23T15:00:00Z");
 const existing = { id: "office-outreach", name: "Existing job", what: "Check reservations",
   trigger: { launchd: ["com.seq.office-outreach"] } };
 const campaign = { id: "pnp-corporate-outreach", name: "Office outreach", what: "Deliver office replies",
   trigger: { duty: "duty-office", launchd: ["com.seq.pnp-outreach"] } };
-const source = { sent_today: 0, followups_today: 0, corporate_booked: 0, suppressed: [], taken_over: [], stopped: null,
-  replies: [{ kind: "reply", email: "office@example.test", at: "2026-11-22T17:00:00Z", forwarded_at: "2026-11-22T17:01:00Z" }] };
+const RESEND = "0a1b2c3d-1111-4222-8333-444455556666";
+// A reply on 21 Nov, "forwarded" by the mailer, but on no morning email: the 22 and 23 Nov mornings went without it.
+const feed = { replies: [{ id: "in1", kind: "reply", email: "office@example.test", at: "2026-11-21T17:00:00Z", forward_handed_at: "2026-11-21T17:00:01Z", message_id: "<r1@example.test>", text: "Can you quote?", auth: "pass" }] };
+const morning = (d: string, keys: string[] = []) => ({ day: d, built_at: Date.parse(`${d}T12:40:00Z`), sent_at: Date.parse(`${d}T12:41:00Z`), keys,
+  mail: { id: RESEND, message_id: `<yd-${d}@example.test>`, from_addr: "simone@sequoiataylor.com", layout: "digest", sent_at: Date.parse(`${d}T12:41:00Z`) } });
+const arrivals = { sent: [{ id: RESEND, message_id: "<m1@example.test>", from_addr: "simone@sequoiataylor.com", layout: "digest", sent_at: Date.parse("2026-11-22T12:41:00Z") }],
+  mornings: [morning("2026-11-22"), morning("2026-11-23")] };
 
-function fixture(gmail = vi.fn(async (_query: string) => [] as { id: string }[])) {
+function fixture(resend = vi.fn(async () => "delivered"), replyFeed: unknown = feed) {
+  const receipts = readArrivals({ arrivals, feed: replyFeed as never, resend, now: NOW });
   return {
     schedule: { rows: [existing, campaign, { id: "worker", name: "Worker heartbeat", what: "Check the public result",
       trigger: { repo: "boss-os", file: "wrangler.toml", crons: ["0 * * * *"] } }] },
     scorecard: { exempt: { worker: { kind: "system", reason: "scheduler" } }, rows: [{ id: "office", initiative: "Bookings", result: "Bookings in the database",
       jobs: [existing.id, campaign.id], real: { label: "new bookings" } }] },
-    senders: { rows: [{ id: campaign.id, sender: "Camille", what: "Bring each reply to the owner" }] },
+    senders: { rows: [{ id: campaign.id, sender: "Camille", what: "Bring each reply to the owner" },
+      { id: "simone-your-day", sender: "Simone", from: "Simone <simone@sequoiataylor.com>", what: "The morning email" }] },
     sites: { rows: [{ id: "site", name: "Site", url: "https://example.test", status: "live" }] },
     inputs: { duties: [{ id: "duty-office", name: "Forward office replies", employeeId: "camille", scheduled: true }],
       agents: [{ id: "camille", name: "Camille", role: "Operations" }],
@@ -27,14 +35,14 @@ function fixture(gmail = vi.fn(async (_query: string) => [] as { id: string }[])
     deployed: new Map([["boss-os:wrangler.toml", new Set(["*/3 * * * *"])]]),
     readSite: async () => ({ state: "verified", evidence: "Public HTML served." }),
     readScore: async () => ({ state: "verified", evidence: "Two booking records read." }),
-    readOutreach: () => outreachReceipt(source, gmail),
+    readOutreach: async () => (await receipts).replies,
+    readSender: async (row: { runs?: string; from?: string }) => (await receipts).forSender(row),
     day,
   };
 }
 
-it("checks runtime and code coverage, reports missed delivery despite the forwarded mark, and renders the daily note", async () => {
-  const gmail = vi.fn(async () => []);
-  const report = await checkOperations(fixture(gmail));
+it("checks runtime and code coverage, reports a reply that never reached a morning email despite the forward, and renders the daily note", async () => {
+  const report = await checkOperations(fixture());
   expect(report.rows).toEqual(expect.arrayContaining([
     expect.objectContaining({ id: "com.seq.unlisted-from-code", coverage: "unlisted" }),
     expect.objectContaining({ id: "com.seq.running-unlisted", coverage: "unlisted" }),
@@ -44,31 +52,51 @@ it("checks runtime and code coverage, reports missed delivery despite the forwar
     expect.objectContaining({ kind: "agent", state: "no_proof" }),
     expect.objectContaining({ kind: "duty", id: "duty-office", state: "missing" }),
     expect.objectContaining({ kind: "mailbox", id: campaign.id, state: "missing" }),
+    expect.objectContaining({ kind: "sender", id: "simone-your-day", state: "verified" }),
     expect.objectContaining({ kind: "initiative", state: "verified" }),
     expect.objectContaining({ kind: "site", state: "verified" }),
   ]));
-  expect(gmail).toHaveBeenCalledOnce();
-  expect(gmail).toHaveBeenCalledWith(expect.stringContaining("from:office@example.test"));
-  const misses = report.issues.filter((line: string) => /Owner's mailbox/.test(line));
+  const misses = report.issues.filter((line: string) => /office replies/.test(line));
   expect(misses).toHaveLength(1);
-  expect(misses[0]).toMatch(/^NOT WORKING: .*found no copy/);
+  expect(misses[0]).toMatch(/^NOT WORKING: .*Not arrived: 1 of 1 office replies in your morning email/);
   expect(JSON.stringify(report)).not.toContain("office@example.test");
-  const now = Date.parse(day + "T12:00:00Z");
+  expect(JSON.stringify(report)).not.toContain("Can you quote");
   const note = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] },
-    morning: { operations: { lines: [...misses, report.proposal] } } }, now);
+    morning: { operations: { lines: [...misses, report.proposal] } } }, NOW);
   expect(note.text).toContain("Simone’s operating check");
   expect(note.text).toContain(misses[0]);
-  expect(note.text).toContain("This week");
 });
 
-it("keeps Gmail outages and ambiguous matches open, and errors if an inventory source returns zero rows", async () => {
-  const denied = vi.fn(async () => { throw Error("provider down"); });
-  const report = await checkOperations(fixture(denied));
-  expect(report.issues).toContainEqual(expect.stringMatching(/^COULDN'T CHECK: .*couldn't confirm 1 recorded outreach reply/));
-  expect(report.rows.find((row: { kind: string }) => row.kind === "mailbox")).toMatchObject({ state: "unknown" });
-  await expect(outreachReceipt(source, async () => [{ id: "unrelated" }])).resolves.toMatchObject({ state: "unknown" });
-  await expect(outreachReceipt({ ...source, replies: [{ ...source.replies[0], message_id: "<exact@example.test>" }] },
-    async (query: string) => query.startsWith("rfc822msgid:exact@example.test") ? [{ id: "found" }] : [])).resolves.toMatchObject({ state: "verified" });
+it("a reply carried on a morning email that arrived is proven; one before any morning is still due", async () => {
+  const key = "reply:pnp:<r1@example.test>";
+  const carried = { ...arrivals, mornings: [morning("2026-11-22", [key]), morning("2026-11-23")] };
+  const proven = await readArrivals({ arrivals: carried, feed, resend: async () => "delivered", now: NOW });
+  expect(proven.replies).toMatchObject({ state: "verified" });
+  // The morning that carried it bounced: not arrived, whatever the forward said.
+  const bounced = await readArrivals({ arrivals: carried, feed, resend: async (row: { message_id?: string | null }) => (String(row.message_id).includes("2026-11-22") ? "bounced" : "delivered"), now: NOW });
+  expect(bounced.replies).toMatchObject({ state: "missing" });
+  const fresh = { replies: [{ ...feed.replies[0], at: "2026-11-23T14:00:00Z" }] };
+  expect((await readArrivals({ arrivals, feed: fresh, resend: async () => "delivered", now: NOW })).replies).toMatchObject({ state: "nothing_due" });
+});
+
+it("an outage or an empty read is couldn't-check, never arrived (rule 0)", async () => {
+  const down = await checkOperations(fixture(vi.fn(async () => { throw Error("provider down"); })));
+  expect(down.rows.find((r: { id: string }) => r.id === "simone-your-day")).toMatchObject({ state: "unknown" });
+  expect(down.issues).toContainEqual(expect.stringMatching(/^COULDN'T CHECK: .*Couldn't check 1 of 1 emails from simone@sequoiataylor.com yesterday/));
+  expect(await receiptFor({ id: "pending:abc", message_id: "<x@example.test>", sent_at: NOW - 1e7 }, { now: NOW })).toBe("unknown");
+  expect(await receiptFor({ id: RESEND, sent_at: NOW - 1e7 }, { resend: async () => "sent", now: NOW })).toBe("not_arrived");
+  expect(await receiptFor({ id: RESEND, sent_at: NOW - 60_000 }, { resend: async () => "sent", now: NOW })).toBe("pending");
+  // Her Gmail, when Boss OS may read it: found is arrived; absent past the window is not.
+  expect(await receiptFor({ id: "pending:a", message_id: "<x@example.test>", sent_at: NOW - 1e7 }, { mailbox: async () => true, now: NOW })).toBe("arrived");
+  expect(await receiptFor({ id: "pending:a", message_id: "<x@example.test>", sent_at: NOW - 1e7 }, { mailbox: async () => false, now: NOW })).toBe("not_arrived");
+  const noFeed = await readArrivals({ arrivals, feed: null, resend: async () => "delivered", now: NOW });
+  expect(noFeed.replies).toMatchObject({ state: "unknown" });
+  const nothing = await readArrivals({ arrivals: { sent: [], mornings: [] }, feed, resend: async () => "delivered", now: NOW });
+  expect(nothing.forSender({ from: "Simone <simone@sequoiataylor.com>" })).toMatchObject({ state: "unknown" });
+  expect(nothing.replies).toMatchObject({ state: "unknown" });
+  await expect(readArrivals({ arrivals: undefined as never, feed, now: NOW })).rejects.toThrow("arrival inputs");
+  expect(rowAddresses({ runs: "folded" })).toEqual(["digest"]);
+  expect(rowAddresses({ from: "Wynn <wynn@joinwestpeek.com>" })).toEqual([]);
   const empty = fixture();
   empty.inputs.duties = [];
   await expect(checkOperations(empty)).rejects.toThrow("OPERATIONS_LIST_EMPTY");

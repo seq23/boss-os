@@ -70,6 +70,16 @@ export async function readGmailJson(url, access) {
   return data;
 }
 
+/**
+ * Is one message (by its RFC Message-ID) in her personal Gmail, outside spam and trash? The arrival
+ * check's mailbox receipt (src/shared/boss/mail/arrival.mjs): ids only come back, never a header or body.
+ */
+export async function personalHasMessage(messageId, access) {
+  const q = new URLSearchParams({ maxResults: "1", q: `rfc822msgid:${String(messageId).replace(/[<>\s]/g, "")} -in:spam -in:trash` });
+  const data = await readGmailJson(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${q}`, access);
+  return Array.isArray(data.messages) && data.messages.length > 0;
+}
+
 export async function classifyToniThread(thread, targets, rule, read = readWorkerSource) {
   const ids = [...targets];
   if (ids.some((id) => !thread.some((message) => message.id === id))) throw new Error("Gmail omitted a listed message");

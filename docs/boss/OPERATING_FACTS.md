@@ -209,10 +209,26 @@ Updates that day and to the existing morning note. A duplicate wake keeps the fi
 
 An installed trigger and a delivered result have separate readings. An unreadable source stays open.
 Scorecard numbers belong to their initiatives, and an individual item without a receiving-end reader
-says “no proof yet.” The office-outreach check requires the approved receiving Workspace mailbox in
-the vault’s `PNP_OUTREACH_PROOF_MAILBOX` setting. The sender status feed supplies a sender and an
-arrival time. An empty mailbox search in that window shows a missing copy. A positive match stays
-unconfirmed until the feed supplies the original Message-ID.
+says “no proof yet.”
+
+**Arrival, across every agent (28 Nov 2026).** Three Porch & Party office replies were marked
+"forwarded" to her Gmail and never found there, and the old receipt (a brand Workspace mailbox search
+gated on `PNP_OUTREACH_PROOF_MAILBOX`, never set) read "couldn't check" every day. Now "sent" and
+"forwarded" count only on a receiving-end receipt (`src/shared/boss/mail/arrival.mjs`): the copy found
+in her Gmail by Message-ID when the vault holds the read-only grant (`TONI_GMAIL_*`), else Resend's own
+`last_event` (`resendRecord`, scripts/ops/notify.mjs), else "couldn't check". Past two hours with no
+receipt is NOT ARRIVED. Simone's daily check reads yesterday's `boss_sent_mail` rows and the last ten
+kept mornings (`arrivalInputs`, src/worker/boss/agents/simoneOperations.ts) and gives each Email Map
+sender row its verdict; NOT WORKING / COULDN'T CHECK lines go to Updates. Cloudflare's `message.reply`
+path (the Worker's replies to her email) has no delivery event, so until the Gmail grant exists those
+read "couldn't check", never arrived.
+
+**Office replies reach Decide (28 Nov 2026).** Every Simone tick reads the Porch & Party mailer's stored
+replies (`GET /api/outreach/replies`, read-only, seq23/p-n-p) and writes the `agent_replies` morning
+section: one Decide card per real reply with their words, a Reply button (Gmail compose, sent from the
+P&P address) and a "Check first" title when Cloudflare could not tie the sender to the company
+(`src/shared/boss/mail/agentReplies.mjs`). The forward to her Gmail stays as a spare copy only. A
+reply has arrived only when a morning email carrying its card arrived (`replyArrivals`).
 
 The Schedule manifest's `workerJobs` names the accountable Boss OS worker and how to read evidence
 for each in-scope scheduled job. Simone's existing daily check judges the previous Central day.

@@ -44,8 +44,36 @@ it("keeps one fresh inventory, makes it available to Simone, and publishes a sam
   expect(await row("SELECT count(*) AS n FROM boss_task_notices WHERE subject LIKE 'NOT WORKING:%'")).toEqual({ n: 1 });
   expect(await row("SELECT json_extract(body, '$.lines[0]') AS evidence FROM morning_sections WHERE section = 'operations'"))
     .toEqual({ evidence: issues[0] });
+  // Her email holds the whole morning on an /api link: the note links a screen (28 Nov 2026).
+  expect(await row("SELECT json_extract(body, '$.link.url') AS url FROM morning_sections WHERE section = 'operations'"))
+    .toEqual({ url: expect.stringMatching(/^https:\/\/[^/]+\/\?tab=updates$/) });
   await fileSimoneMessage(env, { source: "simone_daily", subject: "Operating check", body: "Read the results." });
   const call = (await claimSimone(env))!;
   await expect(simoneTool(env, { id: call.id, lease: call.lease, tool: "operations" }))
     .resolves.toMatchObject({ ok: true, total: 1, rows: body.rows, issues });
+});
+
+it("hands the arrival check yesterday's agent mail and the reply cards each kept morning carried (28 Nov 2026)", async () => {
+  const { startOfDay } = await import("../../src/shared/boss/schedule/clock.mjs");
+  const { arrivalInputs } = await import("../../src/worker/boss/agents/simoneOperations");
+  const now = Date.now();
+  const today = startOfDay(now);
+  const yesterday = startOfDay(today - 1);
+  const ins = env.DB.prepare(`INSERT INTO boss_sent_mail (id, message_id, sent_at, delivery_state, from_addr, to_addr, subject, object_key, thread_id, layout)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`);
+  await env.DB.batch([
+    ins.bind("aaaaaaaa-1111-4222-8333-444455556666", "<y1@example.test>", yesterday + 3_600_000, "sent", "simone@sequoiataylor.com", "owner@example.test", "Yesterday", "k1", "t1", "digest"),
+    ins.bind("bbbbbbbb-1111-4222-8333-444455556666", "<y2@example.test>", yesterday + 7_200_000, "failed", "simone@sequoiataylor.com", "owner@example.test", "Refused", "k2", "t2", "note"),
+    ins.bind("cccccccc-1111-4222-8333-444455556666", "<t1@example.test>", today + 60_000, "sent", "simone@sequoiataylor.com", "owner@example.test", "Today", "k3", "t3", "note"),
+  ]);
+  const payload = JSON.stringify({ decide: [{ key: "reply:pnp:<r1@example.test>" }, { key: "lp:1" }], still_yours: [{ key: "reply:pnp:<r0@example.test>" }] });
+  await env.DB.prepare("INSERT INTO morning_digests (day, payload, sent_at, created_at, updated_at) VALUES (?,?,?,?,?)")
+    .bind(dayIdInZone(yesterday + 3_600_000), payload, yesterday + 3_600_000 + 30_000, yesterday + 3_500_000, yesterday + 3_600_000).run();
+  const got = await arrivalInputs(env.DB, now);
+  // Only what was recorded as sent yesterday: never a refused send, never today's.
+  expect((got.sent as { message_id: string }[]).map((r) => r.message_id)).toEqual(["<y1@example.test>"]);
+  const kept = got.mornings.find((m: { day: string }) => m.day === dayIdInZone(yesterday + 3_600_000))!;
+  expect(kept.keys).toEqual(["reply:pnp:<r1@example.test>", "reply:pnp:<r0@example.test>"]);
+  expect(kept.mail).toMatchObject({ id: "aaaaaaaa-1111-4222-8333-444455556666", layout: "digest", from_addr: "simone@sequoiataylor.com" });
+  expect(JSON.stringify(got)).not.toContain("Yesterday");
 });

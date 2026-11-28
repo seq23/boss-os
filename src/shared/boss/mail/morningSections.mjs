@@ -57,6 +57,9 @@ export const MORNING_SECTION_SPECS = Object.freeze([
   { name: "bounces", label: "Bounces", expect: null },
   { name: "notices", label: "Notices", expect: null },
   { name: "operations", label: "Simone’s operating check", expect: null },
+  // Every real reply to an agent's email, as Decide cards (owner, 28 Nov 2026: office replies never
+  // reached her). Simone writes it on every tick (scripts/ops/agent-replies.mjs), an empty copy when none.
+  { name: "agent_replies", label: "Replies to your agents' emails", expect: DAILY, catchUp: "agent-replies" },
   // Mondays 06:00: the weekly Search Readiness check of the grid repo sites (scripts/ops/search-readiness-audit.mjs).
   {
     name: "grid_repos", label: "your sites' search check", expect: Object.freeze(["Monday"]),

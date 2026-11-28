@@ -8,6 +8,7 @@ import type { Env } from "../env";
 import { AppError, badRequest } from "../lib/http";
 import { OPERATIONS_ENABLED, operatingStopped } from "../lib/operatingStop";
 import { workerEvidence } from "./workerEvidence";
+import { startOfDay } from "../../../shared/boss/schedule/clock.mjs";
 
 export const SIMONE_OPERATIONS_SETTING = "simone_operations";
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -45,12 +46,46 @@ export async function operatingInputs(db: D1Database, now = Date.now(), includeW
       WHERE d.lane = 'ops' AND d.removed_at IS NULL AND e.lifecycle IN ('active','provisional')`),
   ]);
   return { day, agents: agents?.results, duties: duties?.results,
-    workerEvidence: includeWorkerEvidence ? await workerEvidence(db, now) : undefined, mailboxes: [
+    workerEvidence: includeWorkerEvidence ? await workerEvidence(db, now) : undefined,
+    arrivals: includeWorkerEvidence ? await arrivalInputs(db, now) : undefined, mailboxes: [
     { id: "boss-intake", name: BOSS_INTAKE_MAILBOX, handler: "the Boss OS mail handler" },
     { id: "simone-intake", name: SIMONE_MAILBOX, handler: "the Boss OS mail handler" },
     ...BRAND_MAILBOXES.map(({ brand }) => ({ id: brand, name: brand + " Workspace inbox", handler: "the Workspace intake and account readers" })),
     { id: "pnp-corporate-outreach", name: "Porch & Party office replies", handler: "the Porch & Party outreach forwarding handler" },
   ] };
+}
+
+/**
+ * WHAT THE ARRIVAL CHECK READS (owner, 28 Nov 2026: "sent" and "forwarded" count only when the receiving
+ * end shows it arrived; rules in src/shared/boss/mail/arrival.mjs). Every agent email recorded as
+ * sent on the previous Central day (ids and addresses only, never a body), and the last ten kept
+ * mornings with the card keys each carried and the send that carried it. The Mac asks the receiving
+ * end about each one (scripts/ops/lib/simone-operations.mjs `readArrivals`).
+ */
+export async function arrivalInputs(db: D1Database, now = Date.now()) {
+  const end = startOfDay(now);
+  const start = startOfDay(end - 1);
+  const [sent, mornings] = await db.batch([
+    db.prepare(`SELECT id, message_id, from_addr, layout, sent_at FROM boss_sent_mail
+      WHERE delivery_state = 'sent' AND sent_at >= ? AND sent_at < ? ORDER BY sent_at LIMIT 400`).bind(start, end),
+    db.prepare(`SELECT day, payload, sent_at, created_at FROM morning_digests ORDER BY day DESC LIMIT 10`),
+  ]);
+  const keysOf = (payload: string) => {
+    try {
+      const p = JSON.parse(payload) as { decide?: { key?: string | null }[]; still_yours?: { key?: string | null }[] };
+      return [...(p.decide ?? []), ...(p.still_yours ?? [])].map((d) => d?.key).filter((k): k is string => typeof k === "string" && k.startsWith("reply:"));
+    } catch { return []; }
+  };
+  const rows = (mornings?.results ?? []) as { day: string; payload: string; sent_at: number | null; created_at: number }[];
+  const carried = [];
+  for (const m of rows) {
+    // The send that carried this morning: its digest in the sent log on or after the build, that day.
+    const mail = m.sent_at == null ? null : await db.prepare(`SELECT id, message_id, from_addr, layout, sent_at FROM boss_sent_mail
+      WHERE layout = 'digest' AND delivery_state = 'sent' AND sent_at >= ? AND sent_at < ? ORDER BY sent_at LIMIT 1`)
+      .bind(startOfDay(m.sent_at), m.sent_at + 3_600_000).first<{ id: string; message_id: string; from_addr: string; layout: string; sent_at: number }>();
+    carried.push({ day: m.day, built_at: m.created_at, sent_at: m.sent_at, keys: keysOf(m.payload), mail: mail ?? null });
+  }
+  return { start, end, sent: sent?.results ?? [], mornings: carried };
 }
 
 export async function operatingReport(db: D1Database, now = Date.now()) {
@@ -77,7 +112,8 @@ export async function storeOperatingReport(env: Env, input: unknown, now = Date.
     .bind(previous?.observedAt ?? now - 86_400_000, now).all<{ line: string }>();
   const note = { section: "operations", at: new Date(now).toISOString(), title: "Simone’s operating check",
     lines: [...summary, ...moves.results.map(({ line }) => line), ...(report.proposal ? [report.proposal] : [])],
-    link: { label: "See the operating inventory", url: `${BOSS_ORIGIN}/api/boss/simone/operations` },
+    // A screen, never an /api link: her email holds the whole morning when it carries one (28 Nov 2026).
+    link: { label: "See it on Updates", url: `${BOSS_ORIGIN}/?tab=updates` },
   };
   const key = `simone-operations-${report.day}`;
   const [saved] = await env.DB.batch([

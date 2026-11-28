@@ -5,12 +5,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { findStrays, floorDate, isMonday } from "../../../src/shared/boss/scorecard/scorecard.mjs";
-import { assertStatus } from "../../../src/shared/boss/pnp/outreach.mjs";
 import { installedPlists, installerJobs, repoCronFiles, scheduleRepoDir, workflowEntry, wranglerCrons } from "./schedule.mjs";
-import { BRAND_MAILBOXES } from "../../../src/shared/boss/commands/parse.mjs";
 import { citedIn, isScanned, uncovered } from "./email-map.mjs";
-import { gmailHeaders } from "./duty-kit.mjs";
-import { googleAccess, macContext, readMetric } from "./scorecard-readers.mjs";
+import { macContext, readMetric } from "./scorecard-readers.mjs";
+import { arrivalVerdict, mailboxArrival, replyArrivals, resendArrival } from "../../../src/shared/boss/mail/arrival.mjs";
+import { realReplies, replyKey } from "../../../src/shared/boss/mail/agentReplies.mjs";
+import { personalGrantPresent, personalHasMessage, personalToken } from "./toni-mail.mjs";
+import { resendRecord } from "../notify.mjs";
 import { localConfig, senderClient } from "../pnp-corporate-outreach.mjs";
 import { readMailCounts, readSiteAudit, workerChecks } from "./worker-checks.mjs";
 import { dayOf } from "../../../src/shared/boss/schedule/clock.mjs";
@@ -30,32 +31,82 @@ const unknown = (description) => result("unknown", description);
 const missing = (description) => result("missing", description);
 const noProof = () => result("no_proof", "no proof yet");
 
-export async function outreachReceipt(status, search) {
-  const replies = assertStatus(status).replies.filter((reply) => reply.kind === "reply");
-  let unmatched = 0;
-  let uncertain = 0;
-  // Never give the recipient or report the identities or contents of the correspondence.
-  // The existing campaign API supplies sender and arrival time, but no stable Message-ID today.
-  for (const reply of replies) {
-    const sender = typeof reply.email === "string" && /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+$/.test(reply.email) ? reply.email : null;
-    const seconds = Math.floor(Date.parse(reply.at) / 1000);
-    if (!sender || !Number.isFinite(seconds)) { uncertain++; continue; }
-    const id = typeof reply.message_id === "string" && /^<?[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+>?$/.test(reply.message_id)
-      ? reply.message_id.replace(/[<>]/g, "") : null;
+/*
+ * THE ARRIVAL CHECK, ACROSS EVERY AGENT (owner, 28 Nov 2026; rules in src/shared/boss/mail/arrival.mjs).
+ * It replaces the old office-reply receipt, which could only search a brand Workspace mailbox, never
+ * her Gmail, and so read "couldn't check" every day while three replies went missing.
+ *   - each agent email recorded as sent yesterday: found in her Gmail by Message-ID when Boss OS holds
+ *     a read-only grant for it, else Resend's own delivery event, else "couldn't check";
+ *   - each real office reply: arrived only when a morning email that carried its Decide card arrived.
+ * Never the correspondents' addresses or words in the report.
+ */
+const RESEND_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RFC_ID = /^<?[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+>?$/;
+
+/** One send's receipt: `mailbox(messageId)` → true/false/null, `resend(row)` → its last event. */
+export async function receiptFor(row, { mailbox = null, resend = null, now = Date.now() } = {}) {
+  const sentAt = Number(row?.sent_at);
+  if (mailbox && RFC_ID.test(String(row?.message_id ?? ""))) {
     try {
-      const query = id ? `rfc822msgid:${id} -in:spam -in:trash`
-        : `from:${sender} after:${seconds - WINDOW} before:${seconds + WINDOW} -in:spam -in:trash`;
-      const messages = await search(query);
-      if (!Array.isArray(messages)) { uncertain++; continue; }
-      if (!messages.length) unmatched++;
-      else if (!id) uncertain++;
-    } catch { uncertain++; }
+      const found = await mailbox(String(row.message_id).replace(/[<>]/g, ""));
+      if (found === true || found === false) return mailboxArrival(found, sentAt, now);
+    } catch { /* the provider's receipt is still a receiving-end read */ }
   }
-  if (unmatched) return missing(`Owner's mailbox search found no copy for ${unmatched} recorded outreach ${unmatched === 1 ? "reply" : "replies"}${uncertain ? ` and couldn't confirm ${uncertain} more` : ""}.`);
-  if (uncertain) return unknown(`Owner's mailbox couldn't confirm ${uncertain} recorded outreach ${uncertain === 1 ? "reply" : "replies"}.`);
-  return result(replies.length ? "verified" : "nothing_due", replies.length
-    ? `Owner's mailbox contains all ${replies.length} recorded replies by Message-ID.`
-    : "The campaign intake has no human reply to check for delivery.");
+  if (resend && RESEND_ID.test(String(row?.id ?? ""))) {
+    try { return resendArrival(await resend(row), sentAt, now); } catch { return "unknown"; }
+  }
+  return "unknown";
+}
+
+/** Her Gmail, read-only (the personal grant), searched by Message-ID: true found, false absent. */
+export async function personalSearch(env, fetchImpl = fetch) {
+  const token = await personalToken({ env, fetchImpl });
+  return (id) => personalHasMessage(id, token);
+}
+
+/** Resend's own last event for one Boss OS send, with the key of the team that sent it. */
+export async function resendEvent(row, env = process.env, fetchImpl = fetch) {
+  const from = String(row?.from_addr ?? "").toLowerCase();
+  const key = /@sequoiataylor\.com$/.test(from) || row?.layout === "digest" ? env.BOSS_OS_MAIL_KEY
+    : /@theindustryguides\.com$/.test(from) ? env.BOSS_OS_FALLBACK_MAIL_KEY : null;
+  return (await resendRecord(row.id, key, fetchImpl))?.last_event ?? null;
+}
+
+/** "Simone <simone@sequoiataylor.com>" → the agent addresses an Email Map row sends from. */
+export function rowAddresses(row) {
+  if (row?.runs === "folded") return ["digest"];
+  if (/\bname@sequoiataylor\.com\b/i.test(String(row?.from ?? ""))) return ["*"];
+  return [...String(row?.from ?? "").matchAll(/\b([a-z0-9._-]+@sequoiataylor\.com)\b/gi)].map((m) => m[1].toLowerCase());
+}
+
+/**
+ * Every receipt the check needs, read once: `{ forSender(row), replies }`. `arrivals` is the
+ * Worker's arrivalInputs; `feed` the stored replies (null when they could not be read).
+ */
+export async function readArrivals({ arrivals, feed, mailbox = null, resend = null, now = Date.now() }) {
+  if (!arrivals || !Array.isArray(arrivals.sent) || !Array.isArray(arrivals.mornings)) throw new Error("The arrival inputs were not read.");
+  const sent = await Promise.all(arrivals.sent.map(async (row) => ({ ...row, arrival: await receiptFor(row, { mailbox, resend, now }) })));
+  const mornings = await Promise.all(arrivals.mornings.map(async (m) => ({ ...m, arrival: m.mail ? await receiptFor(m.mail, { mailbox, resend, now }) : "not_arrived" })));
+  const forSender = (row) => {
+    const addresses = rowAddresses(row);
+    if (!addresses.length) return noProof();
+    // Rule 0: a whole day with no agent email recorded proves nothing about any sender.
+    if (!sent.length) return unknown("Read no agent email recorded as sent yesterday, so no delivery is proven.");
+    const mine = sent.filter((r) => addresses.includes("*") ? /@sequoiataylor\.com$/i.test(r.from_addr ?? "")
+      : addresses.includes("digest") ? r.layout === "digest" : addresses.includes(String(r.from_addr ?? "").toLowerCase()));
+    const label = addresses.includes("digest") ? "morning emails" : addresses.includes("*") ? "agent emails" : `emails from ${addresses.join(", ")}`;
+    if (!mine.length) return result("nothing_due", `No ${label} were sent yesterday.`);
+    return arrivalVerdict(mine, `${label} yesterday`);
+  };
+  let replies;
+  if (!feed || !Array.isArray(feed.replies)) replies = unknown("Couldn't read the stored office replies, so none is proven to have reached you.");
+  else {
+    const real = realReplies(feed.replies);
+    replies = real.length
+      ? arrivalVerdict(replyArrivals(real, mornings, (r) => replyKey("pnp", r), now), "office replies in your morning email")
+      : result("nothing_due", "No office has replied to the outreach.");
+  }
+  return { forSender, replies };
 }
 
 function cronKey(repo, file, cron) { return `${repo}:${file}:${cron}`; }
@@ -80,7 +131,7 @@ async function proof(read, reason) {
   try { return await read(); } catch { return unknown(reason); }
 }
 
-export async function checkOperations({ schedule, scorecard, senders, sites, inputs, launchd, files, readSite, readOutreach, readScore, day, senderDrift = [], deployed = new Map() }) {
+export async function checkOperations({ schedule, scorecard, senders, sites, inputs, launchd, files, readSite, readOutreach, readSender = () => noProof(), readScore, day, senderDrift = [], deployed = new Map() }) {
   if (!schedule.rows.length || !scorecard.rows.length || !senders.rows.length || !sites.rows.length
     || !inputs?.duties?.length || !inputs?.agents?.length || !inputs?.mailboxes?.length) {
     throw new Error("NAMED STOP [OPERATIONS_LIST_EMPTY] An operating inventory source returned zero rows.");
@@ -97,7 +148,7 @@ export async function checkOperations({ schedule, scorecard, senders, sites, inp
   const strays = new Set(findStrays({ schedule, scorecard }).map((r) => r.key));
   const launchLabels = new Set([...scheduleByLabel.keys(), ...launchd.configured, ...(launchd.loaded ?? [])]);
   const { defined, expected } = coverage(schedule, files, deployed);
-  const campaign = proof(readOutreach, "Couldn't check campaign intake or the owner's mailbox.");
+  const campaign = proof(readOutreach, "Couldn't check whether the office replies reached you.");
   for (const a of inputs.agents) add("agent", a.id, a.name, a.role, a.paused ? "paused" : "listed");
   for (const d of inputs.duties) {
     const row = scheduleByDuty.get(d.id);
@@ -141,7 +192,7 @@ export async function checkOperations({ schedule, scorecard, senders, sites, inp
   }
   rows.push(...workerChecks(schedule, inputs, launchd));
   for (const s of senders.rows) add("sender", s.id, s.sender + " · " + s.id, s.what, "listed",
-    s.id === CAMPAIGN ? await campaign : noProof());
+    s.id === CAMPAIGN ? await campaign : await proof(() => readSender(s), "Couldn't check whether this sender's email arrived."));
   for (const path of senderDrift) add("sender", path, path, "Find the sender’s recipient and expected delivery.", "unlisted");
   for (const m of inputs.mailboxes) add("mailbox", m.id, m.name, `Receive mail and deliver it through ${m.handler}.`, "listed",
     m.id === CAMPAIGN ? await campaign : noProof());
@@ -326,6 +377,17 @@ export async function runOperationsCheck(api, { env = process.env, fetchImpl = f
       } catch { /* No observation for this repo; its expected entries show unknown. */ }
     }
   }));
+  // One read of every receipt (scripts/ops/lib/simone-operations.mjs readArrivals): agent mail by her
+  // Gmail when Boss OS holds a read-only grant, else Resend's delivery event; office replies by the
+  // morning emails that carried them.
+  const receipts = (async () => {
+    let feed = null;
+    try { feed = await senderClient(localConfig(env), boundedFetch).replies(dayOf(Date.now(), undefined, -30)); } catch { feed = null; }
+    return readArrivals({ arrivals: input.arrivals, feed, now: Date.now(),
+      mailbox: personalGrantPresent(env) ? await personalSearch(env, boundedFetch) : null,
+      resend: (row) => resendEvent(row, env, boundedFetch) });
+  })();
+  receipts.catch(() => {});
   const report = await checkOperations({
     schedule, scorecard, senders, sites, inputs: input, launchd, files: scans, day: input.day, deployed, senderDrift: code.senderDrift,
     readSite: (site) => readSite(site, boundedFetch),
@@ -342,22 +404,8 @@ export async function runOperationsCheck(api, { env = process.env, fetchImpl = f
       if (metric.floor?.op !== ">=") return unknown(`Read ${metric.label}; a trend comparison needs the Scorecard's historical reading.`);
       return result(read.raw >= metric.floor.value ? "verified" : "missing", `${metric.label}: ${read.raw} (target ${metric.floor.value}).`);
     },
-    readOutreach: async () => {
-      const mailbox = env.PNP_OUTREACH_PROOF_MAILBOX?.trim().toLowerCase();
-      if (!BRAND_MAILBOXES.some((brand) => brand.mailbox === mailbox)) return unknown("Couldn't check the owner's receiving mailbox; its approved connection is unavailable.");
-      const gate = async () => {
-        const state = await api("GET", "/operations/inputs?google_account=" + encodeURIComponent(mailbox));
-        return state.day === input.day && state.googleEnabled === true && !state.stopped;
-      };
-      if (!await gate()) return unknown("Owner mailbox access is off.");
-      const status = await senderClient(localConfig(env), boundedFetch).status();
-      let token;
-      return outreachReceipt(status, async (query) => {
-        token ??= await googleAccess(ctx, "https://www.googleapis.com/auth/gmail.readonly", mailbox);
-        if (!await gate()) throw new Error("Owner mailbox access is off");
-        return gmailHeaders(token, query, 1, boundedFetch);
-      });
-    },
+    readOutreach: async () => (await receipts).replies,
+    readSender: async (row) => (await receipts).forSender(row),
   });
   return api("POST", "/operations/report", { day: input.day, ...report });
 }
