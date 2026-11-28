@@ -8,21 +8,30 @@
  */
 import manifest from "./manifest.json";
 import owners from "../../../../docs/outbound_email_owners.json";
+import { inOneClock } from "../words";
 
 export interface MapsHealth {
-  emailMap: { rows: number; withScheduleAndPause: number };
-  teamDuties: { paths: number };
+  emailMap: { rows: number; withScheduleAndPause: number; inOneClock: number };
+  /** `joinedToDuty`: paths Team → Duties shows inside the duty that is their job (28 Nov 2026). */
+  teamDuties: { paths: number; joinedToDuty: number };
 }
 
 const filled = (v: unknown) => typeof v === "string" && v.trim() !== "";
 
 export function mapsHealth(
   m: { rows?: Array<{ when?: unknown; pause?: unknown }> } = manifest as never,
-  o: { owners?: Record<string, { seat?: unknown }> } = owners as never,
+  o: { owners?: Record<string, { seat?: unknown; duty?: unknown }> } = owners as never,
 ): MapsHealth {
   const rows = Array.isArray(m?.rows) ? m.rows : [];
   return {
-    emailMap: { rows: rows.length, withScheduleAndPause: rows.filter((r) => filled(r?.when) && filled(r?.pause)).length },
-    teamDuties: { paths: Object.values(o?.owners ?? {}).filter((e) => filled(e?.seat)).length },
+    emailMap: {
+      rows: rows.length,
+      withScheduleAndPause: rows.filter((r) => filled(r?.when) && filled(r?.pause)).length,
+      inOneClock: rows.filter((r) => filled(r?.when) && inOneClock(r.when as string)).length,
+    },
+    teamDuties: {
+      paths: Object.values(o?.owners ?? {}).filter((e) => filled(e?.seat)).length,
+      joinedToDuty: Object.values(o?.owners ?? {}).filter((e) => filled(e?.seat) && filled(e?.duty)).length,
+    },
   };
 }

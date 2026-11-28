@@ -6,7 +6,7 @@
  * on the real manifest and the real page code.
  */
 import { describe, expect, it } from "vitest";
-import { EMAIL_MAP, RUNS_SHORT, centralClock, countLine, summaryLine, summaryParts } from "../src/client/boss/pages/EmailMap";
+import { EMAIL_MAP, RUNS_SHORT, centralClock, countLine, macLine, summaryLine, summaryParts } from "../src/client/boss/pages/EmailMap";
 import { plainWhere } from "../src/client/boss/pages/Team";
 
 describe("the Email Map's numbers add up", () => {
@@ -16,10 +16,9 @@ describe("the Email Map's numbers add up", () => {
     expect(p.total).toBeGreaterThan(50);
     expect(p.sends + p.folded + p.off).toBe(p.total);
     expect(p.cloud + p.mac).toBe(p.sends);
-    const line = summaryLine();
-    expect(line).toContain(`${p.total} automated emails listed`);
-    expect(line).toContain(`${p.sends} go out on their own: ${p.cloud} from the cloud`);
-    expect(line).toContain(`${p.folded} are sections inside another email`);
+    // One sentence: the total, then the three parts that make it, nothing else (28 Nov 2026: "a wall of figures").
+    expect(summaryLine()).toBe(`${p.total} automated emails across ${EMAIL_MAP.businesses.length} businesses: ${p.sends} go out on their own, ${p.folded} are sections inside another email, and ${p.off} ${p.off === 1 ? "is" : "are"} switched off or not an email.`);
+    expect(macLine()).toBe(`${p.mac} of the ${p.sends} send only while your Mac is awake; the rest go out from the cloud.`);
   });
 
   it("a business's count names each part (no bare \"more listed\")", () => {

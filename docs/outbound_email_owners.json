@@ -1,11 +1,11 @@
 {
-  "_note": "Who owns each sending path in docs/OUTBOUND_EMAIL_MAP.md, by its stable Id. ONE list: Team -> Duties reads it at build, and tests/outboundEmailMap.test.ts fails CI on a map row with no entry here, an entry for an Id the map no longer has, or a seat that is neither on the roster (src/client/public/employees-boss/CASTING.json) nor in `outside`. A new path goes on the map AND here in the same PR.",
+  "_note": "Who owns each sending path in docs/OUTBOUND_EMAIL_MAP.md, by its stable Id. ONE list: Team -> Duties reads it at build, and tests/outboundEmailMap.test.ts fails CI on a map row with no entry here, an entry for an Id the map no longer has, or a seat that is neither on the roster (src/client/public/employees-boss/CASTING.json) nor in `outside`. A new path goes on the map AND here in the same PR. An entry's optional `duty` names the standing duty that IS this path's job, so Team -> Duties shows the two as one row; tests/dutiesAndMapWords.test.ts fails on a duty no migration creates or two paths naming one duty.",
   "outside": [
     "The client"
   ],
   "owners": {
-    "meeting-prep": { "seat": "Simone", "why": "Simone prepares upcoming calls from the owner’s calendar." },
-    "mac-disk": { "seat": "Kendra", "why": "Kendra owns Mac health and the low-space checks." },
+    "meeting-prep": { "seat": "Simone", "why": "Simone prepares upcoming calls from the owner’s calendar.", "duty": "duty_meeting_prep" },
+    "mac-disk": { "seat": "Kendra", "why": "Kendra owns Mac health and the low-space checks.", "duty": "duty_mac_cleanup" },
     "invitation-answers": { "seat": "Simone", "why": "Simone handles calendar and mailbox replies on the owner’s instruction." },
     "spirit-in-morning": { "seat": "Imani", "why": "Imani owns the daily practice material carried in Your day." },
     "brains-lines": { "seat": "Simone", "why": "Simone carries the brains check and scoreboard into Your day." },
@@ -17,7 +17,7 @@
     "senior-facility-release": { "seat": "Camille", "why": "Memphis Senior Care Homes' release emails to communities; The Industry Guides' lead paths and property performance are Camille's duty." },
     "senior-pass-notice": { "seat": "Camille", "why": "Memphis Senior Care Homes' pass notices to communities; The Industry Guides' lead paths and property performance are Camille's duty." },
     "senior-family-followups": { "seat": "Camille", "why": "Memphis Senior Care Homes' 30/60/90-day family follow-ups; The Industry Guides' lead paths and property performance are Camille's duty." },
-    "exec-report": { "seat": "Camille", "why": "Camille delivers the Executive Intelligence Report." },
+    "exec-report": { "seat": "Camille", "why": "Camille delivers the Executive Intelligence Report.", "duty": "duty_exec_intel" },
     "boss-task-notices": { "seat": "Simone", "why": "Simone oversees all Boss OS work as Chief of Staff. Team notices appear in her morning email." },
     "repo-change": { "seat": "Danielle", "why": "Danielle's repo-change lane (Plan B, 20 Sep 2026)." },
     "simone-commands": { "seat": "Simone", "why": "Simone does it by email (25 Oct 2026): her follow-ups on lookups, drafts, bounces and codes." },
@@ -28,7 +28,7 @@
     "errand-reminders": { "seat": "Simone", "why": "Before a booking (26 Oct 2026): \"Do you still want to go?\" 28 hours before, e.g. the 11:00 pm DJ set on Thursday, October 29 is asked Wednesday, October 28 at 7:00 pm, with Yes, keep it / Cancel it." },
     "simone-sends-on-her-word": { "seat": "Simone", "why": "Simone does it by email (25 Oct 2026): the invite she asked for, and an email to a person only after her Send." },
     "youtube-comment-watch": { "seat": "Monique", "why": "Signed by Monique (#monique comment watch for How We Know)." },
-    "kdp-surface-report": { "seat": "Simone", "why": "Simone owns the KDP surface." },
+    "kdp-surface-report": { "seat": "Simone", "why": "Simone owns the KDP surface.", "duty": "duty_kdp_surface" },
     "service-tick": { "seat": "Kendra", "why": "Systems Manager: the Mac poll that runs every employee's service rules." },
     "ci-sweep-issues": { "seat": "Danielle", "why": "Technical Program Manager: shipping and red CI across the repos." },
     "guides-lead-notification": { "seat": "Camille", "why": "The Industry Guides' lead forms; property performance is Camille's duty." },
@@ -51,10 +51,10 @@
     "pnp-hold-reminders": { "seat": "Danielle", "why": "Porch & Party's own mail, sent by the p-n-p repo (a grid repo) through its pnp-mailer Worker; Danielle ships changes to it." },
     "pnp-customer-reminders": { "seat": "Danielle", "why": "Porch & Party's own mail, sent by the p-n-p repo (a grid repo) through its pnp-mailer Worker; Danielle ships changes to it." },
     "toni-risk-watch": { "seat": "Toni", "why": "Her daily risk watch and weekly outside-locks check (22 Oct 2026)." },
-    "zora-archive-audit": { "seat": "Zora", "why": "Her Friday archive audit (22 Oct 2026)." },
+    "zora-archive-audit": { "seat": "Zora", "why": "Her Friday archive audit (22 Oct 2026).", "duty": "duty_archive_audit" },
     "simone-mail-tail-report": { "seat": "Simone", "why": "The tail on the jobs she emails Boss OS (22 Oct 2026)." },
-    "simone-your-day": { "seat": "Simone", "why": "Her Your day every morning and Your week on Mondays (22 Oct 2026)." },
-    "monique-prospects": { "seat": "Monique", "why": "Her prospect sequence (owner, 23 Oct 2026, ruling 11)." },
+    "simone-your-day": { "seat": "Simone", "why": "Her Your day every morning and Your week on Mondays (22 Oct 2026).", "duty": "duty_your_day" },
+    "monique-prospects": { "seat": "Monique", "why": "Her prospect sequence (owner, 23 Oct 2026, ruling 11).", "duty": "duty_prospects" },
     "lp8-drip": { "seat": "Monique", "why": "The one-list sequence she approved (owner, 15 Nov 2026)." },
     "her-tap-send": { "seat": "Monique", "why": "Monique holds the replies; the owner's tap sends them (owner, 23 Oct 2026, ruling 10)." }
   }

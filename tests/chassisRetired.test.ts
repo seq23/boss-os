@@ -77,9 +77,9 @@ describe("what stays open", () => {
   });
 
   it("a map row with no schedule or no pause step is not counted, and an empty map counts 0", () => {
-    expect(mapsHealth({ rows: [{ when: "Daily", pause: "Disable x" }, { when: "", pause: "Disable y" }, { when: "Daily" }] }, { owners: {} }))
-      .toEqual({ emailMap: { rows: 3, withScheduleAndPause: 1 }, teamDuties: { paths: 0 } });
-    expect(mapsHealth({}, {})).toEqual({ emailMap: { rows: 0, withScheduleAndPause: 0 }, teamDuties: { paths: 0 } });
+    expect(mapsHealth({ rows: [{ when: "Daily", pause: "Disable x" }, { when: "", pause: "Disable y" }, { when: "Daily 7:00" }] }, { owners: { a: { seat: "Zora", duty: "duty_x" }, b: { seat: "Zora" }, c: { duty: "duty_y" } } }))
+      .toEqual({ emailMap: { rows: 3, withScheduleAndPause: 1, inOneClock: 1 }, teamDuties: { paths: 2, joinedToDuty: 1 } });
+    expect(mapsHealth({}, {})).toEqual({ emailMap: { rows: 0, withScheduleAndPause: 0, inOneClock: 0 }, teamDuties: { paths: 0, joinedToDuty: 0 } });
   });
 
   it("an unreachable database reads as not ok, never as healthy", async () => {

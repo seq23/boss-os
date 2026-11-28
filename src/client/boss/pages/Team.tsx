@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { usd } from "../../../shared/boss/types";
 import { OutreachDesk } from "../components/Outreach";
 import { buildOperations } from "../operationsSource";
-import type { OperationsRow } from "../../../shared/boss/operations";
+import { nextRunWords, pairDutiesWithPaths, type OperationsRow } from "../../../shared/boss/operations";
+import { centralStamp, dollars, dutyWhen, twelveHourTimes } from "../../../shared/boss/words";
 import { YourTeam } from "./YourTeam";
-import { EMAIL_MAP, RUNS_SHORT, centralClock } from "./EmailMap";
+import { EMAIL_MAP, RUNS_SHORT, fromToLine } from "./EmailMap";
 import { EmployeePage } from "./EmployeePage";
 
 export type TeamView = "team" | "duties" | "owns" | "outreach" | "prompts" | "capabilities";
@@ -678,11 +679,13 @@ function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
   const [preview, setPreview] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
   const [filed, setFiled] = useState<any | null>(null);
+  // The schedule could not be read: the page says so and shows no dates, never a stale "next".
+  const [rosterFailed, setRosterFailed] = useState(false);
 
   function load() {
     Promise.all([api.roster(), api.dutyDrafts()])
-      .then(([r, d]) => { setData(r); setDrafts(d); if (!employeeId && r.roster?.[0]) setEmployeeId(r.roster[0].id); })
-      .catch(setError);
+      .then(([r, d]) => { setData(r); setDrafts(d); setRosterFailed(false); if (!employeeId && r.roster?.[0]) setEmployeeId(r.roster[0].id); })
+      .catch((e) => { setData(null); setRosterFailed(true); setError(e); });
     // The ledgers are their own request: a failure there leaves the schedule readable and says so.
     api.operations().then(setLedgers).catch((e) => { setLedgers(null); setError(e); });
   }
@@ -704,21 +707,8 @@ function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
     finally { setBusy(false); }
   }
 
-  const when = (d: any) => {
-    const t = `${centralClock(d.local_hour, d.local_minute)} Central`;
-    if (d.cadence === "daily") {
-      let days: number[] = [];
-      try { days = JSON.parse(d.weekdays ?? "null") ?? []; } catch { days = []; }
-      return days.length ? `${days.map((n) => DAY_SHORT[n]).join("/")} at ${t}` : `daily at ${t}`;
-    }
-    if (d.cadence === "weekly") return `${DAY_SHORT[d.weekday ?? 1]} at ${t}`;
-    return `${d.cadence} at ${t}`;
-  };
-  const executor = (d: any) => d.executor === "local_job" ? `your Mac · ${d.local_job ?? "?"}` : d.executor === "worker" ? "the Worker" : `agent · ${d.model ? (d.model.includes("sonnet") ? "Sonnet" : "Haiku") : "NO MODEL NAMED"}`;
-  // One clock on every page: 12-hour, Central, said (ship review, 27 Nov 2026; the Email Map uses the same).
-  const stamp = (ms: number | null) => ms
-    ? `${new Date(ms).toLocaleString("en-US", { timeZone: "America/Chicago", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} Central`
-    : "—";
+  // One clock on every page: 12-hour, Central, said (src/shared/boss/words.ts; the Email Map uses the same).
+  const stamp = (ms: number | null) => (typeof ms === "number" && Number.isFinite(ms) ? centralStamp(ms) : "—");
 
   return (
     <>
@@ -731,7 +721,12 @@ function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
         */}
       <p className="eyebrow">Operations</p>
       <div className="panel" data-testid="ops-synopsis">
-        {ops === null ? <p className="row-sub" style={{ margin: 0 }}>Reading the schedule and today&apos;s ledgers…</p> : (
+        {rosterFailed ? (
+          <p className="row-sub" style={{ margin: 0 }} data-testid="ops-unchecked">
+            Couldn&apos;t check the schedule just now, so no run times are shown.{" "}
+            <button className="btn btn-small" onClick={load}>Try again ↻</button>
+          </p>
+        ) : ops === null ? <p className="row-sub" style={{ margin: 0 }}>Reading the schedule and today&apos;s ledgers…</p> : (
           <>
             <div className="row-title" data-testid="ops-running">{ops.synopsis.running}</div>
             <div className="row-title" data-testid="ops-sent">{ops.synopsis.sent}</div>
@@ -742,7 +737,7 @@ function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
       {ops && ops.unassigned.length > 0 && (
         <section data-testid="ops-unassigned" aria-label="Unassigned paths">
           <p className="eyebrow">Unassigned — no seat owns these</p>
-          {ops.unassigned.map((r) => <PathRow key={r.id} row={r} stamp={stamp} onOpenOutreach={onOpenOutreach} />)}
+          {ops.unassigned.map((r) => <JobRow key={r.id} path={r} onOpenOutreach={onOpenOutreach} />)}
         </section>
       )}
 
@@ -792,48 +787,32 @@ function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
 
       {data && (
         <div className="stats">
-          <div className="stat"><div className="stat-n">${data.monthly_estimate_usd}</div><div className="stat-l">a month, estimated, of ${data.ceiling_usd}</div></div>
+          <div className="stat"><div className="stat-n">{dollars(data.monthly_estimate_usd)}</div><div className="stat-l">a month, estimated, of {dollars(data.ceiling_usd)}</div></div>
           <div className="stat"><div className="stat-n">{data.empty_seats?.length ?? 0}</div><div className="stat-l">empty seats</div></div>
         </div>
       )}
 
-      {data === null ? <Loading /> : (data.roster ?? []).map((e: any) => (
-        <section key={e.id} data-testid="duties-employee" aria-label={`${e.name}'s duties`}>
-          <p className="eyebrow">{e.name} — {e.role}</p>
-          {e.duties.length === 0 && !(ops?.bySeat.get(e.name)?.length) ? (
-            <Empty title="No standing duties" hint="An empty seat: give her one above." />
-          ) : e.duties.map((d: any) => (
-            <div className="row" key={d.id} data-testid="duty-row">
-              <div className="row-main">
-                <div className="row-title">
-                  {d.name}
-                  {d.suspended ? <span className="pill">suspended</span> : d.overdue ? <span className="pill pill-forbid">overdue</span> : null}
-                  {d.model_warning && <span className="pill state-live">Model needs setup</span>}
-                </div>
-                {d.model_warning && (
-                  <div className="row-sub" data-testid="duty-model-warning">
-                    {d.model_warning} To fix it, email boss@sequoiataylor.com: “Change {e.name}’s {d.name} duty: use Sonnet” (or Haiku).
-                  </div>
-                )}
-                <div className="row-sub">
-                  {when(d)} · {executor(d)} · about ${d.estimated_per_month_usd}/mo
-                </div>
-                <div className="row-sub">
-                  {d.last_run_at ? `Last ran ${stamp(d.last_run_at)}` : "Hasn’t run yet"}
-                  {d.last_outcome ? ` · ${d.last_outcome}${d.last_failure_reason ? ` — ${d.last_failure_reason}` : ""}` : ""}
-                </div>
-              </div>
-              <div className="row-val">{d.suspended ? "off" : `next ${stamp(d.next_due_at)}`}</div>
-            </div>
-          ))}
-          {(ops?.bySeat.get(e.name) ?? []).map((r) => <PathRow key={r.id} row={r} stamp={stamp} onOpenOutreach={onOpenOutreach} />)}
-        </section>
-      ))}
+      {data === null ? (rosterFailed ? null : <Loading />) : (data.roster ?? []).map((e: any) => {
+        const { paired, loose } = pairDutiesWithPaths(e.duties as any[], ops?.bySeat.get(e.name) ?? []);
+        return (
+          <section key={e.id} data-testid="duties-employee" aria-label={`${e.name}'s duties`}>
+            <p className="eyebrow">{e.name} — {e.role}</p>
+            {e.duties.length === 0 && loose.length === 0 ? (
+              <Empty title="No standing duties" hint="An empty seat: give her one above." />
+            ) : (
+              <>
+                {e.duties.map((d: any) => <JobRow key={d.id} duty={d} seat={e.name} path={paired.get(d.id)} onOpenOutreach={onOpenOutreach} />)}
+                {loose.map((r) => <JobRow key={r.id} path={r} onOpenOutreach={onOpenOutreach} />)}
+              </>
+            )}
+          </section>
+        );
+      })}
 
       {ops && OUTSIDE(ops).map(([owner, rows]) => (
         <section key={owner} data-testid="duties-outside" aria-label={`${owner}'s paths`}>
           <p className="eyebrow">{owner} — outside Boss OS</p>
-          {rows.map((r) => <PathRow key={r.id} row={r} stamp={stamp} onOpenOutreach={onOpenOutreach} />)}
+          {rows.map((r) => <JobRow key={r.id} path={r} onOpenOutreach={onOpenOutreach} />)}
         </section>
       ))}
 
@@ -861,8 +840,6 @@ function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
     </>
   );
 }
-
-const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** Owners who are not Boss OS seats (a client), each with their paths. */
 const OUTSIDE = (ops: ReturnType<typeof buildOperations>) =>
@@ -896,34 +873,83 @@ export function plainWhere(where: string): string {
   return WHERE_PLAIN[where] ?? (/folded/i.test(where) ? RUNS_SHORT.folded! : where);
 }
 
-function PathRow({ row, stamp, onOpenOutreach }: { row: OperationsRow; stamp: (ms: number | null) => string; onOpenOutreach: () => void }) {
-  const email = EMAIL_BY_ID.get(row.id);
-  const p = row.pause;
+/** Where a duty runs, in the same words as the Email Map's chip (one set of place names). */
+export function dutyPlace(d: { executor: string; model?: string | null }): string {
+  if (d.executor === "local_job") return RUNS_SHORT.mac!;
+  if (d.executor === "worker") return RUNS_SHORT["cloud-cron"]!;
+  const model = !d.model ? "model not set" : d.model === "shared-free" ? "a free model" : d.model.includes("sonnet") ? "Sonnet" : "Haiku";
+  return `An AI teammate (${model})`;
+}
+
+/** The right-hand "when" of a duty: a next run, a missed one with its date, or that it could not be told. */
+export function dutyNextWords(d: any, now: number = Date.now()): string {
+  if (d.suspended === 1) return "switched off";
+  // Owed within the day: it runs at its next chance (the Worker's tick, the Mac's next wake). Older: missed.
+  if (typeof d.missed_since === "number") return `${now - d.missed_since < 86_400_000 ? "due since" : "missed since"} ${centralStamp(d.missed_since)}`;
+  if (typeof d.next_run_at === "number") return `next ${centralStamp(d.next_run_at)}`;
+  if (d.next_unknown) return "couldn't work out the next run";
+  return "couldn't check the next run";
+}
+
+/**
+ * ONE ROW, ONE LAYOUT, for a duty, a sending path, or a duty and the email it sends (ship review,
+ * 27 Nov 2026: two row designs side by side, and the same job twice). Title is a short name; the
+ * description, who it is from and to, where it runs, when, and what happened last sit under it in
+ * the Email Map's own words; "Show details" holds only what the row does not already say.
+ */
+export function JobRow({ duty: d, path: row, seat, onOpenOutreach }: { duty?: any; path?: OperationsRow; seat?: string; onOpenOutreach: () => void }) {
+  const email = row ? EMAIL_BY_ID.get(row.id) : undefined;
+  const title: string = email?.name ?? d?.name ?? plainWhat(row!.what);
+  const place = email ? RUNS_SHORT[email.runs] ?? email.runs : d ? dutyPlace(d) : plainWhere(row!.where);
+  const when = email?.when ?? (d ? dutyWhen(d) : twelveHourTimes(plainWhat(row!.cadence).replace(/^launchd\s+\S+\s+/, "")));
+  const p = row?.pause;
+  const details: Array<[string, React.ReactNode]> = [];
+  if (d && email && d.name !== title) details.push(["Duty", d.name]);
+  if (d && email) details.push(["Runs on", dutyPlace(d)]);
+  if (d?.local_job) details.push(["Script on your Mac", d.local_job]);
+  if (email || row) details.push(["From address", email?.from ?? plainWhat(row!.from)]);
+  if (p) details.push(["How to pause it", p.kind === "command" ? <code>{p.command}</code> : p.kind === "action" ? "Open Team → Outreach to manage sending." : p.label]);
   return (
-    <div className="row" data-testid="path-row" data-path-id={row.id}>
+    <div className="row" data-testid={d ? "duty-row" : "path-row"} data-path-id={row?.id} data-duty-id={d?.id}>
       <div className="row-main">
-        <div className="row-title">{email?.name ?? plainWhat(row.what)}</div>
+        <div className="row-title">
+          {title}
+          {d?.suspended ? <span className="pill">switched off</span> : d?.overdue ? <span className="pill pill-forbid">overdue</span> : null}
+          {d?.model_warning && <span className="pill state-live">Model needs setup</span>}
+        </div>
+        {d?.model_warning && (
+          <div className="row-sub" data-testid="duty-model-warning">
+            {d.model_warning} To fix it, email boss@sequoiataylor.com: “Change {seat}’s {d.name} duty: use Sonnet” (or Haiku).
+          </div>
+        )}
         {email && <div className="row-sub">{email.what}</div>}
         <div className="row-sub">
-          {email && <span>From {email.sender} · to {email.to} · </span>}
-          <span className="email-map-runs" data-testid="path-runs">{email ? RUNS_SHORT[email.runs] ?? email.runs : plainWhere(row.where)}</span>
-          {row.inert && !email && <span className="pill">off</span>}
-          {row.ownerKind === "unassigned" && <span className="pill state-live">unassigned</span>}
+          {email && <span>{fromToLine(email)} · </span>}
+          <span className="email-map-runs" data-testid="path-runs">{place}</span>
+          {d && <span> · about {dollars(d.estimated_per_month_usd)} a month</span>}
+          {row?.inert && !email && <span className="pill">off</span>}
+          {row?.ownerKind === "unassigned" && <span className="pill state-live">unassigned</span>}
         </div>
-        <div className="row-sub">{email?.when ?? plainWhat(row.cadence).replace(/^launchd\s+\S+\s+/, "")}</div>
-        {row.lastOutcome && <div className="row-sub">Last result: {row.lastOutcome}</div>}
-        <details className="brain-rev">
-          <summary>Show details</summary>
-          <dl className="email-map-dl">
-            <dt>From address</dt><dd>{email?.from ?? plainWhat(row.from)}</dd>
-            <dt>How to pause it</dt>
-            <dd>{p.kind === "command" ? <code>{p.command}</code> : p.kind === "action" ? "Open Team → Outreach to manage sending." : p.label}</dd>
-          </dl>
-        </details>
+        <div className="row-sub">{when}</div>
+        {d && (
+          <div className="row-sub">
+            {d.last_run_at ? `Last ran ${centralStamp(d.last_run_at)}` : "Hasn’t run yet"}
+            {d.last_outcome ? ` · ${d.last_outcome}${d.last_failure_reason ? ` — ${d.last_failure_reason}` : ""}` : ""}
+          </div>
+        )}
+        {row?.lastOutcome && <div className="row-sub">Last result: {row.lastOutcome}</div>}
+        {details.length > 0 && (
+          <details className="brain-rev">
+            <summary>Show details</summary>
+            <dl className="email-map-dl">
+              {details.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}
+            </dl>
+          </details>
+        )}
       </div>
       <div className="row-val">
-        <div>{row.next.at ? `next ${stamp(row.next.at)}` : row.next.label}</div>
-        {p.kind === "action" && (
+        <div>{d ? dutyNextWords(d) : nextRunWords(row!.next)}</div>
+        {p?.kind === "action" && (
           <button className="btn btn-small" onClick={onOpenOutreach} data-testid="path-pause">{p.label}</button>
         )}
       </div>

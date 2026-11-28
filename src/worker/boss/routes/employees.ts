@@ -10,6 +10,7 @@ import { preApprovalIn, usesFixedFreeReader } from "../../../shared/boss/duties/
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { dayIdInZone, wallClock, zonedTime } from "../../../shared/boss/timezone";
 import { overlappingCharters, type RosterMember } from "@shared/boss/rosterOverlap";
+import { centralClockOf, isOverdue, shownNextRun } from "../duties/cadence";
 
 export const employees = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -31,6 +32,21 @@ const LIFECYCLE = ["proposed", "provisional", "active", "under_review", "merged"
  *     weeks into a handler that did not exist, and every signal read as success because a duty's
  *     success criterion is that it ran.
  */
+/** A roster row's next run as the screen prints it: `next_run_at`, `missed_since`, `next_unknown`. */
+export function shownNextFields(d: any, now: number): {
+  next_run_at: number | null; missed_since: number | null; next_unknown: boolean;
+  central_clock: { hour: number; minute: number; day_shift: number } | null;
+} {
+  let weekdays: number[] | null = null;
+  try { weekdays = JSON.parse(d.weekdays ?? "null"); } catch { weekdays = null; }
+  const schedule = {
+    cadence: d.cadence, weekday: d.weekday ?? null, weekdays: Array.isArray(weekdays) ? weekdays : null,
+    local_hour: Number(d.local_hour), local_minute: Number(d.local_minute ?? 0), timezone: d.timezone || "America/Chicago",
+  };
+  const shown = shownNextRun({ ...schedule, next_due_at: d.next_due_at ?? null, suspended: d.suspended, last_run_at: d.last_run_at ?? null, created_at: d.created_at ?? null }, now);
+  return { next_run_at: shown.at, missed_since: shown.missedSince, next_unknown: shown.unknown, central_clock: centralClockOf(schedule, now) };
+}
+
 employees.get("/roster", async (c) => {
   const now = Date.now();
   const [people, duties] = await Promise.all([
@@ -44,7 +60,7 @@ employees.get("/roster", async (c) => {
       .prepare(
         `SELECT id, name, employee_id, cadence, weekday, weekdays, local_hour, local_minute,
                 timezone, executor, next_due_at, last_run_at, suspended, suspended_reason,
-                success_criteria, task_input, last_outcome, last_outcome_at, last_failure_reason
+                success_criteria, task_input, last_outcome, last_outcome_at, last_failure_reason, created_at
            FROM standing_duties ORDER BY employee_id, next_due_at`,
       )
       .all<any>(),
@@ -98,7 +114,10 @@ employees.get("/roster", async (c) => {
        * switched off with a reason. All three used to render the same way: as a row.
        */
       state: d.suspended === 1 ? "suspended" : d.last_run_at ? "running" : "never fired",
-      overdue: d.suspended !== 1 && d.next_due_at < now - 86_400_000,
+      // A missing clock is not "overdue" (null < n is true in JavaScript, so a duty with no clock read OVERDUE).
+      overdue: isOverdue(d, now),
+      // What the screen prints as the next run: never a past date (cadence.ts `shownNextRun`).
+      ...shownNextFields(d, now),
     });
     byEmployee.set(d.employee_id, list);
   }

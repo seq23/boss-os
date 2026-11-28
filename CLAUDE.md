@@ -466,7 +466,9 @@ Owner, 31 Oct 2026: "one Email Map page inside Boss OS, all businesses". Pinned 
 3. **Public repo.** Business sending addresses only (`BUSINESS_DOMAINS`); she is "You"; never a
    customer, LP, prospect or investor name.
 4. `docs/OUTBOUND_EMAIL_MAP.md` stays the detailed audit of the Boss OS and side-business paths that
-   Team → Duties reads; every Id there is a manifest row with the same owner.
+   Team → Duties reads; every Id there is a manifest row with the same owner. An owners-file entry's
+   `duty` names the standing duty that is that path's job, and Team → Duties shows the two as one row
+   in the Email Map's words (`pairDutiesWithPaths`, `tests/dutiesAndMapWords.test.ts`, 28 Nov 2026).
 
 ## The Social Map: every social account, every business
 

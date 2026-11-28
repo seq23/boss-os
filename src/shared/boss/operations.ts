@@ -1,4 +1,5 @@
 import { OWNER_TIMEZONE, wallClock, zonedTime } from "./timezone";
+import { centralStamp } from "./words";
 
 /**
  * ─── ONE OPERATIONS VIEW: EMPLOYEE DUTIES AND MACHINE-RUN EMAIL PATHS, MERGED ───
@@ -32,6 +33,12 @@ export interface MapRow {
 export interface OwnerEntry {
   seat: string;
   why: string;
+  /**
+   * The standing duty that IS this path's job (its id), when one is. Team → Duties then shows the
+   * two as ONE row (ship review, 27 Nov 2026: Zora's archive audit was listed twice, in two layouts).
+   * Written by hand, never guessed from a script name, so two different jobs are never folded together.
+   */
+  duty?: string;
 }
 
 export interface OwnersFile {
@@ -173,6 +180,19 @@ export function nextRunFrom(r: MapRow, now: number): NextRun {
   return { at: null, label: foldedLabel(r) ?? "on event" };
 }
 
+/**
+ * The right-hand "when" of a path row in plain words (ship review, 27 Nov 2026: "on event", "every
+ * 60 min" read as scheduler internals). The labels stay as they are for the counts; only the words
+ * on screen change.
+ */
+export function nextRunWords(n: NextRun, stamp: (ms: number) => string = centralStamp): string {
+  if (n.at !== null) return `next ${stamp(n.at)}`;
+  const every = /^every (\d+) min$/.exec(n.label);
+  if (every) return Number(every[1]) === 60 ? "checked every hour" : `checked every ${every[1]} minutes`;
+  const plain: Record<string, string> = { "on event": "when it happens", off: "switched off", "only in a session": "only in a session" };
+  return plain[n.label] ?? n.label;
+}
+
 /** A line folded into another email has no clock of its own: it goes when that email goes. */
 function foldedLabel(r: MapRow): string | null {
   if (/folded into morning email/i.test(r.runsWhere)) return "with the morning email";
@@ -230,13 +250,17 @@ export interface OperationsRow {
   lastOutcome: string | null;
   pause: PauseControl;
   inert: boolean;
+  /** The standing duty this path is the job of (owners file `duty`), or null. */
+  duty: string | null;
 }
 
 function lastOutcomeFor(r: MapRow, l: OperationsLedgers | null): string | null {
   if (!l) return null;
-  const stamp = (at: number) => new Date(at).toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  // Her clock, the same words as every other time on the page (never a UTC stamp on her screen).
+  const stamp = centralStamp;
   if (r.id === "monique-outreach") {
-    const flag = l.outreach.kill_switch === "on" ? "kill switch ON" : `sending ${l.outreach.sending}`;
+    const sending: Record<string, string> = { live: "sending live", test_only: "sending to the test inbox only" };
+    const flag = l.outreach.kill_switch === "on" ? "kill switch on" : sending[l.outreach.sending] ?? `sending: ${l.outreach.sending.replace(/_/g, " ")}`;
     return l.outreach.last ? `${l.outreach.last.status} ${stamp(l.outreach.last.at)} · ${flag}` : `nothing sent yet · ${flag}`;
   }
   if (r.id === "boss-task-notices") return l.task_notices.last ? `${l.task_notices.last.status} ${stamp(l.task_notices.last.at)}` : "nothing sent yet";
@@ -279,6 +303,7 @@ export function mergeOperations(input: {
       lastOutcome: lastOutcomeFor(r, input.ledgers),
       pause: pauseControl(r),
       inert: isInert(r),
+      duty: entry?.duty?.trim() || null,
     };
   });
   const bySeat = new Map<string, OperationsRow[]>();
@@ -346,4 +371,26 @@ export function synopsis(input: {
     failed: failedRunItems(l),
     counts,
   };
+}
+
+/**
+ * ONE ROW PER JOB ON TEAM → DUTIES (ship review, 27 Nov 2026: "Nothing goes stale quietly…" and
+ * "Friday archive audit" were the same weekly job, listed twice in two layouts).
+ *
+ * A path joins a duty only when the owners file names that duty for it (`duty`), the duty is on the
+ * same seat's list, and no other path of that seat names the same duty. Anything else stays its own
+ * row: two different jobs are never folded into one, and a link to a duty that is not on the list
+ * leaves the path visible rather than hidden.
+ */
+export function pairDutiesWithPaths<D extends { id: string }>(duties: D[], paths: OperationsRow[]): { paired: Map<string, OperationsRow>; loose: OperationsRow[] } {
+  const ids = new Set(duties.map((d) => d.id));
+  const claims = new Map<string, number>();
+  for (const p of paths) if (p.duty) claims.set(p.duty, (claims.get(p.duty) ?? 0) + 1);
+  const paired = new Map<string, OperationsRow>();
+  const loose: OperationsRow[] = [];
+  for (const p of paths) {
+    if (p.duty && ids.has(p.duty) && claims.get(p.duty) === 1) paired.set(p.duty, p);
+    else loose.push(p);
+  }
+  return { paired, loose };
 }

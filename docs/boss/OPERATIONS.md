@@ -306,7 +306,10 @@ You can still act on an existing emailed duty draft. Reply `approved` on its thr
 `changes: make it daily at 3pm` to revise it, or `no` to withdraw it.
 
 Every duty appears on **Team → Duties** with its cadence, executor, last run, next run and last
-outcome. Guards: `validate:duty-birth` (one writer, reached only through the approval loop or a
+outcome. The next run is never a past date: a slot owed today reads "due since", an older one "missed
+since <date>" (`shownNextRun`, cadence.ts), and a schedule that could not be read shows no times at
+all. A duty that is the job of an Email Map path (the owners file's `duty`) is one row, in the Email
+Map's words; times are 12-hour Central and costs show cents (`src/shared/boss/words.ts`). Guards: `validate:duty-birth` (one writer, reached only through the approval loop or a
 recorded pre-approval, the owner ↔ executor ↔ script check above the write, the mail door below the
 sender refusal, the installed-script list pinned to the installer) and `tests/boss/dutiesByEmail.test.ts`.
 
