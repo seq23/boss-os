@@ -6,7 +6,7 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { draftDuty } from "../duties/author";
 import { fileDraft, renderDraft } from "../duties/mailLane";
-import { preApprovalIn } from "../../../shared/boss/duties/lane.mjs";
+import { preApprovalIn, usesFixedFreeReader } from "../../../shared/boss/duties/lane.mjs";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { dayIdInZone, wallClock, zonedTime } from "../../../shared/boss/timezone";
 import { overlappingCharters, type RosterMember } from "@shared/boss/rosterOverlap";
@@ -63,7 +63,8 @@ employees.get("/roster", async (c) => {
     } catch {
       // A malformed input is that duty's problem; one bad row must not make the roster unreadable.
     }
-    const perRun = model?.includes("sonnet") ? 0.3 : 0.05;
+    const fixedFree = d.executor === "local_job" && usesFixedFreeReader(d.id);
+    const perRun = fixedFree ? 0 : model?.includes("sonnet") ? 0.3 : 0.05;
     /*
      * `weekdays` IS PART OF THE CADENCE AND WAS BEING IGNORED. Brokerage sourcing is `daily` with
      * weekdays [1,3,5] — Mon/Wed/Fri — and pricing it as thirty runs a month reported $9 against a
@@ -77,14 +78,15 @@ employees.get("/roster", async (c) => {
     const list = byEmployee.get(d.employee_id) ?? [];
     list.push({
       ...d,
-      model,
+      model: fixedFree ? "shared-free" : model,
       /*
        * A DUTY WITH NO MODEL NAMED INHERITS THE MOST EXPENSIVE ONE AVAILABLE. That is what made a
        * single briefing cost $3.88, and it is invisible unless something says it out loud.
        */
       // Only an agent run uses a model: a Mac script or the Worker's own code never calls one, so "no
       // model named" there is not a fault (ship review, 27 Nov 2026: Zora's Mac-script duty showed it).
-      model_warning: model || d.executor === "local_job" || d.executor === "worker"
+      // A duty on the fixed free route names its model by route, not by row (#584).
+      model_warning: fixedFree || model || d.executor === "local_job" || d.executor === "worker"
         ? null
         : "This duty names no model, so it runs the most expensive one available.",
       local_job: localJob,

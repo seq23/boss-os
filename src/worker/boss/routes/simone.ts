@@ -128,8 +128,8 @@ simone.get("/operations", async (c) => {
 
 simone.get("/operations/inputs", async (c) => {
   if (!(await machineTokenOk(c))) throw new AppError(401, "Locked");
-  const inputs = await operatingInputs(c.env.DB);
   const address = c.req.query("google_account");
+  const inputs = await operatingInputs(c.env.DB, Date.now(), address === undefined);
   if (address !== undefined) {
     return ok(c, { ...inputs, googleEnabled: Boolean(await simoneAccountGate(c.env, address.toLowerCase(), "mail")) });
   }

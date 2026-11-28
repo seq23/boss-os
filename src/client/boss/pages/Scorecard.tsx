@@ -26,13 +26,15 @@ type DailyCheck = { day: string; status: string; note: string };
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 export function Scorecard() {
-  const [data, setData] = useState<{ state: { at: number; week: string; rows: Record<string, RowState> } | null; strays: Stray[]; dailyChecks?: Record<string, DailyCheck> } | undefined>(undefined);
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.scorecard>> | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   useEffect(() => { api.scorecard().then(setData).catch(() => { setFailed(true); setData({ state: null, strays: [] }); }); }, []);
   if (data === undefined) return <Loading />;
   const rows = data.state?.rows ?? {};
   const states = SC.rows.map((r: any) => rows[r.id]?.state ?? "Not read yet");
-  const look = states.filter((s: string) => NEEDS.has(s)).length + data.strays.length + Object.values(data.dailyChecks ?? {}).filter((check) => check.status === "needs-review").length;
+  const checks = data.workerChecks ?? [];
+  const workerMisses = checks.filter((check) => check.state === "missing" || check.state === "unknown").length;
+  const look = states.filter((s: string) => NEEDS.has(s)).length + data.strays.length + workerMisses + Object.values(data.dailyChecks ?? {}).filter((check) => check.status === "needs-review").length;
   const friends = ((sites as any).grid_repos ?? []).filter((s: any) => s.category === "client");
   return (
     <div className="brains" data-testid="scorecard">
@@ -42,6 +44,15 @@ export function Scorecard() {
           : look ? `${plural(SC.rows.length, "initiative")} · ${look} need${look === 1 ? "s" : ""} a look` : `${plural(SC.rows.length, "initiative")} · nothing needs a look`}
       </p>
       <p className="brain-hint">Each initiative's real result against its floor. A miss tries version B once, then pauses; nothing is deleted.{data.state ? ` Read ${shortDate(data.state.week)}.` : ""}</p>
+      <details className="brain-expander scorecard-business">
+        <summary>Daily worker checks{checks.length ? ` · ${workerMisses} need a look` : ""}</summary>
+        {checks.length ? <dl className="email-map-dl">
+          {checks.map((check) => <div key={check.id}>
+            <dt>{check.name}</dt>
+            <dd className={check.state === "missing" || check.state === "unknown" ? "scorecard-red" : undefined}>{check.evidence}</dd>
+          </div>)}
+        </dl> : <p className="brain-hint">Today's worker check hasn't reported.</p>}
+      </details>
       {groupByBusiness(SC).map((g) => (
         <section key={g.key} className="scorecard-business" data-testid={`scorecard-business-${g.key}`}>
           <h2 className="email-map-business-name">{g.label}</h2>

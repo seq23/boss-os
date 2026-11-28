@@ -9,6 +9,7 @@
  */
 import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { clockRows } from "../src/shared/boss/schedule/clock.mjs";
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +21,7 @@ import {
 import { composeSpryWeekly, hostAllowed, loopSection, SPRY_WEEKLY } from "../src/shared/boss/spryWeekly/compose.mjs";
 import { firedBy, jobTitle } from "../src/client/boss/pages/Schedule";
 import { createTestDb, disposeTestDb, type TestDb } from "./helpers/db";
+import { ownershipProblems } from "../scripts/validate/scheduled-worker-owners.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const m = readSchedule(ROOT);
@@ -39,6 +41,31 @@ describe("the Schedule manifest", () => {
     expect(m.rows.length).toBeGreaterThan(150);
     expect(shapeProblems(m)).toEqual([]);
     expect(JSON.stringify(m).toLowerCase()).not.toMatch(/@gmail\.com|sequoia@/);
+  });
+
+  it("accepts the tracked schedule and owner registry through the CI command", () => {
+    const output = execFileSync(process.execPath, ["scripts/validate/scheduled-worker-owners.mjs"], { cwd: ROOT, encoding: "utf8" });
+    expect(output).toContain(`Scheduled worker owners: ${Object.keys(m.workerJobs).length} jobs`);
+  });
+
+  it("refuses unregistered trigger definitions and a registry job without an owner", () => {
+    const unowned = clone();
+    delete unowned.workerJobs.properties.owner;
+    unowned.rows.push({ id: "orphan-duty", trigger: { duty: "duty_orphan" } });
+    const sources = [
+      [".github/workflows/job-orphan.yml", "on: workflow_dispatch"],
+      ["src/worker/index.ts", "export default { scheduled(event, env, ctx) { ctx.waitUntil(newJob(env)); } }"],
+      ["wrangler.toml", '[triggers]\ncrons = ["30 7 * * *"]'],
+      ["scripts/ops/new.plist", "<plist><dict><key>Label</key><string>com.seq.orphan</string></dict></plist>"],
+    ] as const;
+    expect(ownershipProblems(unowned, sources)).toEqual([
+      "properties: no Boss OS owner",
+      "orphan-duty: Schedule row has no registered owner",
+      ".github/workflows/job-orphan.yml: no owned registry job",
+      "Worker call newJob: no owned registry job",
+      "wrangler.toml 30 7 * * *: no owned registry job",
+      "launchd com.seq.orphan: no owned registry job",
+    ]);
   });
 
   it("every repo a row names must sit in one of her repo categories; unreadable categories stop by name", () => {

@@ -8,10 +8,11 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  billingProblemReadings, cloudflareUsageReading, workersAiReading, githubUsageReading, monthProgress, noticeReadings, planRisk, stripeReading,
+  billingProblemReadings, cloudflareUsageReading, workersAiReading, githubUsageReading, monthProgress, noticeReadings, planRisk, BILLING_MAIL, stripeReading,
 } from "../scripts/ops/risk-watch.mjs";
+import { classifyToniThread, reconcileToniReadings, scanToniMailbox } from "../scripts/ops/lib/toni-mail.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
 import { morningSectionProblems } from "../src/shared/boss/mail/morning.mjs";
 import { alarmReading, alarmTargets } from "../src/shared/boss/scorecard/scorecard.mjs";
@@ -21,6 +22,44 @@ const NOW = Date.parse("2026-11-20T14:00:00Z");
 const GH_FAIL = (id: string, date: string) => ({ id, from_domain: "github.com", subject: "[GitHub] We had a problem billing your account", date, kind: "payment_failed", vendor: "GitHub", detail: "The card was declined for the seq23 account, attempt 3 of 3." });
 
 describe("billing watch: a failed payment surfaces as one plain Decide item", () => {
+  const message = (id: string, body: string) => ({
+    id, internalDate: NOW - 1000, headers: { from: "alerts@vendor.example", subject: "Action required on your account" }, body,
+  });
+  const reply = (notices: unknown) => ({ status: "ok", provider: "workers-ai", text: JSON.stringify({ notices }), inTokens: 1, outTokens: 1 } as const);
+
+  it("reads opaque billing subjects with the whole thread through Toni's free route", async () => {
+    const thread = [message("prior", "Invoice context without a short excerpt"), message("m1", "This will be our last attempt to charge the card.")];
+    const read = vi.fn(async () => reply([{ id: "m1", kind: "payment_failed", vendor: "Vendor", detail: "Final attempt" }]));
+    const list = vi.fn(async (_token: string, _query: string): Promise<[string, Set<string>][]> => [["thread", new Set(["m1"])]]);
+    const out = await scanToniMailbox({ token: async () => "fixture", rule: BILLING_MAIL, now: NOW, list, load: async () => thread, read });
+    expect(list).toHaveBeenCalledWith("fixture", expect.stringMatching(/^after:\d+ before:\d+ -in:drafts -in:chats$/));
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ worker: "toni", source: JSON.stringify({ targets: ["m1"], thread }) }), expect.anything());
+    expect(out).toMatchObject({ why: null, count: 1, handled: 1, checkpoint: { through: NOW } });
+    expect(planRisk(noticeReadings(out.notices, "fixture Gmail", "charges:fixture", NOW)).decide[0]?.title).toBe("Vendor could not take a payment");
+  });
+
+  it("holds the window and prior alerts on incomplete, foreign-ID, and capped reads and retries the same item", async () => {
+    const thread = [message("m1", "The card was declined.")];
+    // An answer that skips or swaps the target is never a verdict: the target counts as uncertain (held for her
+    // after three runs, #584 recheck R2), never "other" or a notice; a reader outage still throws and is retried.
+    for (const answer of [[], [{ id: "wrong", kind: "other", vendor: "", detail: "" }]]) {
+      expect(await classifyToniThread(thread, ["m1"], BILLING_MAIL, async () => reply(answer))).toEqual([{ id: "m1", at: thread[0]!.internalDate, kind: "uncertain" }]);
+    }
+    await expect(classifyToniThread(thread, ["m1"], BILLING_MAIL, async () => ({ status: "unavailable", provider: "workers-ai" }) as never)).rejects.toThrow("did not classify every target");
+    const list = vi.fn(async (_token: string, _query: string): Promise<[string, Set<string>][]> => [["thread", new Set(["m1"])]]);
+    const load = async () => thread;
+    const token = async () => "fixture";
+    const held = await scanToniMailbox({ token, rule: BILLING_MAIL, now: NOW, list, load, read: async () => ({ status: "allowance-exhausted", provider: "workers-ai" }) });
+    expect(held).toMatchObject({ count: 1, handled: 0, notices: [], checkpoint: { receipts: {} }, why: expect.stringContaining("FREE_ALLOWANCE_EXHAUSTED") });
+    expect(held.checkpoint.through).toBeUndefined();
+    const prior = { "billing-problem:vendor.example:prior": "alert" };
+    expect(reconcileToniReadings([], prior, ["billing-problem:"])).toEqual({ states: prior, moved: [] });
+    const recovered = await scanToniMailbox({ token, rule: BILLING_MAIL, now: NOW + 86_400_000, list, load, previous: held.checkpoint,
+      read: async () => reply([{ id: "m1", kind: "payment_failed", vendor: "Vendor", detail: "" }]) });
+    expect(list.mock.calls[0]?.[1]?.split(" ")[0]).toBe(list.mock.calls[1]?.[1]?.split(" ")[0]);
+    expect(recovered).toMatchObject({ why: null, handled: 1, notices: [{ id: "m1" }], checkpoint: { through: NOW + 86_400_000 } });
+  });
+
   const github = githubUsageReading({ usageItems: [{ grossAmount: 600, discountAmount: 600, netAmount: 0 }, { grossAmount: 41.75, discountAmount: 41.75, netAmount: 0 }] });
 
   it("GitHub's metered use covered by discounts reads ok, with the amounts", () => {

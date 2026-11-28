@@ -62,10 +62,34 @@ describe("the Mac half", () => {
     expect(r.unchecked).toEqual([]);
   });
 
-  it("flags a skill carrying a known-bad phrase, case-insensitively", () => {
-    const r = checkSkills({ home: fakeHome() });
-    expect(r.skills_checked).toBe(2);
-    expect(r.skills_flagged).toEqual([{ skill: "old-gate", phrase: "human merge gate" }]);
+  it("catches a contradiction in different words using the full skill and rules", async () => {
+    const home = fakeHome();
+    const rules = "# Rules\nAfter checks pass, merge without another signoff.\n";
+    const phrase = "Wait for a second person before integrating checked work.";
+    put(join(home, ".claude", "CLAUDE.md"), rules);
+    put(join(home, ".claude", "skills", "old-gate", "SKILL.md"), `# Workflow\n${phrase}\n`);
+    const r = await checkSkills({ home, read: async ({ worker, source, accept }) => {
+      expect(worker).toBe("zora");
+      expect(JSON.parse(source).rules).toBe(rules);
+      const conflict = JSON.parse(source).skill === `# Workflow\n${phrase}\n`;
+      const text = JSON.stringify({ verdict: conflict ? "conflict" : "consistent", evidence: conflict ? phrase : "" });
+      expect(accept?.(text)).toBe(true);
+      return { status: "ok", provider: "workers-ai", text, inTokens: 1, outTokens: 1 };
+    } });
+    expect(r).toEqual({ skills_checked: 2, skills_flagged: [{ skill: "old-gate", phrase }], unchecked: [] });
+  });
+
+  it("keeps refused and explicitly confidential skills unchecked", async () => {
+    const home = fakeHome();
+    put(join(home, ".claude", "CLAUDE.md"), "# Rules\nFollow the rules here.\n");
+    put(join(home, ".claude", "skills", "old-gate", "SKILL.md"), "<!-- confidential -->\nFixture-only restricted text");
+    const r = await checkSkills({ home, read: async ({ source, accept }) => {
+      expect(source).not.toContain("Fixture-only restricted text");
+      expect(accept?.('{"verdict":"conflict","evidence":"invented rule"}')).toBe(false);
+      return { status: "unavailable" };
+    } });
+    expect(r.skills_checked).toBe(0);
+    expect(r.unchecked).toEqual(["the skills"]);
   });
 
   it("flags a skill line that copies a house rule or a brain's settled decision, never one that points to it", () => {

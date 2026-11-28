@@ -1,11 +1,20 @@
-import { ATTEMPT_DEADLINE_MS } from "./deadlines.ts";
+import { chainRemainingMs, nextAttemptDeadlineMs } from "./deadlines.ts";
 import { gemini, GEMINI_HOST, GEMINI_WORKER_READ_MODEL } from "./gemini.ts";
 import { ProviderCallError, readJsonObject, type CompletionResult, type JsonOutput } from "./types.ts";
 import { workersAi, WORKERS_AI_READ_MODEL } from "./workersAi.ts";
 
-const WORKERS = ["monique", "toni", "danielle", "zora", "camille", "kendra", "imani"] as const;
-type WorkerName = typeof WORKERS[number];
 type ReaderProvider = "gemini" | "workers-ai";
+const workersAiFirst = ["workers-ai", "gemini"] as const;
+const providersByWorker = {
+  monique: ["gemini", "workers-ai"],
+  toni: workersAiFirst,
+  danielle: workersAiFirst,
+  zora: workersAiFirst,
+  camille: workersAiFirst,
+  kendra: workersAiFirst,
+  imani: workersAiFirst,
+} as const satisfies Record<string, readonly ReaderProvider[]>;
+type WorkerName = keyof typeof providersByWorker;
 
 /**
  * The vault names the worker reading route uses (credential ruling, 27 Nov 2026). No other name is read.
@@ -53,6 +62,8 @@ export type WorkerReadingResult =
   | { status: "uncertain" }
   | { status: "refused" };
 
+type SuccessfulRead = Extract<WorkerReadingResult, { status: "ok" }>;
+
 const readingFields = new Set(["worker", "instruction", "source", "maxOutputTokens", "json", "webSearch", "accept"]);
 
 /** Boss OS router entry for scheduled worker reading. Jobs supply the worker and the source.
@@ -63,8 +74,9 @@ const readingFields = new Set(["worker", "instruction", "source", "maxOutputToke
 export async function readWorkerSource(
   input: WorkerReading,
   credentials: WorkerReadingCredentials,
+  recordRead?: (result: SuccessfulRead) => void | Promise<void>,
 ): Promise<WorkerReadingResult> {
-  if (!WORKERS.includes(input.worker) || Object.keys(input).some((key) => !readingFields.has(key))
+  if (!Object.hasOwn(providersByWorker, input.worker) || Object.keys(input).some((key) => !readingFields.has(key))
     || !Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens < 1
     || (input.webSearch !== undefined && (input.webSearch !== true || input.worker !== "monique"))
     || typeof input.instruction !== "string" || typeof input.source !== "string") {
@@ -77,11 +89,11 @@ export async function readWorkerSource(
   const mainAccounts = [MAIN_CLOUDFLARE_ACCOUNT_ID, credentials.CLOUDFLARE_ACCOUNT_ID]
     .filter((id): id is string => !!id).map((id) => id.trim().toLowerCase());
   const billedAccount = !!account && mainAccounts.includes(account.trim().toLowerCase());
-  const order: ReaderProvider[] = input.worker === "monique" ? ["gemini", "workers-ai"] : ["workers-ai", "gemini"];
+  const startedAt = Date.now();
   let exhausted: ReaderProvider | null = null;
   let answered = false;
 
-  for (const provider of order) {
+  for (const provider of providersByWorker[input.worker]) {
     if (provider === "gemini" ? !googleKey : input.webSearch || !account || !cloudflareKey || billedAccount) continue;
     const adapter = provider === "gemini" ? gemini : workersAi;
     const modelSlug = provider === "gemini" ? GEMINI_WORKER_READ_MODEL : WORKERS_AI_READ_MODEL;
@@ -90,8 +102,11 @@ export async function readWorkerSource(
       : { baseUrl: "", workersFreeAccountId: account, apiKey: cloudflareKey };
 
     for (let attempt = 0; attempt < 2; attempt++) {
+      const remaining = nextAttemptDeadlineMs(startedAt, Date.now());
+      if (remaining === null) break;
+      let answer: CompletionResult;
       try {
-        const answer = await adapter.complete({
+        answer = await adapter.complete({
           modelSlug,
           messages: [
             {
@@ -102,14 +117,10 @@ export async function readWorkerSource(
           ],
           maxOutputTokens: input.maxOutputTokens,
           temperature: 0,
-          signal: AbortSignal.timeout(ATTEMPT_DEADLINE_MS),
+          signal: AbortSignal.timeout(remaining),
           json: input.json,
           webSearch: input.webSearch,
         }, context);
-        answered = true;
-        if ((input.webSearch && !answer.sources?.length) || !answer.text.trim() || (input.json && !readJsonObject(answer.text))) break;
-        if (input.accept && !input.accept(answer.text)) break;
-        return { status: "ok", provider, ...answer };
       } catch (error) {
         if (!(error instanceof ProviderCallError)) break;
         // A spent day on one lane moves the read to the other lane; the caller hears "exhausted" only
@@ -117,9 +128,19 @@ export async function readWorkerSource(
         if (error.allowanceExhausted) { exhausted = provider; break; }
         // A per-minute limit names its wait: honour it once, then move on.
         const wait = rateWait(error);
-        if (attempt === 0 && wait !== null) { await pause(wait); continue; }
+        if (attempt === 0 && wait !== null && wait < chainRemainingMs(startedAt, Date.now())) {
+          await pause(wait);
+          continue;
+        }
         break;
       }
+      answered = true;
+      if ((input.webSearch && !answer.sources?.length) || !answer.text.trim() || (input.json && !readJsonObject(answer.text))) break;
+      if (input.accept && !input.accept(answer.text)) break;
+      // Commit a read once; propagate a write failure without retrying it or the model.
+      const result: SuccessfulRead = { status: "ok", provider, ...answer };
+      await recordRead?.(result);
+      return result;
     }
   }
   // Exhausted outranks uncertain: tomorrow's allowance may read it. Uncertain means a model read it and

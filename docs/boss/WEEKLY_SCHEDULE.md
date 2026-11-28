@@ -83,7 +83,7 @@ page holds the new times; `npm run mac-day:check` proves them on the installed p
 | 7:00 | Spry Labs · side businesses | Checks which outside sites link to Citation Velocity |  |
 | 7:45 | West Peek · community | westpeek: checks its keys and passwords still work |  |
 | 8:00 | You · personal | CI sweep: fixes any repo with failing tests |  |
-| 8:40 | You · personal | Outside locks: anyone put a lock on your accounts? Emails you only if yes | ✉ yes |
+| 11:35 | Toni · personal | Outside locks: full-thread review for new account locks. New notices go to Decide | No separate email |
 | 8:40 | You · personal | Archive check: nothing went stale, everything delivered can be found |  |
 | 4pm | Spry Labs · side businesses | How We Know: measures how this week's videos did |  |
 

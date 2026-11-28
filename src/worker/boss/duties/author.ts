@@ -1,5 +1,5 @@
 import type { Env } from "../env";
-import { dutyProblems, hourIn, pickSlot, scriptIn, weekdayIn } from "../../../shared/boss/duties/lane.mjs";
+import { dutyProblems, hourIn, pickSlot, scriptIn, usesFixedFreeReader, weekdayIn } from "../../../shared/boss/duties/lane.mjs";
 
 /**
  * SHE DESCRIBES A DUTY IN HER OWN WORDS; THIS DRAFTS THE PROPER VERSION.
@@ -307,11 +307,12 @@ export async function existingDuties(env: Env): Promise<Array<{ id: string; name
 /** What the schedule already commits to, from the duties that exist. */
 async function committedMonthlyUsd(env: Env): Promise<number> {
   const rows = await env.DB
-    .prepare(`SELECT cadence, task_input FROM standing_duties WHERE suspended = 0`)
-    .all<{ cadence: string; task_input: string | null }>()
+    .prepare(`SELECT id, cadence, task_input FROM standing_duties WHERE suspended = 0`)
+    .all<{ id: string; cadence: string; task_input: string | null }>()
     .catch(() => ({ results: [] as any[] }));
   let total = 0;
   for (const d of (rows as { results?: any[] }).results ?? []) {
+    if (usesFixedFreeReader(d.id)) continue;
     let model = "";
     try { model = JSON.parse(d.task_input ?? "{}")?.requested?.model ?? ""; } catch { model = ""; }
     const perRun = model.includes("sonnet") ? 0.3 : 0.05;

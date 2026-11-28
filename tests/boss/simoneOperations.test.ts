@@ -14,13 +14,15 @@ it("keeps one fresh inventory, makes it available to Simone, and publishes a sam
     .bind(TOKEN_KEY, await sha256Hex(token), Date.now()).run();
   const headers = { authorization: `Bearer ${token}` };
   const issues = ["NOT WORKING: Office reply — the owner’s mailbox had no copy."];
-  const body = { day, issues, proposal: null, rows: [{ id: "outreach", name: "Office reply", kind: "mailbox",
+  const body = { day, issues, proposal: null, rows: [{ id: "worker-check:pnp-corporate-outreach", name: "Office reply", kind: "schedule",
     aim: "Deliver the reply", state: "missing", coverage: "listed", evidence: "The owner’s mailbox had no copy." }] };
   expect((await apiJson("/api/simone/operations")).status).toBe(503);
   expect((await apiJson("/api/simone/operations/inputs")).status).toBe(401);
   const input = (await apiJson("/api/simone/operations/inputs", { headers })).body.data;
   expect(input.agents.length).toBeGreaterThan(1);
   expect(input.duties.length).toBeGreaterThan(1);
+  expect(input.workerEvidence).toMatchObject({ duties: expect.any(Object), runs: expect.any(Object), workflows: expect.any(Object),
+    worker: expect.any(Object), properties: expect.any(Object) });
   expect((await apiJson("/api/simone/operations/report", { method: "POST", headers, body: { ...body, rows: [] } })).status).toBe(400);
   expect((await apiJson("/api/simone/operations/report", { method: "POST", body })).status).toBe(401);
   const oversized = "x".repeat(850_001);
@@ -36,6 +38,9 @@ it("keeps one fresh inventory, makes it available to Simone, and publishes a sam
   expect((await apiJson("/api/simone/operations/inputs", { headers })).body.data).toEqual({ day, checked: true });
   expect((await apiJson("/api/system/settings/simone_operations", { method: "PUT", body: { value: "{}" } })).status).toBe(400);
   expect((await apiJson("/api/simone/operations")).body.data).toMatchObject(body);
+  expect((await apiJson("/api/scorecard")).body.data.workerChecks).toEqual([
+    { id: body.rows[0]!.id, name: body.rows[0]!.name, state: body.rows[0]!.state, evidence: body.rows[0]!.evidence },
+  ]);
   expect(await row("SELECT count(*) AS n FROM boss_task_notices WHERE subject LIKE 'NOT WORKING:%'")).toEqual({ n: 1 });
   expect(await row("SELECT json_extract(body, '$.lines[0]') AS evidence FROM morning_sections WHERE section = 'operations'"))
     .toEqual({ evidence: issues[0] });

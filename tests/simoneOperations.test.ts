@@ -73,3 +73,25 @@ it("keeps Gmail outages and ambiguous matches open, and errors if an inventory s
   empty.inputs.duties = [];
   await expect(checkOperations(empty)).rejects.toThrow("OPERATIONS_LIST_EMPTY");
 });
+
+it("gives Simone a daily registry verdict for a handled source, zero output, and unavailable evidence", async () => {
+  const args = fixture();
+  const job = { owner: "Camille", kind: "reads-meaning", source: { count: "duty-input" }, handled: { count: "duty-handled" } };
+  const schedule = {
+    ...args.schedule,
+    rows: [...args.schedule.rows, { id: "daily-check", name: "Daily source", what: "Read the source",
+      slots: ["daily 04:00"], trigger: { duty: "duty-source" } }],
+    workerJobs: { "daily-check": job },
+  };
+  const read = async (duties: Record<string, { source: number; handled: number }> | null) => {
+    const inputs = { ...args.inputs, workerEvidence: { day: "2026-11-22", duties } };
+    const report = await checkOperations({ ...args, schedule, inputs });
+    return { row: report.rows.find(({ id }) => id === "worker-check:daily-check"), issues: report.issues };
+  };
+  expect((await read({ "duty-source": { source: 2, handled: 2 } })).row).toMatchObject({ state: "verified" });
+  expect(await read({ "duty-source": { source: 2, handled: 0 } })).toMatchObject({
+    row: { state: "missing" },
+    issues: expect.arrayContaining(["NOT WORKING: Camille · Daily source — 2026-11-22: handled 0 of 2 source items."]),
+  });
+  expect((await read(null)).row).toMatchObject({ state: "unknown", evidence: expect.stringContaining("couldn't check") });
+});

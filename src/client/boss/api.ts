@@ -137,7 +137,7 @@ export const api = {
   markUpdateRead: (id: string, read: boolean) => call<{ id: string; read_at: number | null }>(`/task-notices/${encodeURIComponent(id)}/read`, post("", { read })),
   closeOpenLoop: (id: string, reason: string) => call<{ closed: string }>(`/open-loops/${encodeURIComponent(id)}/close`, post("", { reason })),
   growthPage: () => call<any>("/growth/page"),
-  scorecard: () => call<{ state: { at: number; week: string; rows: Record<string, any> } | null; strays: any[]; dailyChecks?: Record<string, { day: string; status: string; note: string }> }>("/scorecard"),
+  scorecard: () => call<{ state: { at: number; week: string; rows: Record<string, any> } | null; strays: any[]; dailyChecks?: Record<string, { day: string; status: string; note: string }>; workerChecks?: { id: string; name: string; state: string; evidence: string }[] }>("/scorecard"),
   validators: () => call<{ matrix: import("@shared/boss/validators/matrix.mjs").Matrix | null; summary: string | null; flagged: string | null }>("/validators"),
   // Brains (31 Oct 2026): one document per business, read first by every employee.
   brains: () => call<{ brains: BrainSummary[] }>("/brains"),

@@ -14,29 +14,22 @@ import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
 const SUBJECT = "[seq23/local-guides-generator] PR run failed: Validate - Drop form leads from blocked email domains quietly (78809fa)";
 
 describe("GitHub CI and PR mail never becomes a lock or a Decide item", () => {
-  it("the 27 Oct notice is not a lock reading, from either mailbox shape", () => {
-    expect(lockReading({ from: "seq23 <notifications@github.com>", subject: SUBJECT, date: "2026-10-26" }, "spry.vc")).toBeNull();
-    expect(lockReading({ from_domain: "github.com", subject: SUBJECT, date: "2026-10-26" }, "personal Gmail")).toBeNull();
-    expect(lockReading({ from_domain: "github.com", subject: "Re: [seq23/local-guides-generator] Drop form leads from blocked email domains quietly (PR #90)" }, "personal Gmail")).toBeNull();
-    for (const s of ["Run failed: CI - main (abc123)", "[seq23/boss-os] Pull request blocked by required checks", "Workflow run cancelled: deploy"]) {
-      expect(lockReading({ from_domain: "github.com", subject: s }, "spry.vc")).toBeNull();
-    }
+  it("keeps the GitHub repo notification envelope out of Decide despite a false lock verdict", () => {
+    expect(lockReading({ id: "x", kind: "lock", from: "Fixture <notifications@github.com>", subject: SUBJECT }, "spry.vc", "spry")).toBeNull();
+    expect(lockReading({ id: "x", kind: "lock", from_domain: "github.com", subject: SUBJECT }, "personal Gmail", "personal")).toBeNull();
+    expect(lockReading({ id: "x", kind: "github_ci", from_domain: "github.com", subject: "Those jobs stopped" }, "spry.vc", "spry")).toBeNull();
   });
   it("a real GitHub account lock is still a lock", () => {
-    expect(lockReading({ from: "GitHub <support@github.com>", subject: "Your account has been suspended" }, "spry.vc")?.state).toBe("alert");
+    expect(lockReading({ id: "x", kind: "lock", from: "GitHub <support@github.com>", subject: "Your account has been suspended" }, "spry.vc", "spry")?.state).toBe("alert");
     expect(githubNotice({ from: "GitHub <support@github.com>", subject: "Your account has been suspended" })).toBeNull();
   });
   it("names the repo from the subject", () => {
     expect(githubNotice({ from_domain: "github.com", subject: SUBJECT })).toEqual({ repo: "seq23/local-guides-generator", subject: SUBJECT });
   });
-  it("planLocks never writes a Decide item or a line for a GitHub notice, alerting or cleared (old state included)", () => {
-    const l = planLocks([
-      { key: "lock:github.com:seq23 local guides generator pr run failed validate drop form leads from blocked em", state: "alert", line: `2026-10-26 github.com: "${SUBJECT}" (personal Gmail).` },
-      { key: "lock:github.com:seq23 local guides generator pr run failed validate drop form leads from blocked em", state: "cleared", was: "alert", line: "gone" },
-      { key: "lock:github.com:re seq23 local guides generator drop form leads from blocked", state: "cleared", was: "alert", line: "gone" },
-    ]);
-    expect(l).toEqual({ decide: [], lines: [], fixes: [] });
-    expect(JSON.stringify(l)).not.toMatch(/github\.com notice/);
+  it("a model-read CI notice yields no lock or Decide line", () => {
+    const read = [{ id: "m1", kind: "github_ci", from_domain: "github.com", subject: SUBJECT }];
+    const locks = read.flatMap((m) => lockReading(m, "fixture", "spry") ?? []);
+    expect(planLocks(locks)).toEqual({ decide: [], lines: [], fixes: [] });
   });
 });
 

@@ -151,7 +151,7 @@ export function redLines(siteResults) {
   for (const s of all) {
     const d = s.site?.domain ?? s.host;
     if (s.outcome?.status === "red") out.push({ domain: d, kind: "outcome", line: outcomeLine(s, d) });
-    if (s.quality?.red) out.push({ domain: d, kind: "quality", line: `${d}: ${s.quality.line}` });
+    if (s.quality?.red || (s.quality?.status === "not_read" && s.quality.pending?.length)) out.push({ domain: d, kind: "quality", line: `${d}: ${s.quality.line}` });
     // Leads (3 Nov 2026): clicks but nobody used the one action. Her own sites only.
     const lead = isOwnSite(s.site) ? leadRedLine(s.site, s.leads) : null;
     if (lead) out.push({ domain: d, kind: "leads", line: lead });
@@ -236,10 +236,10 @@ export function weeklyBriefs(siteResults, { now = Date.now() } = {}) {
       briefs.push({
         ...base, id: `so-${site.domain}-quality`, kind: "quality", item_id: "q1", item_title: "Sampled pages meet the page shape (answer first, question headings, sourced figures, dates, no template filler)",
         why: "Presence checks pass a page that is there but not worth quoting; this reads the words on a fresh sample every Monday.",
-        check: "Five live content pages sampled each Monday, scored on b3, b4, b5, c4, c6, d1, d2, d3, d4 and the template-filler test.",
+        check: "The free reader scores full live pages against the applicable checklist, usefulness and template filler. Unread pages are retried.",
         failure: `${bad.length} of ${q.pages.length} sampled pages fall short: ${bad.slice(0, 5).map((p) => `${p.url} (${p.failing.join(", ")})`).join("; ")}`,
         evidence: bad.flatMap((p) => p.notes.map((n) => `${p.url}: ${n}`)).slice(0, 25),
-        brief: "Fix the generator or template that made these pages, never the five pages by hand: the same gap is on every page it built. A template-filler note means rewrite the slot text so each page says something only it can say, or fold the near-duplicates into one hub.",
+        brief: "Check whether affected pages share a generator or template and fix any common cause there. For template filler, make each page useful on its own or fold near-duplicates into one hub.",
       });
     }
     for (const h of s.consolidation?.hubs ?? []) {
