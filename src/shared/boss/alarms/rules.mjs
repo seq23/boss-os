@@ -75,7 +75,11 @@ export function floorVerdict(duty, runs) {
 /** What the newest run produced, in words: a number, or why there is none. Pure. */
 export function producedWords(run, metric) {
   if (!run) return `nothing (no run recorded)`;
-  if (run.outcome === "failed") return `0 ${metric} (the run failed)`;
+  if (run.outcome === "failed") {
+    return run.output_count == null
+      ? `an unknown number of ${metric} (the run failed before it said)`
+      : `${run.output_count} ${metric}, and then the run failed`;
+  }
   if (run.output_count === null || run.output_count === undefined) return `an unknown number of ${metric} (it printed no OUTPUT line)`;
   if (run.honest_zero === true) return `nothing new, with the searches it ran on record`;
   return `${run.output_count} ${metric}`;

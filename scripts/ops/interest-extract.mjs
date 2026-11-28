@@ -141,6 +141,22 @@ If you cannot complete the reading, return {"status":"uncertain","rows":[]}.`,
 
 const rowKey = (r) => JSON.stringify([r.source_message, r.side, r.asset.toLowerCase(), r.size_usd ?? r.size_shares ?? null]);
 
+export function extractVerdict({ status, checked }) {
+  if (status === "complete") return { exitCode: 0, line: null };
+  if (checked > 0) {
+    return {
+      exitCode: 0,
+      line: `NOTE [CANDIDATES_RETAINED] Read ${checked} candidate(s). Unread candidates stay for the next run.`,
+    };
+  }
+  return {
+    exitCode: 9,
+    line: status === "allowance-exhausted"
+      ? "NAMED STOP [FREE_ALLOWANCE_EXHAUSTED] Remaining candidate mail will be retried next run."
+      : "NAMED STOP [EXTRACTION_NEVER_RAN] A candidate could not be read; its batch is retained for the next run.",
+  };
+}
+
 /** The caller holds the existing scan lock. The ledger write precedes its receipt and batch removal. */
 export async function extractCandidates({
   directory = DIR, read = (input) => readWorkerSource(input, process.env), loadThread = reloadBrokerageThread,
@@ -421,19 +437,43 @@ async function main() {
   const result = await extractCandidates({ limit: Number(argOf("limit") ?? 0) });
   console.log(outputLine(result.checked, "interests read"));
   await nameHeld(result.held_now, "deal emails");
-  if (result.status !== "complete") {
-    console.error(result.status === "allowance-exhausted"
-      ? "NAMED STOP [FREE_ALLOWANCE_EXHAUSTED] Remaining candidate mail will be retried next run."
-      : "NAMED STOP [EXTRACTION_NEVER_RAN] A candidate could not be read; its batch is retained for the next run.");
-    process.exitCode = 9;
+  const verdict = extractVerdict(result);
+  if (verdict.exitCode) {
+    console.error(verdict.line);
+    process.exitCode = verdict.exitCode;
     return;
   }
+  if (verdict.line) console.log(verdict.line);
   console.log(`CAPITAL-EXTRACT-COMPLETE: ${result.checked} candidate(s) read, ${result.added} new interest(s).`);
 }
 
+function failureLocation(error) {
+  if (!(error instanceof Error)) return "Unknown error (source location unavailable)";
+  const errorClass = [
+    EvalError, RangeError, ReferenceError, SyntaxError, TypeError, URIError, AggregateError,
+  ].find((type) => error instanceof type)?.name ?? "Error";
+
+  // The wrapper stores this in duty_runs. Read structured frames so no error message,
+  // function name or absolute filesystem path reaches that record.
+  const prepareStackTrace = Error.prepareStackTrace;
+  let frame;
+  try {
+    Error.prepareStackTrace = (_, frames) => frames.find((site) => site.getFileName() && site.getLineNumber());
+    frame = error.stack;
+  } finally {
+    Error.prepareStackTrace = prepareStackTrace;
+  }
+  const file = frame?.getFileName?.();
+  const repo = new URL("../../", import.meta.url).href;
+  const source = file?.startsWith(repo) ? file.slice(repo.length) : file?.startsWith("node:") ? file : "";
+  if (!/^(?:(?:scripts|src)\/[\w/.-]+\.[cm]?[jt]s|node:internal\/[\w/.-]+|node:[\w-]+)$/.test(source ?? "")
+    || source.length > 120) return `${errorClass} (source location unavailable)`;
+  return `${errorClass} ${source}:${frame.getLineNumber()}:${frame.getColumnNumber()}`;
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch(() => {
-    console.error("NAMED STOP [CAPITAL_EXTRACT_FAILED] Extraction could not finish. Unread candidate batches were retained.");
+  main().catch((error) => {
+    console.error(`NAMED STOP [CAPITAL_EXTRACT_FAILED] ${failureLocation(error)}`);
     process.exitCode = 1;
   });
 }
