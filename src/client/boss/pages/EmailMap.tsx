@@ -2,6 +2,7 @@ import { useState } from "react";
 import { emailRepos } from "@shared/boss/maps/chain.mjs";
 import { FromRepoLine, repoOnly } from "./Maps";
 import manifest from "@shared/boss/emailMap/manifest.json";
+import { centralClock, inLine } from "@shared/boss/words";
 
 /**
  * THE EMAIL MAP (owner, 31 Oct 2026: "one Email Map page inside Boss OS, all businesses"). Every
@@ -50,11 +51,8 @@ const FOLDED = (r: EmailRow) => r.runs === "folded" || r.runs === "spry-weekly";
 const OFF = (r: EmailRow) => r.runs === "inert" || r.runs === "not-email";
 const SENDS = (r: EmailRow) => !FOLDED(r) && !OFF(r);
 
-/** "6:40 AM": the one clock both Team → Duties and this page print (12-hour; the zone is said once). */
-export function centralClock(hour: number, minute: number): string {
-  const h = ((Number(hour) + 11) % 12) + 1;
-  return `${h}:${String(minute).padStart(2, "0")} ${Number(hour) < 12 ? "AM" : "PM"}`;
-}
+/** The one clock both pages print (src/shared/boss/words.ts). */
+export { centralClock };
 
 /**
  * One total and the parts that make it (ship review, 27 Nov 2026: "85 = 64 + 21, then 11 more…, 4 are
@@ -66,12 +64,21 @@ export function summaryParts(rows: EmailRow[]) {
   return { total: rows.length, sends: sends.length, cloud: sends.length - mac, mac, folded: rows.filter(FOLDED).length, off: rows.filter(OFF).length };
 }
 
+/**
+ * One total, then its three parts, in one sentence (ship review, 27 Nov 2026: "a wall of figures I
+ * have to decode"). The Mac's share is its own short line, said only when there is one.
+ */
 export function summaryLine(m: EmailManifest = EMAIL_MAP): string {
   const p = summaryParts(m.rows);
-  return `${p.total} automated emails listed across ${m.businesses.length} businesses. ` +
-    `${p.sends} go out on their own: ${p.cloud} from the cloud whatever your Mac is doing, ${p.mac} only when your Mac is awake. ` +
-    `${p.folded} are sections inside another email (Simone's morning email or the Spry Labs weekly). ` +
-    `${p.off} ${p.off === 1 ? "is" : "are"} switched off or not an email.`;
+  return `${p.total} automated emails across ${m.businesses.length} businesses: ` +
+    `${p.sends} go out on their own, ${p.folded} are sections inside another email, ` +
+    `and ${p.off} ${p.off === 1 ? "is" : "are"} switched off or not an email.`;
+}
+
+/** How many of the ones that go out on their own wait for her Mac to be awake. */
+export function macLine(m: EmailManifest = EMAIL_MAP): string {
+  const p = summaryParts(m.rows);
+  return p.mac ? `${p.mac} of the ${p.sends} send only while your Mac is awake; the rest go out from the cloud.` : "";
 }
 
 /** A business's count, in the same three parts as the summary, naming each. */
@@ -94,7 +101,7 @@ export function EmailMap() {
     <div className="brains" data-testid="email-map">
       <p className="brain-summary">{summaryLine()}</p>
       <FromRepoLine tab="emails" />
-      <p className="brain-hint">Tap a business to see its emails. Each one says who sends it, to whom and when; "Show details" says where it runs and how to pause it. All times are Central.</p>
+      <p className="brain-hint">{macLine()} Tap a business to see its emails. Each one says who sends it, to whom, when and where it runs; "Show details" gives the address it comes from, what starts it and how to pause it. All times are Central.</p>
       <label className="email-map-filter">
         <span>Show:</span>
         <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Show: choose a business">
@@ -123,22 +130,26 @@ export function EmailMap() {
   );
 }
 
-function EmailCard({ row }: { row: EmailRow }) {
+/** "From Simone · to You", the same on both pages; a switched-off row says it sends nothing. */
+export function fromToLine(row: Pick<EmailRow, "runs" | "sender" | "to">): string {
+  return row.runs === "inert" ? "Sends nothing while it is switched off" : `From ${inLine(row.sender)} · to ${inLine(row.to)}`;
+}
+
+export function EmailCard({ row }: { row: EmailRow }) {
+  // Details hold only what the card does not already say (ship review, 27 Nov 2026: "When" and
+  // "Where it runs" repeated the card's own lines word for word).
   return (
     <div className="brain-card email-map-card" data-testid={`email-${row.id}`}>
       <span className="email-map-what">{row.name}</span>
       <span className="brain-card-line">{row.what}</span>
-      <span className="brain-card-line">From {row.sender} · to {row.to}</span>
+      <span className="brain-card-line">{fromToLine(row)}</span>
       <span className="brain-card-line">{row.when}</span>
       <span className="email-map-runs">{RUNS_SHORT[row.runs] ?? row.runs}</span>
       <details className="brain-rev">
         <summary>Show details</summary>
         <dl className="email-map-dl">
-          <dt>Sent by</dt><dd>{row.sender}{row.owner !== row.sender ? ` (looked after by ${row.owner})` : ""}</dd>
+          {row.owner !== row.sender && <><dt>Looked after by</dt><dd>{row.owner}</dd></>}
           <dt>From address</dt><dd>{row.from}</dd>
-          <dt>To</dt><dd>{row.to}</dd>
-          <dt>When</dt><dd>{row.when}</dd>
-          <dt>Where it runs</dt><dd>{EMAIL_MAP.runs[row.runs] ?? row.runs}</dd>
           <dt>What starts it</dt><dd>{row.trigger}</dd>
           <dt>How to pause it</dt><dd>{row.pause}</dd>
           <dt>Code</dt>

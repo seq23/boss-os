@@ -183,3 +183,75 @@ export function clockRepair(duty: ClockRow, now: number): ClockRepair | null {
   const isSlot = nextDueAt(duty, duty.next_due_at - 1) === duty.next_due_at;
   return { next_due_at: owed, why: isSlot ? "slot_skipped" : "not_a_slot" };
 }
+
+/*
+ * ─── WHAT TEAM → DUTIES SAYS ABOUT THE NEXT RUN (ship review, 28 Nov 2026) ─────────────────────
+ *
+ * THE DEFECT. The screen printed the stored clock as "next": Monique's weekly comment watch read
+ * "next Wed, Sep 23" on 27 Nov (a date two months gone), and Zora's daily 7:00 AM job read "next
+ * 2:16 PM" (a stored instant that is not a slot of its own schedule). One false "next" and no date
+ * on the page can be trusted.
+ *
+ * THE RULE, read-only (nothing here writes a clock; materialise/clockRepair keep that job):
+ *   · switched off: no next run.
+ *   · stored clock in the past: the run is MISSED, said with the date it was owed. No next date is
+ *     promised, because a run that has not happened since then is not known to happen next time.
+ *   · stored clock in the future: the first slot of the duty's OWN schedule at or after it, which
+ *     is when the Mac's launchd (or the Worker's tick) will next find it due.
+ *   · no stored clock (null, or the 0 a seed left): the next slot of its schedule from now.
+ *   · a schedule that cannot be placed: no date at all ("couldn't work out"), never a guess.
+ */
+export interface ShownNextRun {
+  /** The next run to print, or null (switched off, missed, or not placeable). */
+  at: number | null;
+  /** The slot it owed and has not run, when the stored clock is in the past. */
+  missedSince: number | null;
+  /** True when the schedule could not be placed at all. */
+  unknown: boolean;
+}
+
+export function shownNextRun(
+  duty: DutySchedule & { next_due_at?: number | null; suspended?: number | boolean | null; last_run_at?: number | null; created_at?: number | null },
+  now: number,
+): ShownNextRun {
+  if (duty.suspended === 1 || duty.suspended === true) return { at: null, missedSince: null, unknown: false };
+  // A clock of 0 is a seed that was never set (the column is NOT NULL), not a run owed since 1970.
+  let stored = typeof duty.next_due_at === "number" && Number.isFinite(duty.next_due_at) && duty.next_due_at > 0 ? duty.next_due_at : null;
+  // The clock the scheduler will hold on its next tick: a stored clock AHEAD of the slot the duty owes
+  // is moved back to that slot by materialise (`clockRepair`), so the screen reads it the same way.
+  if (stored !== null) {
+    try { stored = clockRepair({ ...duty, next_due_at: stored }, now)?.next_due_at ?? stored; } catch { /* unschedulable: said below */ }
+  }
+  if (stored !== null && stored <= now) return { at: null, missedSince: stored, unknown: false };
+  try {
+    const at = nextDueAt(duty, stored !== null ? stored - 1 : now);
+    return Number.isFinite(at) ? { at, missedSince: null, unknown: false } : { at: null, missedSince: null, unknown: true };
+  } catch {
+    return { at: null, missedSince: null, unknown: true };
+  }
+}
+
+/**
+ * A duty kept on another zone's clock, said on hers (28 Nov 2026: the errand reminders run at
+ * midnight New York, and the screen said "12:00 AM Central", an hour late). The hour and minute
+ * Central reads at the duty's next slot, and how many days that moves it (-1, 0 or +1: midnight
+ * New York is 11 PM the day before in Central). Null when the duty is already on Central's clock or
+ * cannot be placed.
+ */
+export function centralClockOf(schedule: DutySchedule, now: number, central = "America/Chicago"): { hour: number; minute: number; day_shift: number } | null {
+  if (!schedule.timezone || schedule.timezone === central) return null;
+  try {
+    const slot = nextDueAt(schedule, now);
+    const c = wallClock(slot, central);
+    const z = wallClock(slot, schedule.timezone);
+    const shift = (c.dow - z.dow + 7) % 7;
+    return { hour: c.h, minute: c.min, day_shift: shift === 6 ? -1 : shift };
+  } catch {
+    return null;
+  }
+}
+
+/** OVERDUE on Team → Duties: switched on, a real clock (not a missing one or a seed's 0), more than a day behind. */
+export function isOverdue(d: { suspended?: number | boolean | null; next_due_at?: number | null }, now: number): boolean {
+  return d.suspended !== 1 && d.suspended !== true && typeof d.next_due_at === "number" && d.next_due_at > 0 && d.next_due_at < now - 86_400_000;
+}

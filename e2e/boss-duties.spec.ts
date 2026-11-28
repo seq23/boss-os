@@ -57,12 +57,15 @@ test.describe("Team → Duties", () => {
     expect(await rows.count()).toBeGreaterThanOrEqual(5);
     // Camille's morning report: daily, an agent on Sonnet, next run stated.
     const camille = page.getByRole("region", { name: "Camille's duties" });
-    await expect(camille).toContainText(/daily at 4:00 AM Central/); // migration 0373, the Mac's day (06:00 before)
-    await expect(camille).toContainText(/agent · Sonnet/);
-    await expect(camille).toContainText(/next /);
+    await expect(camille).toContainText(/Daily at 4:00 AM Central/); // migration 0373, the Mac's day (06:00 before)
+    await expect(camille).toContainText(/An AI teammate \(Sonnet\)/);
+    // A next run is a future date or a missed one with its date, never "next —" (ship review, 28 Nov 2026).
+    await expect(camille.locator(".row-val").first()).toHaveText(/^(next|missed since) (Sun|Mon|Tue|Wed|Thu|Fri|Sat), [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d\d (AM|PM) Central/);
+    await expect(page.locator("main.page")).not.toContainText("next —");
     await expect(camille.getByTestId("duty-row").first()).toContainText(/Last ran [^·]+|Hasn’t run yet/);
-    // A local job says it runs on her Mac and names the script.
-    await expect(page.locator("main.page")).toContainText(/your Mac · [a-z-]+\.(sh|mjs)/);
+    // A local job says it runs on her Mac (the Email Map's words) and names its script in the details.
+    await expect(page.locator('[data-testid="duty-row"] [data-testid="path-runs"]', { hasText: /^Your Mac$/ }).first()).toBeAttached();
+    await expect(page.locator('[data-testid="duty-row"] dd').filter({ hasText: /^[a-z0-9-]+\.(sh|mjs)$/ }).first()).toBeAttached();
   });
 
   test("Add a duty: preview in full, Create files a card, Approve in the Inbox creates exactly one duty", async ({ page }) => {
@@ -118,7 +121,7 @@ test.describe("Team → Duties", () => {
     await tab(page, "Team");
     await page.getByRole("button", { name: "Duties", exact: true }).click();
     const camille = page.getByRole("region", { name: "Camille's duties" });
-    await expect(camille).toContainText(/Fri at \d{1,2}:\d\d (AM|PM) Central · agent · Haiku/);
+    await expect(camille.getByTestId("duty-row").filter({ hasText: /Fridays at \d{1,2}:\d\d (AM|PM) Central/ }).filter({ hasText: "An AI teammate (Haiku)" })).not.toHaveCount(0);
     await expect(page.getByTestId("duty-draft").first()).toContainText("created");
   });
 
@@ -135,6 +138,20 @@ test.describe("Team → Duties", () => {
     await expect(page.getByTestId("create-duty")).toHaveCount(0);
     expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM duty_drafts`)[0]!.n).toBe(0);
     expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM judgement_calls WHERE resume_kind = 'duty_created'`)[0]!.n).toBe(0);
+  });
+
+  test("when the schedule cannot be read, the page says so and shows no run times", async ({ page }) => {
+    await unlock(page);
+    await page.route("**/api/boss/employees/roster", (r) => r.abort());
+    await tab(page, "Team");
+    await page.getByRole("button", { name: "Duties", exact: true }).click();
+    await expect(page.getByTestId("ops-unchecked")).toContainText("Couldn't check the schedule just now");
+    await expect(page.getByTestId("duty-row")).toHaveCount(0);
+    await expect(page.locator("main.page .row-val", { hasText: /^next / })).toHaveCount(0);
+    // It comes back on its own button once the read works again.
+    await page.unroute("**/api/boss/employees/roster");
+    await page.getByTestId("ops-unchecked").getByRole("button", { name: "Try again ↻" }).click();
+    await expect(page.getByTestId("duty-row").first()).toBeVisible();
   });
 
   test("at phone width the Duties screen does not overflow", async ({ page }) => {
@@ -172,10 +189,13 @@ test.describe("Team → Duties", () => {
     await expect(page.getByTestId("ops-sent")).toContainText(/Sent today: outreach \d+/);
     await expect(page.getByTestId("ops-needs")).toContainText(/Needs you: 0 unassigned · \d+ failed runs · \d+ named stops/);
     await expect(page.getByTestId("ops-unassigned")).toHaveCount(0);
-    // Exactly the map's rows: one path row per Id on docs/OUTBOUND_EMAIL_MAP.md.
+    // Exactly the map's rows: every Id on docs/OUTBOUND_EMAIL_MAP.md once, as its own row or inside the
+    // duty that is its job (owners file `duty`), never twice (ship review, 27 Nov 2026: Zora's audit twice).
     const mapIds = readFileSync(path.join(process.cwd(), "docs/OUTBOUND_EMAIL_MAP.md"), "utf8").split("\n").filter((l) => /^\|\s*`[^`]+`\s*\|/.test(l)).length;
     expect(mapIds).toBeGreaterThan(0);
-    expect(await page.getByTestId("path-row").count()).toBe(mapIds);
+    expect(await page.locator("[data-path-id]").count()).toBe(mapIds);
+    await expect(page.locator('[data-path-id="zora-archive-audit"]')).toHaveCount(1);
+    await expect(page.locator('[data-duty-id="duty_archive_audit"]')).toHaveAttribute("data-path-id", "zora-archive-audit");
     // Monique's outreach sits in her section, with the one in-app switch that exists.
     const outreach = page.getByRole("region", { name: "Monique's duties" }).locator('[data-path-id="monique-outreach"]');
     await expect(outreach.getByTestId("path-runs")).toHaveText("Cloud, on a schedule"); // the Email Map's words, never "Cloudflare cron"
@@ -188,7 +208,7 @@ test.describe("Team → Duties", () => {
     // The fund never crosses onto a rendered row, read with THE SAME term list and the same OK'd
     // crossings as the map's unit test (tests/helpers/fundCrossings.ts): one list, never two.
     const rendered: Array<[string, string]> = [];
-    for (const row of await page.getByTestId("path-row").all()) {
+    for (const row of await page.locator("[data-path-id]").all()) {
       const id = (await row.getAttribute("data-path-id")) ?? "";
       expect(id, "every path row carries its map Id").not.toBe("");
       rendered.push([`path row ${id}`, `| \`${id}\` | ${await row.innerText()}`]);
@@ -196,7 +216,7 @@ test.describe("Team → Duties", () => {
     expect(rendered.length).toBe(mapIds);
     expect(fundCrossings(rendered)).toEqual([]);
     // Each crossing she OK'd is a row that renders, so the allowance is never for a row nobody sees.
-    for (const id of Object.keys(OWNER_OK_CROSSINGS)) await expect(page.locator(`[data-testid="path-row"][data-path-id="${id}"]`)).toHaveCount(1);
+    for (const id of Object.keys(OWNER_OK_CROSSINGS)) await expect(page.locator(`[data-path-id="${id}"]`)).toHaveCount(1);
     await expect(page.locator('[data-path-id="approvalprep-download-email"]')).toContainText("no switch");
     await outreach.getByTestId("path-pause").click();
     await expect(page.getByRole("button", { name: "Outreach", exact: true })).toHaveAttribute("aria-pressed", "true");

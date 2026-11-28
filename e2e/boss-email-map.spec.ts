@@ -10,7 +10,9 @@ const manifest = JSON.parse(readFileSync(new URL("../src/shared/boss/emailMap/ma
  * businesses"). Phone first: the summary, a pull-down for one business, one labelled expander per
  * business, each email readable without opening it, "Show details" with how to pause it.
  */
-for (const vp of [PHONE, LAPTOP]) {
+// 320 px too: the business picker sized itself to its longest name and pushed the page 38 px sideways (28 Nov 2026).
+const SMALL_PHONE = { name: "small phone", width: 320, height: 640 } as const;
+for (const vp of [SMALL_PHONE, PHONE, LAPTOP]) {
   test.describe(`Email Map (${vp.name})`, () => {
     test.beforeEach(async ({ page }) => { await page.setViewportSize({ width: vp.width, height: vp.height }); });
 
@@ -19,7 +21,7 @@ for (const vp of [PHONE, LAPTOP]) {
       await tab(page, "Email Map");
       const map = page.getByTestId("email-map");
       // The count comes from the manifest it renders, never a typed number (8 Nov 2026: a new business made "7" stale and main red).
-      await expect(map.getByText(new RegExp(`${manifest.rows.length} automated emails listed across ${manifest.businesses.length} businesses`))).toBeVisible();
+      await expect(map.getByText(new RegExp(`^${manifest.rows.length} automated emails across ${manifest.businesses.length} businesses: \\d+ go out on their own, \\d+ are sections inside another email, and \\d+ (is|are) switched off`))).toBeVisible();
       await expect(map.locator("details.email-map-business")).toHaveCount(manifest.businesses.length);
       await expect(map.locator(".email-map-card")).toHaveCount(manifest.rows.length);
       await expectNoSidewaysScroll(page);
@@ -31,6 +33,12 @@ for (const vp of [PHONE, LAPTOP]) {
       await expect(card).toContainText("From Camille");
       await card.getByText("Show details").click();
       await expect(card).toContainText("How to pause it");
+      // Details add, never repeat: the card already says when and where (ship review, 27 Nov 2026).
+      await expect(card.locator("dt", { hasText: /^(When|Where it runs|To)$/ })).toHaveCount(0);
+      // One arrow on the toggle, ours: the browser's triangle is hidden.
+      const summary = card.locator("summary", { hasText: "Show details" });
+      expect(await summary.evaluate((el) => getComputedStyle(el).listStyleType)).toBe("none");
+      expect(await summary.evaluate((el) => getComputedStyle(el, "::after").content)).toContain("▴");
       await expect(card).toContainText("sequoia@porchandparty901.com");
       await expectNoSidewaysScroll(page);
 
@@ -39,7 +47,7 @@ for (const vp of [PHONE, LAPTOP]) {
       await tab(page, "Team");
       await tab(page, "Email Map");
       await expect(page.getByTestId("back-to-today")).toBeInViewport();
-      await expect(map.getByText(/automated emails listed across/)).toBeInViewport();
+      await expect(map.getByText(/automated emails across/)).toBeInViewport();
     });
   });
 }

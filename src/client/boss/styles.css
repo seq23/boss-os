@@ -607,13 +607,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 [data-testid="duty-draft"] { align-items: flex-start; }
 [data-testid="path-row"] .pill,
 [data-testid="duty-row"] .pill { display: inline-block; margin-left: 0; margin-right: 4px; white-space: nowrap; }
-[data-testid="path-row"] .row-val { text-align: right; }
+[data-testid="path-row"] .row-val,
+[data-testid="duty-row"] .row-val { text-align: right; }
 [data-testid="duty-row"] .row-title .pill { margin-left: 6px; }
 @media (max-width: 600px) {
   .row[data-testid="path-row"],
   .row[data-testid="duty-row"],
   .row[data-testid="duty-draft"] { display: grid; grid-template-columns: minmax(0, 1fr); }
-  [data-testid="path-row"] .row-val { text-align: left; }
+  [data-testid="path-row"] .row-val,
+  [data-testid="duty-row"] .row-val { text-align: left; }
 }
 .row-val { font-family: var(--mono); font-size: 13px; color: var(--muted); white-space: nowrap; }
 
@@ -1922,7 +1924,7 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 
 /* THE EMAIL MAP (31 Oct 2026): calm, phone first; reuses the Brains cards and expanders. */
 .email-map-filter { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--ink); }
-.email-map-filter select { flex: 1; font-family: var(--body); font-size: 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 3px; background: var(--card-2); color: var(--ink); }
+.email-map-filter select { flex: 1; min-width: 0; font-family: var(--body); font-size: 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 3px; background: var(--card-2); color: var(--ink); }
 .email-map-business > summary { display: flex; flex-direction: column; gap: 2px; }
 [data-testid="email-map"] .email-map-business > summary {
   display: list-item;
@@ -1931,7 +1933,21 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 }
 [data-testid="email-map"] .email-map-count { display: block; margin-top: 2px; }
 .email-map-card .brain-rev > summary,
-[data-testid="path-row"] .brain-rev > summary { min-height: 44px; padding: 10px 0; }
+[data-testid="path-row"] .brain-rev > summary,
+[data-testid="duty-row"] .brain-rev > summary { min-height: 44px; padding: 10px 0; box-sizing: border-box; }
+/* One arrow, ours, pointing the way it opens (ship review, 27 Nov 2026: "▶ Show details ▾" had two). */
+.email-map-card .brain-rev > summary,
+[data-testid="path-row"] .brain-rev > summary,
+[data-testid="duty-row"] .brain-rev > summary { list-style: none; }
+.email-map-card .brain-rev > summary::-webkit-details-marker,
+[data-testid="path-row"] .brain-rev > summary::-webkit-details-marker,
+[data-testid="duty-row"] .brain-rev > summary::-webkit-details-marker { display: none; }
+.email-map-card .brain-rev > summary::after,
+[data-testid="path-row"] .brain-rev > summary::after,
+[data-testid="duty-row"] .brain-rev > summary::after { content: " ▾"; }
+.email-map-card .brain-rev[open] > summary::after,
+[data-testid="path-row"] .brain-rev[open] > summary::after,
+[data-testid="duty-row"] .brain-rev[open] > summary::after { content: " ▴"; }
 .email-map-business-name { font-family: var(--display); font-size: 20px; color: var(--ink); }
 .email-map-count { font-size: 14px; color: var(--muted); }
 .email-map-business .brain-cards { margin-top: 8px; }
