@@ -41,8 +41,9 @@ describe("door 1 — vault:run never hands a Boss OS process a West Peek key", (
   });
 
   it("hands the vault's Claude sign-in to the CLI under its own name, never over one the caller set", () => {
-    expect(bossOsProcessEnv({ ANTHROPIC_CLAUDE_CODE_OAUTH_TOKEN: "vault" }).CLAUDE_CODE_OAUTH_TOKEN).toBe("vault");
-    expect(bossOsProcessEnv({ ANTHROPIC_CLAUDE_CODE_OAUTH_TOKEN: "vault", CLAUDE_CODE_OAUTH_TOKEN: "mine" }).CLAUDE_CODE_OAUTH_TOKEN).toBe("mine");
+    const run = (e: Record<string, string>) => bossOsProcessEnv(e) as Record<string, string>;
+    expect(run({ ANTHROPIC_CLAUDE_CODE_OAUTH_TOKEN: "vault" }).CLAUDE_CODE_OAUTH_TOKEN).toBe("vault");
+    expect(run({ ANTHROPIC_CLAUDE_CODE_OAUTH_TOKEN: "vault", CLAUDE_CODE_OAUTH_TOKEN: "mine" }).CLAUDE_CODE_OAUTH_TOKEN).toBe("mine");
     expect(bossOsProcessEnv({ PATH: "/bin" })).toEqual({ PATH: "/bin" });
   });
 
