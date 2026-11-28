@@ -93,10 +93,14 @@ export async function classifyToniThread(thread, targets, rule, read = readWorke
     } } },
     accept: (answer) => parse(answer) !== null,
   }, process.env);
-  const verdicts = result.status === "ok" ? parse(result.text) : null;
-  if (!verdicts) throw new Error(result.status === "allowance-exhausted"
-    ? "NAMED STOP [FREE_ALLOWANCE_EXHAUSTED] Mail will be read again next run"
-    : "The free reader did not classify every target message");
+  let verdicts = result.status === "ok" ? parse(result.text) : null;
+  if (!verdicts && result.status === "allowance-exhausted") throw new Error("NAMED STOP [FREE_ALLOWANCE_EXHAUSTED] Mail will be read again next run");
+  // A model read it and gave no usable answer (status "uncertain", or "ok" in the wrong shape): every target
+  // counts as uncertain toward holding it for her, as lp-positive.mjs does (#584 recheck R2). Only an outage throws.
+  if (!verdicts && (result.status === "uncertain" || result.status === "ok")) {
+    verdicts = new Map(ids.map((id) => [id, { id, kind: "uncertain", vendor: "", detail: "" }]));
+  }
+  if (!verdicts) throw new Error("The free reader did not classify every target message");
   return thread.filter((message) => verdicts.has(message.id)).map((message) => {
     const { kind, vendor, detail } = verdicts.get(message.id);
     const base = { id: message.id, at: message.internalDate, kind };
@@ -204,7 +208,6 @@ export async function nameToniHeld(mail, what, { add } = {}) {
   if (!links.length) return 0;
   const write = add ?? (await import("../../../src/shared/boss/mail/morning.mjs")).addMorningLines;
   write("notices", { lines: [heldLine(what, links)] });
-  console.log(`NOTE [HELD_FOR_HER] ${links.length} ${what} held for her in the morning email after three uncertain reads.`);
   return links.length;
 }
 

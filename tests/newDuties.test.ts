@@ -139,6 +139,17 @@ describe("Toni's judgements", () => {
     expect(await nameToniHeld([{ held: r3.held }], "charge or billing emails", { add: (_s: string, x: { lines: unknown[] }) => lines.push(...x.lines) })).toBe(1);
     expect(JSON.stringify(lines)).toContain("held for you");
   });
+  it("a reader answer in the wrong shape counts as uncertain and is held by run 3, never a stall (#584 recheck R2)", async () => {
+    const now = Date.parse("2026-11-27T18:00:00Z");
+    const msg = { id: "m9", internalDate: now - 86_400_000, headers: { from: "x@y.example", subject: "Notice" }, body: "?" };
+    const run = (previous = {}) => scanToniMailbox({ token: async () => "fixture", rule: BILLING_MAIL, now, previous, mailbox: "staylor@spry.vc",
+      list: async () => [["t9", new Set(["m9"])]], load: async () => [msg],
+      read: async () => ({ status: "uncertain", provider: "workers-ai", text: "", inTokens: 1, outTokens: 1 }) });
+    const r1 = await run(); const r2 = await run(r1.checkpoint); const r3 = await run(r2.checkpoint);
+    expect(r1.why).toMatch(/could not decide/);
+    expect(r3.held.map((h) => h.id)).toEqual(["m9"]);
+    expect(r3.why).toBeNull();
+  });
   it("one thread that fails to load never hides the threads after it", async () => {
     const now = Date.parse("2026-11-27T18:00:00Z");
     const fresh = { id: "m2", internalDate: now - 1000, headers: { from: "a@b.example", subject: "Account suspended" }, body: "Suspended." };

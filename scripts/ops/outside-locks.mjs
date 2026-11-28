@@ -146,7 +146,8 @@ async function main() {
   const ci = planCiNotices(ciNotices, live, { handed: prev.ci_handed ?? {} });
   console.log(`github notices: ${ciNotices.length} (${Object.entries(live).map(([r, s]) => `${r} ${s}`).join(", ") || "none"}), ${ci.fixes.length} repair(s).`);
   if (DRY) { console.log("OUTSIDE-LOCKS-COMPLETE: dry"); return; }
-  await nameToniHeld(mail, "account lock or restriction emails");
+  const heldCount = await nameToniHeld(mail, "account lock or restriction emails");
+  if (heldCount) console.log(`NOTE [HELD_FOR_HER] ${heldCount} account lock or restriction emails held for her in the morning email after three uncertain reads.`);
   const ciHanded = { ...(prev.ci_handed ?? {}) };
   if (ci.fixes.length) {
     let api = null;

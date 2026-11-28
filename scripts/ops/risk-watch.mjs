@@ -623,7 +623,8 @@ async function main() {
   console.log(`OUTPUT ${readings.filter((r) => r.state !== "stop").length} readings`);
   console.log(`risk watch: ${readings.length} readings, ${readings.filter((r) => r.state === "alert").length} alerting, ${readings.filter((r) => r.state === "stop").length} unreadable, ${moved.length} moved since the last run.`);
   if (DRY) { console.log("RISK-WATCH-COMPLETE: dry"); return; }
-  await nameToniHeld(mail, "charge or billing emails");
+  const heldCount = await nameToniHeld(mail, "charge or billing emails");
+  if (heldCount) console.log(`NOTE [HELD_FOR_HER] ${heldCount} charge or billing emails held for her in the morning email after three uncertain reads.`);
 
   let reported = false;
   if (moved.length) {
