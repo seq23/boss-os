@@ -207,8 +207,11 @@ async function snap(page) {
 // With `mark`, the same scan tags that one control (data-tap-through-target) so the tap hits exactly the control
 // the sweep counted. A role+name locator counts controls this scan leaves out (screens kept mounted under the
 // one on show), so its nth hit the wrong copy: AP "Back" DEAD and "Next question" untappable, 22 Nov 2026.
+// An inert subtree is not on show: no one can tap it or hear it. React Navigation keeps the tabs not chosen mounted
+// under the chosen one and marks them inert (expo-router 58.0.33); counting them made PBS's Today, Chat and Bible
+// controls "shown but cannot be tapped" on the Nights tab, 28 Nov 2026.
 const CONTROLS = ({ roles, mark, stateful }) => {
-  const vis = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 4 && r.height > 4 && s.visibility !== "hidden" && s.display !== "none" && !e.closest("[aria-hidden=true]"); };
+  const vis = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 4 && r.height > 4 && s.visibility !== "hidden" && s.display !== "none" && !e.closest("[aria-hidden=true],[inert]"); };
   const fullName = (e) => (e.getAttribute("aria-label") || e.innerText || e.getAttribute("title") || e.value || "").replace(/\s+/g, " ").trim();
   const roleOf = (e) => e.getAttribute("role") || (e.tagName === "A" && e.hasAttribute("href") ? "link" : e.tagName === "BUTTON" ? "button" : e.type === "checkbox" ? "checkbox" : null);
   const seen = new Map(), out = [], noRole = [];
